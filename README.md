@@ -83,14 +83,23 @@ by being the thing CI actually runs.
 | `F5` | save |
 | `F1` | debug window |
 | `F11` / `Alt+Enter` | fullscreen |
-| `Esc` | quit |
+| `Esc` | pause |
 
 A gamepad works for all of it, hot-plugged, with the sticks and the d-pad both
-driving movement.
+driving movement: **A** talks, **B** waits, **X** looks, **Y** opens, and
+**Start** pauses.
 
-`--profile NAME` picks whose game this is. Each profile keeps its own world, and
-running again resumes it — the game saves on the way out, so `--new` is what you
-pass to start over.
+The game opens on a title screen. Continue picks up the most recent journey,
+New journey asks for a name, and Journeys lists everything saved with its day,
+hour and place. Options sets the window scale, fullscreen and rumble.
+
+**A pad alone is enough for all of it**, naming included — the naming page
+carries its own alphabet, so nothing here needs a keyboard.
+
+Each profile keeps a world of its own, and the game saves on the way out, so
+Continue is always where you left off. From the command line, `--profile NAME`
+says whose game to act on and `--play` goes straight into it without stopping at
+the title; `--new` starts that profile over rather than resuming.
 
 Walking into somebody talks to them, as Ultima VI did — the common case needs
 no key at all.
@@ -100,7 +109,7 @@ no key at all.
 ```
 gigantima [--profile NAME] [--seed N] [--play] [--debug]
           [--scale N] [--fullscreen] [--no-rumble]
-          [--new] [--turns N] [--map FILE.ggmap]
+          [--new] [--turns N] [--map FILE.ggmap] [--screen NAME]
           [--at X,Y] [--time HH:MM] [--shot FILE.bmp] [--shot-at TURN]
 ```
 
@@ -109,7 +118,8 @@ decision come from that one number. `--shot` runs the world forward with no
 window, writes a single frame and exits, which is how CI checks that the game
 can still find and draw its own art — it photographs whatever the other flags
 select, so `--shot` alone gets the title screen and `--debug --shot` gets the
-debug view. `--at X,Y` and `--time HH:MM` put the avatar somewhere specific at
+debug view; `--screen NAME` opens a named page — `title`, `profiles`, `name`,
+`options`, `play` or `pause` — so each one can be photographed in turn. `--at X,Y` and `--time HH:MM` put the avatar somewhere specific at
 a specific hour, because verifying a change to how water is drawn means getting
 to water, and checking that a lit room differs from the street at night means
 getting to night without walking there. `--map` plays an authored `.ggmap`,
@@ -121,7 +131,7 @@ generator would smooth away.
 ```
 src/core/       the simulation. No renderer, no window, no input, no audio.
 src/gfx/        atlas textures, the world renderer, the bitmap font
-src/ui/         title screen, status band, conversation panel
+src/ui/         menus and screens, status band, conversation panel
 src/platform/   asset and save paths, keyboard and gamepad
 src/debug/      the debug window
 src/frontend/   main.c per executable

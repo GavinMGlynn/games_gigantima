@@ -20,6 +20,8 @@
 #include "platform/gg_paths.h"
 #include "debug/gg_debug.h"
 #include "core/gg_save.h"
+#include "ui/gg_screens.h"
+#include "platform/gg_settings.h"
 
 #define WINDOW_SCALE 1
 
@@ -38,8 +40,14 @@ typedef struct {
     uint64_t last_ns, accum_ns;
     uint64_t frames;             // free-running, for title-screen animation
 
-    bool     started;            // false while the title screen is up
-    bool     quit;
+    // Which screen is showing. `started` used to be a bool for "past the
+    // title", which stopped being enough the moment there was more than one
+    // screen to be on.
+    gg_screens   screens;
+    gg_settings  settings;
+    bool         have_game;      // a world exists to draw or return to
+    bool         started;        // kept: --play and --shot still mean "in the world"
+    bool         quit;
 
     // Borderless fullscreen, and the windowed geometry to come back to.
     bool faux_fs;
@@ -75,6 +83,11 @@ typedef struct {
     // way to exercise the save-on-exit path at all.
     uint32_t turn_limit;
     bool     turn_limit_set;
+
+    // --screen NAME opens on a named screen, so --shot can photograph each of
+    // them. Without it only the world and the title were reachable from the
+    // command line, and "a frame per screen" was not a check anybody could run.
+    const char *screen_name;
     bool loaded;         // this session began by resuming a save
     bool saved_on_exit;
 } gg_app;
@@ -171,15 +184,130 @@ static void draw(gg_app *app) {
     SDL_SetRenderDrawColor(app->ren, 0, 0, 0, 255);
     SDL_RenderClear(app->ren);
 
-    if (!app->started) {
-        gg_ui_title(app->ren, app->frames, app->profile);
-        return;
+    // The pause menu is drawn over the world, so the world goes down first.
+    const bool world_visible = app->screens.id == GG_SCREEN_PLAY ||
+                               app->screens.id == GG_SCREEN_PAUSE;
+    if (world_visible && app->have_game) {
+        gg_render_world(&app->game, app->ren);
+        gg_ui_hud(&app->game, app->ren);
+        if (app->game.mode == GG_MODE_CONVERSE)
+            gg_ui_converse(&app->game, app->ren);
     }
 
-    gg_render_world(&app->game, app->ren);
-    gg_ui_hud(&app->game, app->ren);
-    if (app->game.mode == GG_MODE_CONVERSE)
-        gg_ui_converse(&app->game, app->ren);
+    if (app->screens.id != GG_SCREEN_PLAY)
+        gg_screens_draw(&app->screens, app->ren, app->frames);
+}
+
+// ---------------------------------------------------------------------------
+// Screens
+//
+// The screens own their menus and their drawing; this owns what a chosen row
+// actually does. Keeping the transitions in one place is the whole point -
+// they are the part that tangles.
+// ---------------------------------------------------------------------------
+static void screen_go(gg_app *app, gg_screen_id id) {
+    gg_screens_enter(&app->screens, id, gg_pref_path(), &app->settings,
+                     &app->game, app->have_game);
+    app->started = (id == GG_SCREEN_PLAY);
+
+    // The button that took us off the last screen must not also act on this
+    // one - "Resume" on the pause menu is A, and so is "talk".
+    gg_input_forget(&app->in);
+
+    // Text input is a mode the platform has to be put into and taken out of -
+    // on a phone it raises a keyboard, and on a desktop it is what turns key
+    // presses into characters the layout agrees with. Tied to the screen so it
+    // cannot be left on.
+    if (app->win) {
+        if (id == GG_SCREEN_NAME) SDL_StartTextInput(app->win);
+        else                      SDL_StopTextInput(app->win);
+    }
+}
+
+static bool start_world(gg_app *app, const char *profile, bool fresh) {
+    gg_game fresh_game;
+    SDL_zero(fresh_game);
+
+    const bool built = fresh
+        ? gg_game_new(&fresh_game, (uint32_t)SDL_GetPerformanceCounter(), profile)
+        : gg_save_read(&fresh_game, gg_pref_path(), profile);
+    if (!built) {
+        SDL_Log("gigantima: could not %s %s",
+                fresh ? "begin" : "resume", profile);
+        return false;
+    }
+
+    gg_game_free(&app->game);
+    app->game = fresh_game;
+    app->have_game = true;
+
+    SDL_strlcpy(app->settings.last_profile, profile,
+                sizeof app->settings.last_profile);
+    gg_settings_save(&app->settings, gg_pref_file(GG_SETTINGS_FILE));
+    return true;
+}
+
+static bool save_now(gg_app *app) {
+    if (!app->have_game || !app->game.map.cell) return false;
+    return gg_save_write(&app->game, gg_pref_path(), app->game.profile);
+}
+
+// A direction pushed while a menu is showing. Both halves are offered to the
+// screen: only the naming grid reads dx as movement, and only a row holding a
+// value reads it as an adjustment, so exactly one of these ever does anything.
+static void screen_nav(gg_app *app, int dx, int dy) {
+    gg_screens_move(&app->screens, dx, dy);
+    gg_screens_adjust(&app->screens, dx, &app->settings);
+}
+
+// Returns false when the application should exit.
+static bool screen_act(gg_app *app, gg_screen_result r) {
+    switch (r.action) {
+    case GG_ACTION_NONE:
+        return true;
+
+    case GG_ACTION_GO:
+        // Applying the options on the way out of the page is what makes them
+        // feel applied, rather than needing a separate "apply" row.
+        if (app->screens.id == GG_SCREEN_OPTIONS) {
+            gg_settings_save(&app->settings, gg_pref_file(GG_SETTINGS_FILE));
+            app->in.no_rumble = !app->settings.rumble;
+            if (app->settings.fullscreen != app->faux_fs) toggle_fullscreen(app);
+            if (app->win && !app->faux_fs)
+                SDL_SetWindowSize(app->win, GG_SCREEN_W * app->settings.scale,
+                                  GG_SCREEN_H * app->settings.scale);
+        }
+        screen_go(app, r.next);
+        return true;
+
+    case GG_ACTION_CONTINUE:
+        if (start_world(app, r.name, false)) screen_go(app, GG_SCREEN_PLAY);
+        return true;
+
+    case GG_ACTION_NEW_GAME:
+        if (start_world(app, r.name, true)) screen_go(app, GG_SCREEN_PLAY);
+        return true;
+
+    case GG_ACTION_DELETE:
+        gg_profile_delete(gg_pref_path(), r.name);
+        screen_go(app, GG_SCREEN_PROFILES);
+        return true;
+
+    case GG_ACTION_SAVE:
+        gg_log(&app->game, save_now(app) ? "Thy journey is recorded."
+                                         : "The journey could not be recorded.");
+        screen_go(app, GG_SCREEN_PLAY);
+        return true;
+
+    case GG_ACTION_QUIT_TO_TITLE:
+        save_now(app);
+        screen_go(app, GG_SCREEN_TITLE);
+        return true;
+
+    case GG_ACTION_QUIT:
+        return false;
+    }
+    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -188,7 +316,7 @@ static void draw(gg_app *app) {
 static void usage(void) {
     SDL_Log("usage: gigantima [--profile NAME] [--seed N] [--play] [--debug]\n"
             "                 [--scale N] [--fullscreen] [--no-rumble]\n"
-            "                 [--new] [--turns N] [--map FILE.ggmap]\n"
+            "                 [--new] [--turns N] [--screen NAME] [--map FILE.ggmap]\n"
             "                 [--at X,Y] [--time HH:MM]\n"
             "                 [--shot FILE.bmp] [--shot-at TURN]");
 }
@@ -221,6 +349,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
             app->shot_path = argv[++i];
         } else if (SDL_strcmp(argv[i], "--shot-at") == 0 && i + 1 < argc) {
             app->shot_at = (uint32_t)SDL_atoi(argv[++i]);
+        } else if (SDL_strcmp(argv[i], "--screen") == 0 && i + 1 < argc) {
+            app->screen_name = argv[++i];
         } else if (SDL_strcmp(argv[i], "--turns") == 0 && i + 1 < argc) {
             app->turn_limit = (uint32_t)SDL_atoi(argv[++i]);
             app->turn_limit_set = true;
@@ -340,6 +470,38 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
                 gg_map_walkable(&app->game.map, p->x, p->y) ? "" : " (in terrain)");
     }
 
+    gg_settings_load(&app->settings, gg_pref_file(GG_SETTINGS_FILE));
+    if (app->settings.rumble == false) app->in.no_rumble = true;
+    if (no_rumble) app->settings.rumble = false;
+
+    // --play and --shot go straight into the world; anything else opens on
+    // the title, which is where a player without command-line flags starts.
+    app->have_game = true;
+    gg_screen_id opening = app->started ? GG_SCREEN_PLAY : GG_SCREEN_TITLE;
+    if (app->screen_name) {
+        static const struct { const char *name; gg_screen_id id; } NAMED[] = {
+            { "title",    GG_SCREEN_TITLE },
+            { "profiles", GG_SCREEN_PROFILES },
+            { "name",     GG_SCREEN_NAME },
+            { "options",  GG_SCREEN_OPTIONS },
+            { "pause",    GG_SCREEN_PAUSE },
+            { "play",     GG_SCREEN_PLAY },
+        };
+        bool known = false;
+        for (size_t k = 0; k < GG_COUNTOF(NAMED); k++)
+            if (SDL_strcmp(app->screen_name, NAMED[k].name) == 0) {
+                opening = NAMED[k].id;
+                known = true;
+            }
+        if (!known) {
+            SDL_Log("gigantima: no screen called '%s'", app->screen_name);
+            return SDL_APP_FAILURE;
+        }
+    }
+    screen_go(app, opening);
+
+    if (want_fs || (app->settings.fullscreen && !app->shot_path))
+        want_fs = true;
     if (want_fs) toggle_fullscreen(app);
     if (app->debug) debug_open(app);
 
@@ -378,11 +540,66 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
         }
         return SDL_APP_SUCCESS;
 
+    case SDL_EVENT_TEXT_INPUT:
+        // Only ever collected while a name is being typed; SDL text input is
+        // started and stopped with the screen.
+        if (app->screens.id == GG_SCREEN_NAME)
+            for (const char *c = event->text.text; *c; c++)
+                if ((unsigned char)*c >= ' ' && (unsigned char)*c < 127)
+                    gg_screens_type(&app->screens, *c);
+        return SDL_APP_CONTINUE;
+
     case SDL_EVENT_KEY_DOWN:
-        if (event->key.repeat) break;
+        if (event->key.repeat && app->screens.id != GG_SCREEN_NAME) break;
+
+        // A menu is showing: it takes the navigation keys, and the world does
+        // not see them.
+        if (app->screens.id != GG_SCREEN_PLAY) {
+            // W and S steer a menu, but on the naming screen they are letters
+            // somebody is trying to type - so there only the arrows navigate.
+            const bool naming = app->screens.id == GG_SCREEN_NAME;
+            switch (event->key.scancode) {
+            case SDL_SCANCODE_UP:
+                screen_nav(app, 0, -1); return SDL_APP_CONTINUE;
+            case SDL_SCANCODE_DOWN:
+                screen_nav(app, 0, 1);  return SDL_APP_CONTINUE;
+            case SDL_SCANCODE_LEFT:
+                screen_nav(app, -1, 0); return SDL_APP_CONTINUE;
+            case SDL_SCANCODE_RIGHT:
+                screen_nav(app, 1, 0);  return SDL_APP_CONTINUE;
+            case SDL_SCANCODE_W:
+                if (!naming) screen_nav(app, 0, -1);
+                return SDL_APP_CONTINUE;
+            case SDL_SCANCODE_S:
+                if (!naming) screen_nav(app, 0, 1);
+                return SDL_APP_CONTINUE;
+            case SDL_SCANCODE_BACKSPACE:
+                gg_screens_type(&app->screens, '\b'); return SDL_APP_CONTINUE;
+            case SDL_SCANCODE_RETURN: case SDL_SCANCODE_KP_ENTER:
+                if (event->key.mod & SDL_KMOD_ALT) { toggle_fullscreen(app); break; }
+                if (!screen_act(app, gg_screens_choose(&app->screens,
+                        gg_pref_path(), &app->settings, &app->game,
+                        app->have_game)))
+                    return SDL_APP_SUCCESS;
+                return SDL_APP_CONTINUE;
+            case SDL_SCANCODE_ESCAPE:
+                if (!screen_act(app, gg_screens_back(&app->screens)))
+                    return SDL_APP_SUCCESS;
+                return SDL_APP_CONTINUE;
+            case SDL_SCANCODE_F11:
+                toggle_fullscreen(app); return SDL_APP_CONTINUE;
+            default:
+                return SDL_APP_CONTINUE;
+            }
+        }
+
         switch (event->key.scancode) {
         case SDL_SCANCODE_ESCAPE:
-            return SDL_APP_SUCCESS;
+            // In the world, Escape opens the pause menu rather than quitting:
+            // losing a session to a stray keypress is not acceptable now that
+            // there is a session to lose.
+            screen_go(app, GG_SCREEN_PAUSE);
+            return SDL_APP_CONTINUE;
         case SDL_SCANCODE_F11:
             toggle_fullscreen(app);
             return SDL_APP_CONTINUE;
@@ -405,10 +622,6 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
                 toggle_fullscreen(app);
                 return SDL_APP_CONTINUE;
             }
-            if (!app->started) {
-                app->started = true;
-                return SDL_APP_CONTINUE;
-            }
             break;
         default:
             break;
@@ -427,9 +640,50 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
 // ---------------------------------------------------------------------------
 // Frame
 // ---------------------------------------------------------------------------
-static void step_once(gg_app *app) {
+// The pad, in a menu. The keyboard is handled in SDL_AppEvent because it
+// arrives as discrete key presses; the pad has to be sampled, because holding a
+// stick has to repeat on a timer rather than fire every frame.
+//
+// Returns false when the application should exit.
+static bool pad_menu(gg_app *app) {
+    switch (gg_input_nav(&app->in)) {
+    case GG_NAV_UP:     screen_nav(app, 0, -1); break;
+    case GG_NAV_DOWN:   screen_nav(app, 0, 1);  break;
+    case GG_NAV_LEFT:   screen_nav(app, -1, 0); break;
+    case GG_NAV_RIGHT:  screen_nav(app, 1, 0);  break;
+    case GG_NAV_ERASE:  gg_screens_type(&app->screens, '\b'); break;
+
+    case GG_NAV_ACCEPT:
+        // Start finishes whatever is being composed. On the naming screen that
+        // means the name, wherever the alphabet cursor is sitting.
+        gg_screens_ready(&app->screens);
+        [[fallthrough]];
+    case GG_NAV_CHOOSE:
+        return screen_act(app, gg_screens_choose(&app->screens, gg_pref_path(),
+                                                 &app->settings, &app->game,
+                                                 app->have_game));
+    case GG_NAV_BACK:
+        return screen_act(app, gg_screens_back(&app->screens));
+
+    case GG_NAV_NONE:
+        break;
+    }
+    return true;
+}
+
+// Returns false when the application should exit.
+static bool step_once(gg_app *app) {
     app->frames++;
     gg_input_tick(&app->in);
+
+    if (app->screens.id != GG_SCREEN_PLAY) return pad_menu(app);
+
+    // Start pauses. The pad has no Escape, and reaching for the keyboard to put
+    // a controller game down is exactly the seam this is meant to close.
+    if (gg_input_take_pause(&app->in)) {
+        screen_go(app, GG_SCREEN_PAUSE);
+        return true;
+    }
 
     if (app->started) {
         const gg_action a = gg_input_take(&app->in);
@@ -442,12 +696,15 @@ static void step_once(gg_app *app) {
         }
         gg_game_animate(&app->game);
     }
+    return true;
 }
 
 SDL_AppResult SDL_AppIterate(void *appstate) {
     gg_app *app = appstate;
 
-    // Capture mode: run the world forward, draw once, write, exit.
+    // Capture mode: run the world forward, draw once, write, exit. A menu
+    // screen has no world to run forward, so the loop below simply does not
+    // turn - `started` is false on every screen but the world.
     if (app->shot_path) {
         // Walk east so the shot is not always the spawn tile, through the
         // simulation rather than around it, so the capture exercises the same
@@ -512,7 +769,9 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
 
     while (app->accum_ns >= GG_TICK_NS) {
         app->accum_ns -= GG_TICK_NS;
-        step_once(app);
+        // A menu row can ask to quit, and the pad reaches those rows from
+        // inside the tick loop rather than from an event.
+        if (!step_once(app)) return SDL_APP_SUCCESS;
     }
 
     draw(app);

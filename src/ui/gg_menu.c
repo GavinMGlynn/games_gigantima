@@ -6,7 +6,7 @@
 
 // Row metrics. A row is two lines tall whether or not it has a detail line, so
 // a list does not jump about as rows gain and lose their second line.
-#define ROW_H     34
+#define ROW_H     42
 #define MENU_W    420
 
 static const SDL_Color INK   = { 226, 216, 190, 255 };
@@ -79,7 +79,7 @@ int gg_menu_draw(const gg_menu *m, SDL_Renderer *ren, int cx, int top) {
             SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
             SDL_SetRenderDrawColor(ren, 217, 145, 63, 40);
             const SDL_FRect bar = { (float)(cx - MENU_W / 2), (float)(y - 5),
-                                    (float)MENU_W, (float)(ROW_H - 4) };
+                                    (float)MENU_W, (float)(ROW_H - 8) };
             SDL_RenderFillRect(ren, &bar);
             SDL_SetRenderDrawColor(ren, 217, 145, 63, 150);
             SDL_RenderRect(ren, &bar);

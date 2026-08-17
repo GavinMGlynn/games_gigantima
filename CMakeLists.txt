@@ -141,6 +141,8 @@ add_library(gigantima_core STATIC
     src/gfx/gg_render.c
     src/ui/gg_ui.c
     src/ui/gg_menu.c
+    src/ui/gg_screens.c
+    src/platform/gg_settings.c
     src/platform/gg_paths.c
     src/platform/gg_input.c
     src/debug/gg_debug.c)

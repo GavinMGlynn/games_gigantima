@@ -1,4 +1,4 @@
-// gg_ui.c - status band, conversation panel and title screen.
+// gg_ui.c - the status band and the conversation panel.
 #include "ui/gg_ui.h"
 #include "gfx/gg_font.h"
 
@@ -8,7 +8,6 @@
 static const SDL_Color INK    = { 226, 216, 190, 255 };
 static const SDL_Color DIM    = { 150, 142, 120, 255 };
 static const SDL_Color AMBER  = { 217, 145,  63, 255 };
-static const SDL_Color MOSS   = { 124, 184,  84, 255 };
 static const SDL_Color BLOOD  = { 190,  72,  60, 255 };
 
 static void panel(SDL_Renderer *ren, SDL_FRect r, uint8_t alpha) {
@@ -112,50 +111,3 @@ void gg_ui_converse(const gg_game *g, SDL_Renderer *ren) {
                  "(any key to take thy leave)");
 }
 
-void gg_ui_title(SDL_Renderer *ren, uint64_t t, const char *profile) {
-    SDL_SetRenderDrawColor(ren, 14, 17, 12, 255);
-    SDL_RenderClear(ren);
-
-    const int cx = GG_SCREEN_W / 2;
-    const int line = gg_font_height();
-
-    // Laid out against the full screen height rather than from the top down.
-    // The first version stacked everything from y=70 and left the bottom third
-    // empty, which reads as a screen that failed to finish drawing.
-    const int TITLE_SCALE = 4;
-
-    // The title is drawn from the font sheet, scaled. Scaling the baked glyphs
-    // rather than shipping a second larger font keeps the look identical and
-    // the atlas one texture; nearest filtering means it stays crisp.
-    SDL_SetRenderScale(ren, (float)TITLE_SCALE, (float)TITLE_SCALE);
-    gg_font_center(ren, cx / TITLE_SCALE, 120 / TITLE_SCALE, AMBER, "GIGANTIMA");
-    SDL_SetRenderScale(ren, 1.0f, 1.0f);
-
-    gg_font_center(ren, cx, 120 + line * TITLE_SCALE + 12, DIM,
-                   "a world in the manner of Ultima VI");
-
-    int y = GG_SCREEN_H / 2 + 20;
-    gg_font_center(ren, cx, y, INK, "Thy journey awaits.");
-    y += line * 2;
-
-    if (profile && *profile) {
-        gg_font_center(ren, cx, y, MOSS, profile);
-        y += line * 2;
-    }
-
-    // A slow pulse rather than a hard blink: at 60 Hz a blink reads as a
-    // rendering fault, and this says "waiting for you" without shouting.
-    const double phase = (double)(t % 120) / 120.0;
-    const uint8_t a = (uint8_t)(120 + 135 * (0.5 + 0.5 * SDL_cos(phase * 6.283185)));
-    const SDL_Color prompt = { INK.r, INK.g, INK.b, a };
-    gg_font_center(ren, cx, y, prompt, "Press Enter to begin");
-
-    // The control list is pinned to the bottom rather than following the flow,
-    // so it stays put as the lines above it come and go with the profile.
-    int cy = GG_SCREEN_H - line * 3 - 24;
-    gg_font_center(ren, cx, cy, DIM,
-                   "Arrows, WASD or the keypad to walk   T talk   L look   O open");
-    cy += line;
-    gg_font_center(ren, cx, cy, DIM,
-                   "F1 debug window   F11 fullscreen   Esc quit");
-}

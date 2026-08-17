@@ -73,10 +73,26 @@ jobs:
           grep -q "turn 60" resume.log || {
             echo "resumed at the wrong turn"; cat resume.log; exit 1; }
 
+      # Every screen has to draw. A menu that crashes or renders nothing is
+      # invisible to the unit tests, which exercise the logic without a
+      # renderer - so each one is opened and photographed here.
+      - name: Smoke test - every screen draws
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_RENDER_DRIVER: software
+          SDL_AUDIODRIVER: dummy
+        run: |
+          for s in title profiles name options pause play; do
+            ./build/gigantima --screen "$s" --profile CI --shot "screen-$s.bmp"
+            test -s "screen-$s.bmp" || { echo "$s drew nothing"; exit 1; }
+          done
+
       - uses: actions/upload-artifact@v4
         with:
           name: linux-frame
-          path: smoke.bmp
+          path: |
+            smoke.bmp
+            screen-*.bmp
 
   rocky:
     name: Linux x86_64 (GCC 14, RHEL family)

@@ -11,10 +11,12 @@ buried in a later clause. See `CLAUDE.md`.
 
 ## In one line
 
-An engine, not yet a game: you can walk a generated continent, enter a town, go
-inside its houses, and watch eight townsfolk path around the buildings to keep
-daily schedules under a day/night cycle. Games save and resume per named profile. There is **no story, no combat, no
-magic, no usable inventory, no sound, no menus and no editor**.
+An engine, not yet a game: from a title screen you can start or resume a named
+journey, walk a generated continent, enter a town, go inside its houses, and
+watch eight townsfolk path around the buildings to keep daily schedules under a
+day/night cycle. Pausing, saving and quitting are all on a menu, and every page
+works from a gamepad alone, naming included. There is **no story, no combat, no
+magic, no usable inventory, no sound and no editor**.
 
 ---
 
@@ -121,9 +123,13 @@ plays headlessly and leaves by the ordinary exit.
 A small header file sits beside each save so the profile picker can draw a row
 — name, day, time, turns, level, where they were — without loading a world.
 
-*Verification: the save tests listed in `COMPLETION_PLAN.md`, plus a CI smoke
-test that plays, quits and resumes through the real binary and checks it came
-back at the right turn.*
+*Verification: `a_saved_game_resumes_exactly_where_it_was_left` (and that it
+stays identical for 60 turns after), `a_resumed_game_can_still_be_talked_to`,
+`profiles_do_not_see_each_others_saves`, `a_profile_name_cannot_steer_a_path`,
+`a_save_that_is_not_ours_is_refused`,
+`the_profile_list_reports_what_was_saved`; plus a CI smoke test that plays,
+quits and resumes through the real binary and checks it came back at the right
+turn.*
 
 ### Turns and the clock
 
@@ -176,8 +182,14 @@ to produce.
 Over a full simulated game day no townsperson ends up standing in terrain,
 sharing a tile with another, or standing on the player.
 
-*Verification: the pathfinding tests listed in `COMPLETION_PLAN.md`, plus
-`townsfolk_never_walk_into_terrain` (a full 1440-turn day),
+*Verification, pathfinding: `a_path_goes_around_a_wall`,
+`a_path_solves_a_serpentine_maze`, `a_path_never_cuts_a_diagonal_corner`,
+`an_unreachable_target_still_moves_toward_it`,
+`a_completely_boxed_in_actor_reports_no_step`, `the_search_is_reproducible`,
+`a_resident_crosses_the_town_to_a_fixed_target`,
+`a_resident_walks_round_a_building_rather_than_into_it`.*
+
+*Verification, townsfolk: `townsfolk_never_walk_into_terrain` (a full 1440-turn day),
 `two_townsfolk_never_share_a_tile`,
 `the_player_never_shares_a_tile_with_a_townsperson`,
 `a_schedule_before_its_first_entry_uses_the_last`.*
@@ -236,7 +248,10 @@ inventory behaviour rather than a lighting one, and it is named under the
 inventory plan item.
 
 *Verification: `a_room_is_lit_at_midnight_and_the_street_is_not`,
-`the_avatar_carries_a_light_that_falls_off`, `noon_lights_the_whole_outdoors`.*
+`the_avatar_carries_a_light_that_falls_off`,
+`a_lamp_indoors_does_not_light_the_street`, `noon_lights_the_whole_outdoors`;
+and `--shot` frames of the same town at noon, dusk and midnight, of the campfire
+on the square, and of a lit room with a dark street round it.*
 
 ### Shorelines
 
@@ -294,11 +309,28 @@ its edge sets already carry a bank, and `GG_TILE_CLIFF` because it stands in
 for masonry — a grass fringe up every building would be worse than a hard edge
 on a few loose cliffs.
 
-*Verification: `a_square_lake_selects_all_nine_edge_pieces` (all nine pieces of
-a square lake, each exactly once), `water_at_the_map_edge_draws_no_shoreline_against_nothing`,
+*Verification, shorelines: `a_square_lake_selects_all_nine_edge_pieces` (all
+nine pieces of a square lake, each exactly once),
+`water_at_the_map_edge_draws_no_shoreline_against_nothing`,
 `deep_water_is_never_adjacent_to_land` (25 seeds — the deep set has no
-land-boundary art, so this must never happen), `the_coastline_has_no_isolated_puddles`
-(25 seeds).*
+land-boundary art, so this must never happen),
+`the_coastline_has_no_isolated_puddles` (25 seeds); and a `--shot` frame of the
+lake.*
+
+*Verification, concave corners: `a_one_tile_island_selects_all_four_concave_corners`,
+`an_orthogonal_edge_beats_a_concave_corner`; and an authored `.ggmap` scene of
+promontories, notches and islands rendered with `--map`.*
+
+*Verification, land-to-land: `a_one_tile_road_takes_a_verge_on_both_sides`,
+`a_lone_patch_takes_a_verge_on_all_four_sides`,
+`a_diagonal_only_neighbour_uses_the_concave_piece`,
+`a_straight_verge_suppresses_its_own_corner`,
+`a_patch_touching_no_grass_needs_no_overlay`, `the_map_edge_grows_no_verge`.*
+
+*Verification, non-grass boundaries: `a_boundary_is_drawn_from_the_softer_side_only`,
+`equal_ranks_do_not_transition`, `water_and_masonry_take_no_overlay`; and an
+authored scene banding desert / sand / road / dirt / farmland / grass with no
+straight-line edge anywhere in it.*
 
 ### Buildings
 
@@ -337,10 +369,14 @@ through it in a screenshot. The baker now refuses a door outside
 `1 .. foot_w-2` for any building.
 
 *Verification: `a_placed_building_blocks_its_whole_footprint`,
-`a_buildings_doorway_is_walkable` (all three kinds),
-`you_can_walk_behind_a_building`,
+`a_buildings_walls_block_but_its_room_does_not`,
+`a_building_can_be_walked_into_and_out_of`,
+`a_buildings_doorway_is_walkable` (all three kinds, and that each door opens
+into the room rather than along a wall), `you_can_walk_behind_a_building`,
 `a_building_that_does_not_fit_changes_nothing`,
-`the_generated_town_has_buildings_with_reachable_doors` (20 seeds).*
+`the_generated_town_has_buildings_with_reachable_doors` (20 seeds, from the
+street and from inside); and `--shot` frames of the street, the doorway and the
+furnished room.*
 
 ### Input
 
@@ -354,6 +390,68 @@ animation** (`GG_REPEAT_RATE == GG_STEP_TICKS`): at the original 5 ticks against
 a slide of 8, the next move landed mid-slide and re-anchored the interpolation
 on the tile just left, so the sprite teleported backwards on every step of a
 held walk.
+
+The pad feeds **two streams from the same buttons** — world actions and menu
+commands — and the frontend drains whichever suits the screen showing. They are
+kept apart because A means "talk" in the world and "choose" in a menu, and one
+press must not do both. Two rules make that safe:
+
+- `gg_input_take` and `gg_input_nav` share the held-direction timer, so calling
+  both in a tick would eat every other step. Exactly one is called per tick.
+- `gg_input_forget` runs on every screen change, so the A that chose "Resume"
+  does not also talk to whoever is standing next to you.
+
+Start is the exception, kept in a flag of its own (`gg_input_take_pause`)
+because it is the one button that means something on every screen — pause in the
+world, "that will do" in a menu — and so has to be readable from either drain.
+
+*Verification: `the_pad_feeds_the_world_and_the_menus_separately`.*
+
+### Screens
+
+Six: title, journeys, naming, options, world, paused. The pages own their own
+state and menus; **the frontend owns the transitions**, which is where menu code
+usually tangles.
+
+- **Title.** Continue is first and pre-selected when there is something to
+  continue, and disabled with a reason when there is not.
+- **Journeys.** Every profile with its day, clock, place and turn count.
+  Forgetting one takes two steps: choosing "Forget a journey" arms it and says
+  so, and only then does choosing a journey delete it.
+- **Naming.** Typed on a keyboard, or picked off an on-screen alphabet with a
+  pad. The alphabet holds exactly the 66 characters `gg_profile_name_ok`
+  accepts — which lays out as a full 11×6 rectangle, so navigating it needs no
+  special cases and has no dead cells — with "Rub out" and "Begin" as two wide
+  keys below. The cursor starts *off* the grid, so the keyboard flow is
+  unchanged until somebody presses a direction.
+- **Options.** Window scale, fullscreen and rumble cycle in place rather than
+  opening sub-menus. Music and effects are shown but disabled, with "no sound
+  yet" as the reason — a control that silently does nothing is worse than one
+  that says why. Settings are applied on the way out and written to
+  `settings.cfg`, which keeps keys it does not recognise.
+- **Paused.** Resume, save, options, leave for the title, quit. The last two
+  save first.
+
+Options is the only page with two ways in, and it remembers which: backing out
+of it from a paused game returns to the game. It used to drop to the title,
+abandoning unsaved turns.
+
+Everything is reachable and leavable with directions and one button, so a pad
+alone can start a new journey, name it, play it, pause it and quit — no keyboard
+at any step.
+
+*Verification: `every_screen_is_reachable_by_directions_alone`,
+`every_screen_can_be_left`, `the_options_page_returns_where_it_came_from`,
+`a_journey_can_be_named_with_directions_alone`,
+`the_title_screen_offers_continue_only_when_there_is_one`,
+`naming_a_journey_refuses_a_bad_or_taken_name`,
+`forgetting_a_journey_takes_two_steps`, `the_options_page_cycles_its_values`,
+`a_value_can_be_nudged_both_ways_without_leaving_the_page`,
+`the_menu_cursor_skips_disabled_rows_and_wraps`,
+`a_menu_with_nothing_choosable_chooses_nothing`, `settings_round_trip_and_clamp`;
+plus `--screen NAME --shot` in CI, which opens and photographs all six — the
+unit tests exercise the logic without a renderer, so a page that crashes or
+draws nothing would otherwise pass.*
 
 ### Art pipeline
 
@@ -412,12 +510,10 @@ Named plainly, because a reader should not have to infer absence:
 | Magic | nothing at all |
 | Inventory | a table of six counters shown in the HUD; nothing can be used, picked up or dropped |
 | Conversation | a greeting and a panel. No keywords, no topics, no branching |
-| Sound | nothing. `ext/sdl_mixer` is pinned but not linked |
-| Title/menus/setup pages | a title screen with a prompt. No menus, no options, no profile pages |
+| Sound | nothing. `ext/sdl_mixer` is pinned but not linked, and the options page says so where the volume rows would be |
 | Level editor | nothing. The map format exists for it |
-| Buildings | rectangles of wall with a door. No roofs, windows, interiors or furniture |
-| Indoor lighting | the light quad covers the whole view; `GG_CELL_INDOORS` is set but unused |
 | Party | the avatar is alone |
+| Screens not yet needed | no journal, character sheet, pack or map page — there is nothing yet for them to show |
 
 ---
 

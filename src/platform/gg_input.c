@@ -119,11 +119,20 @@ bool gg_input_event(gg_input *in, const SDL_Event *ev) {
         return true;
 
     case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+        // Each button is given both meanings at once. Which one is honoured is
+        // decided later, by whichever drain the frontend calls for the screen
+        // that is showing.
         switch (ev->gbutton.button) {
-        case SDL_GAMEPAD_BUTTON_SOUTH: in->latched = GG_ACT_TALK;  return true;
-        case SDL_GAMEPAD_BUTTON_WEST:  in->latched = GG_ACT_LOOK;  return true;
-        case SDL_GAMEPAD_BUTTON_NORTH: in->latched = GG_ACT_OPEN;  return true;
-        case SDL_GAMEPAD_BUTTON_EAST:  in->latched = GG_ACT_WAIT;  return true;
+        case SDL_GAMEPAD_BUTTON_SOUTH:
+            in->latched = GG_ACT_TALK; in->nav_latched = GG_NAV_CHOOSE; return true;
+        case SDL_GAMEPAD_BUTTON_EAST:
+            in->latched = GG_ACT_WAIT; in->nav_latched = GG_NAV_BACK;   return true;
+        case SDL_GAMEPAD_BUTTON_WEST:
+            in->latched = GG_ACT_LOOK; return true;
+        case SDL_GAMEPAD_BUTTON_NORTH:
+            in->latched = GG_ACT_OPEN; in->nav_latched = GG_NAV_ERASE;  return true;
+        case SDL_GAMEPAD_BUTTON_START:
+            in->pause_latched = true; return true;
         default: return false;
         }
 
@@ -213,6 +222,24 @@ static gg_action action_for(int dx, int dy) {
     return GG_ACT_NONE;
 }
 
+// True when the held direction should fire this tick: at once on a fresh
+// press, then after GG_REPEAT_DELAY, then every GG_REPEAT_RATE. Shared by both
+// drains so a menu cursor and a walking sprite move to the same rhythm.
+static bool direction_fires(gg_input *in) {
+    if (in->dx == 0 && in->dy == 0) return false;
+
+    if (!in->was_held) {
+        in->was_held = true;
+        in->repeat = GG_REPEAT_DELAY;
+        return true;
+    }
+    if (in->repeat == 0) {
+        in->repeat = GG_REPEAT_RATE;
+        return true;
+    }
+    return false;
+}
+
 gg_action gg_input_take(gg_input *in) {
     // One-shot actions jump the queue: they are rarer and more deliberate than
     // walking, and making the player wait out a repeat tick to talk feels
@@ -223,16 +250,36 @@ gg_action gg_input_take(gg_input *in) {
         return a;
     }
 
-    if (in->dx == 0 && in->dy == 0) return GG_ACT_NONE;
+    return direction_fires(in) ? action_for(in->dx, in->dy) : GG_ACT_NONE;
+}
 
-    if (!in->was_held) {
-        in->was_held = true;
-        in->repeat = GG_REPEAT_DELAY;
-        return action_for(in->dx, in->dy);
+bool gg_input_take_pause(gg_input *in) {
+    const bool pressed = in->pause_latched;
+    in->pause_latched = false;
+    return pressed;
+}
+
+void gg_input_forget(gg_input *in) {
+    in->latched = GG_ACT_NONE;
+    in->nav_latched = GG_NAV_NONE;
+    in->pause_latched = false;
+}
+
+gg_nav gg_input_nav(gg_input *in) {
+    if (gg_input_take_pause(in)) return GG_NAV_ACCEPT;
+
+    if (in->nav_latched != GG_NAV_NONE) {
+        const gg_nav n = in->nav_latched;
+        in->nav_latched = GG_NAV_NONE;
+        return n;
     }
-    if (in->repeat == 0) {
-        in->repeat = GG_REPEAT_RATE;
-        return action_for(in->dx, in->dy);
-    }
-    return GG_ACT_NONE;
+
+    if (!direction_fires(in)) return GG_NAV_NONE;
+
+    // Vertical wins over horizontal on a diagonal: a menu is a column, so a
+    // stick pushed up and slightly left should still go up.
+    if (in->dy < 0) return GG_NAV_UP;
+    if (in->dy > 0) return GG_NAV_DOWN;
+    if (in->dx < 0) return GG_NAV_LEFT;
+    return GG_NAV_RIGHT;
 }

@@ -48,12 +48,23 @@ typedef struct {
     // The name being typed on GG_SCREEN_NAME.
     char typed[GG_PROFILE_NAME_MAX];
 
+    // Where the cursor sits on that screen's on-screen alphabet, which exists
+    // so a journey can be named with a pad and nothing else. -1 means the
+    // alphabet has not been touched: until it is, the screen behaves exactly as
+    // it did when it was keyboard-only, and Enter begins the journey.
+    int key_row, key_col;
+
     // A line shown under the menu: "that name cannot be used", and so on.
     char notice[96];
 
     // Set while a delete is waiting to be confirmed, so one keypress cannot
     // destroy somebody's game.
     bool confirming_delete;
+
+    // Where backing out of the options page goes. Options is the one screen
+    // reachable from two places, and dropping to the title from a paused game
+    // would abandon it.
+    gg_screen_id options_from;
 } gg_screens;
 
 typedef struct {
@@ -68,8 +79,19 @@ typedef struct {
 void gg_screens_enter(gg_screens *s, gg_screen_id id, const char *base,
                       const gg_settings *set, const gg_game *g, bool have_game);
 
-// Moves the cursor.
-void gg_screens_move(gg_screens *s, int dy);
+// Moves the cursor. `dx` matters only on the naming screen, whose alphabet is a
+// grid; everywhere else a menu is a column and only `dy` is read.
+void gg_screens_move(gg_screens *s, int dx, int dy);
+
+// Left or right on a row that holds a value: cycles it. Rows that are not
+// values ignore this, so nudging a stick sideways can never leave a screen or
+// destroy anything - which is why this is not simply gg_screens_choose.
+void gg_screens_adjust(gg_screens *s, int dir, gg_settings *set);
+
+// Puts the naming cursor on "Begin", so that Start on a pad confirms a name
+// from wherever in the alphabet the cursor happens to be. Does nothing on any
+// other screen.
+void gg_screens_ready(gg_screens *s);
 
 // Chooses the row under the cursor. `set` may be altered in place: the options
 // page cycles a value rather than opening a sub-menu, which for five options

@@ -53,10 +53,15 @@ both halves at once.
   and `docs/COMPLETION_PLAN.md` (tick the item, add any tails found while
   implementing it). Re-read both in full at every phase boundary — status docs
   rot fast.
-- **A completed plan item is a summary; the balance moves to
-  `PROJECT_STATUS.md`.** One line of what was done, its verification, and
-  "Detail in `PROJECT_STATUS.md`". The plan is read forwards to choose the next
-  thing; the status is read by whoever has to trust or change a subsystem.
+- **`COMPLETION_PLAN.md` is a user document. Keep it a summary.** One or two
+  sentences saying what the item is, and a verification in plain English — "the
+  building tests over 20 generated towns", not a list of function names. No
+  implementation description, no test-name inventories, no design rationale:
+  every one of those goes in `PROJECT_STATUS.md`, which is where the test names
+  are recorded and where anyone wanting detail is sent. The plan is read
+  forwards to choose the next thing; the status is read by whoever has to trust
+  or change a subsystem. **Both are living documents and neither is allowed to
+  accumulate guff.**
 - **Never describe a partial module as working.** "Working" means 100% of what
   it claims. Anything less is reported with the missing part named *first* —
   "the map format round-trips; there is no editor to write one yet", never "the
