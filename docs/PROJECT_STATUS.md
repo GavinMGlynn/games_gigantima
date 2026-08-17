@@ -110,11 +110,6 @@ whole of who lives in it, including when the answer is nobody — without that
 distinction the first crossing brought eight townsfolk along and stood them on a
 hillside, which is what the screenshot showed.
 
-**A map you leave forgets what you did there.** It is re-read from disk on the
-way back, so an item taken off its floor and a brigand killed on it are both
-undone by leaving and returning. Carrying every visited map in the save is a
-named item in the plan, and it is the honest gap in this one.
-
 *Verification: `walking_between_two_maps_takes_everything_with_you` (the plan's
 own, over two maps authored through the editor's own operations, checking the
 pack, the readied torch, the companion, the clock, the day, the RNG, the turn
@@ -124,6 +119,56 @@ count, the words learned and a flag - and back again),
 rule they pin: leaving the party behind, freeing the map on a failed crossing,
 and reseeding the RNG on arrival. Plus a `--shot` frame of the walk from the
 vale to the stones, taken in CI.*
+
+### A world that remembers
+
+**A map you leave is kept as it was left.** Up to `GG_VISITED_MAX` (12) of them
+are held in mind at once, under the leaf name a way out calls them by; walking
+back into one takes it out again rather than reading disk, so the return journey
+costs no I/O and finds the map unchanged. The oldest is let go when the twelfth
+arrives, which costs a re-read and not a crash.
+
+**The ground is the map's; the people are kept beside it.** A `gg_visited` holds
+the map - terrain, ways out and everything lying on the floor - and, separately,
+whole `gg_actor`s for everybody standing in it. Separately because a map records
+who *lives* somewhere and this has to record who is *standing* there, which is a
+different list once somebody has been wounded, has wandered off their doorstep,
+or has fallen. Keeping actors rather than the map's own placements is also what
+carries a creature's bestiary index, its health and its energy, so a brigand you
+left with two hit points is still on two hit points when you come back.
+
+Three rules make it a memory rather than a hoard:
+
+- **The fallen are not written down.** They are the only thing a return is meant
+  to forget, and an inactive actor still occupies a slot - a world that kept
+  them would fill with corpses one crossing at a time.
+- **The party is not written down.** They are walking away with you, and leaving
+  them in the map's list too puts a second copy of every companion on the floor
+  on the way back.
+- **The map's own placements are dropped** once the people beside it are
+  recorded, for the same reason.
+
+The save carries all of it (**version 9**): the leaf name of the map underfoot,
+then each remembered map and its people, through the same `gg_map_write` and
+`actor_write` the rest of the file uses. Greetings are pointers into the
+dialogue book, so they are rebuilt by name on load for the remembered people as
+well as for the ones underfoot.
+
+*Verification: `a_map_you_leave_is_as_you_left_it` - silver left on the floor,
+bread taken off it, a named brigand killed, and a resident wounded and moved;
+then out to another map, something dropped there too, and back. All four hold,
+the survivors are the same number, and none of the dead came back as an empty
+slot. The whole world is then saved, loaded into a fresh game, compared field by
+field by `games_match` (which now compares the remembered maps and their people
+too), and the second map's floor is checked by crossing into it again. Four were
+checked by breaking the rule they pin: always re-reading from disk, keeping the
+fallen, writing no remembered maps to the save, and dropping the party rule.
+Clean under ASan, UBSan and LSan.*
+
+*And on the real game: `--screen return` puts silver on the road, walks the
+Avatar out of the vale to the standing stones and back, and photographs the
+tile. The frame shows the ingot still lying there and the log says so; the same
+run is a CI smoke test.*
 
 ### The editor
 

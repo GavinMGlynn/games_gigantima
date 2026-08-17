@@ -103,6 +103,22 @@ jobs:
           grep -q "The Standing Stones" travel.log || {
             echo "walking north did not arrive at the other map"; exit 1; }
 
+      # And that the map behind you kept what you did in it. Something is put
+      # on the road, the Avatar walks out of the vale and back into it, and the
+      # pile has to still be lying where it was left.
+      - name: Smoke test - a map you leave is as you left it
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_RENDER_DRIVER: software
+          SDL_AUDIODRIVER: dummy
+        run: |
+          ./build/gigantima --map assets/maps/vale.ggmap --profile CIReturn --new \
+            --play --shot-at 0 --screen return --shot return.bmp > return.log 2>&1
+          cat return.log
+          test -s return.bmp || { echo "the return drew nothing"; exit 1; }
+          grep -q "found 3 silver still at" return.log || {
+            echo "what was left on the floor did not survive the round trip"; exit 1; }
+
       # The editor is a second binary on the same core, and it has to keep
       # building and drawing. The map it authors being playable is checked by
       # the unit tests; this is the window.

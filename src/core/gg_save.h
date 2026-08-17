@@ -26,7 +26,7 @@
 // There is no migration between any of them - guessing at a section that was
 // never written would resume somebody into a world that is not the one they
 // left, and every version so far has existed for days rather than years.
-#define GG_SAVE_VERSION 8
+#define GG_SAVE_VERSION 9
 
 #define GG_PROFILE_NAME_MAX 32
 #define GG_PROFILES_MAX     64

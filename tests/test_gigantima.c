@@ -928,6 +928,37 @@ static bool games_match(const gg_game *a, const gg_game *b, const char **why) {
         *why = "map cells";
         return false;
     }
+
+    // And every map walked in and left, which is a save's memory of everywhere
+    // the Avatar is not standing.
+    if (SDL_strcmp(a->here, b->here) != 0) { *why = "which map this is"; return false; }
+    if (a->visiteds != b->visiteds) { *why = "how many maps are remembered"; return false; }
+    for (int m = 0; m < a->visiteds; m++) {
+        const gg_visited *x = &a->visited[m], *y = &b->visited[m];
+        if (SDL_strcmp(x->leaf, y->leaf) != 0) { *why = "a remembered map"; return false; }
+        if (x->map.grounds != y->map.grounds) {
+            *why = "what lies on a remembered map's floor"; return false;
+        }
+        for (int i = 0; i < x->map.grounds; i++)
+            if (x->map.ground[i].x != y->map.ground[i].x ||
+                x->map.ground[i].y != y->map.ground[i].y ||
+                x->map.ground[i].kind != y->map.ground[i].kind ||
+                x->map.ground[i].count != y->map.ground[i].count) {
+                *why = "a pile on a remembered map"; return false;
+            }
+        if (x->whos != y->whos) { *why = "who is left in a remembered map"; return false; }
+        for (int i = 0; i < x->whos; i++)
+            if (x->who[i].x != y->who[i].x || x->who[i].y != y->who[i].y ||
+                x->who[i].hp != y->who[i].hp || x->who[i].def != y->who[i].def ||
+                x->who[i].beast != y->who[i].beast ||
+                SDL_strcmp(x->who[i].name, y->who[i].name) != 0) {
+                *why = "somebody in a remembered map"; return false;
+            }
+        if (SDL_memcmp(x->map.cell, y->map.cell,
+                       (size_t)x->map.w * (size_t)x->map.h * sizeof *x->map.cell) != 0) {
+            *why = "a remembered map's cells"; return false;
+        }
+    }
     *why = "";
     return true;
 }
@@ -5339,6 +5370,194 @@ static void walking_between_two_maps_takes_everything_with_you(void) {
     SDL_RemovePath(west_path);
 }
 
+// The item's own verification: a map you leave keeps what you did in it.
+static void a_map_you_leave_is_as_you_left_it(void) {
+    const char *near = author_linked_map("test_mem_a.ggmap", "The Near Field",
+                                         "test_mem_b.ggmap", 20, 12,
+                                         30, 8, "Aldith");
+    char near_path[1024];
+    SDL_strlcpy(near_path, near, sizeof near_path);
+    const char *far = author_linked_map("test_mem_b.ggmap", "The Far Field",
+                                        "test_mem_a.ggmap", 9, 8,
+                                        4, 8, "Beorn");
+    char far_path[1024];
+    SDL_strlcpy(far_path, far, sizeof far_path);
+
+    gg_game g;
+    CHECK(gg_game_new_from_map(&g, near_path, "Rememberer"),
+          "the near field would not open");
+
+    // Three things done in the near field, one of each kind the promise
+    // covers: something left on the floor, something taken off it, and
+    // somebody killed on it.
+    CHECK(gg_ground_drop(&g.map, 12, 9, GG_ITEM_SILVER, 3),
+          "the silver would not go on the ground");
+    CHECK(gg_ground_drop(&g.map, 13, 9, GG_ITEM_BREAD, 1),
+          "the bread would not go on the ground");
+
+    gg_actor *p = gg_player(&g);
+    p->x = 13;
+    p->y = 9;
+    gg_game_act(&g, GG_ACT_GET);
+    CHECK(gg_ground_at(&g.map, 13, 9) < 0, "the bread was not picked up");
+    const int loaves = gg_pack_count(&g, GG_ITEM_BREAD);
+    CHECK(loaves >= 1, "the bread did not reach the pack");
+
+    const int brigand = gg_spawn_named(&g, "BRIGAND", 15, 9);
+    CHECK(brigand > 0, "no brigand could be placed");
+    if (brigand > 0) {
+        // Named apart from the ones already haunting the field, so the check
+        // on the way back is about this one and not about a head count.
+        SDL_strlcpy(g.actor[brigand].name, "the marked brigand",
+                    sizeof g.actor[brigand].name);
+        // Killed properly, through the fight the game actually has, rather
+        // than by switching a flag off behind its back.
+        p = gg_player(&g);
+        p->x = 14;
+        p->y = 9;
+        p->level = 20;                  // so this ends inside the bound below
+        for (int swing = 0; swing < 400 && g.actor[brigand].active; swing++) {
+            g.actor[brigand].x = 15;
+            g.actor[brigand].y = 9;
+            gg_strike(&g, g.player, brigand);
+        }
+        CHECK(!g.actor[brigand].active, "the brigand would not fall");
+    }
+
+    // And somebody left alive, wounded, standing where they were last seen
+    // rather than where the map says they live.
+    int aldith = -1;
+    for (int i = 0; i < g.actors; i++)
+        if (SDL_strcmp(g.actor[i].name, "Aldith") == 0) aldith = i;
+    CHECK(aldith > 0, "Aldith is not in the near field");
+    if (aldith > 0) {
+        g.actor[aldith].x = 11;
+        g.actor[aldith].y = 14;
+        g.actor[aldith].hp = 7;
+        g.actor[aldith].schedn = 0;     // so nothing walks them off again
+    }
+
+    // How many are still on their feet here, so the return can be asked for
+    // the same number: what this remembers is not "everybody" and not
+    // "nobody".
+    int standing = 0;
+    for (int i = 0; i < g.actors; i++)
+        if (g.actor[i].active && g.actor[i].hostile) standing++;
+    CHECK(standing > 0, "nothing hostile was left alive to be remembered");
+
+    // Out and back.
+    p = gg_player(&g);
+    p->x = 29;
+    p->y = 8;
+    gg_game_act(&g, GG_ACT_E);
+    CHECK(g.want_travel, "the way out asked for nothing");
+    CHECK(gg_game_travel(&g, far_path, g.travel_x, g.travel_y),
+          "the crossing failed");
+    CHECK(SDL_strcmp(g.here, "test_mem_b.ggmap") == 0,
+          "the far field thinks it is '%s'", g.here);
+
+    // Something left in the far field too, so each map is asked to keep its
+    // own and not merely the last one.
+    CHECK(gg_ground_drop(&g.map, 6, 6, GG_ITEM_GOLD, 9),
+          "the gold would not go on the ground");
+
+    p = gg_player(&g);
+    p->x = 5;
+    p->y = 8;
+    gg_game_act(&g, GG_ACT_W);
+    CHECK(g.want_travel, "the way back asked for nothing");
+    CHECK(gg_game_travel(&g, near_path, g.travel_x, g.travel_y),
+          "the way back failed");
+    CHECK(SDL_strcmp(g.map.name, "The Near Field") == 0,
+          "came back to '%s'", g.map.name);
+
+    // The verification, in the plan's own words: the silver is where it was
+    // left.
+    const int pile = gg_ground_at(&g.map, 12, 9);
+    CHECK(pile >= 0, "the silver was not where it was left");
+    if (pile >= 0) {
+        CHECK(g.map.ground[pile].kind == GG_ITEM_SILVER &&
+              g.map.ground[pile].count == 3,
+              "the pile came back as %d of kind %d",
+              g.map.ground[pile].count, g.map.ground[pile].kind);
+    }
+    CHECK(gg_ground_at(&g.map, 13, 9) < 0,
+          "the bread grew back on the floor after it was picked up");
+    CHECK(gg_pack_count(&g, GG_ITEM_BREAD) == loaves,
+          "the bread that was picked up did not stay picked up");
+
+    int risen = 0, still_up = 0, aldiths = 0;
+    int found_aldith = -1;
+    for (int i = 0; i < g.actors; i++) {
+        if (!g.actor[i].active) continue;
+        if (g.actor[i].hostile) still_up++;
+        if (SDL_strcmp(g.actor[i].name, "the marked brigand") == 0) risen++;
+        if (SDL_strcmp(g.actor[i].name, "Aldith") == 0) {
+            aldiths++;
+            found_aldith = i;
+        }
+    }
+    CHECK(risen == 0, "the brigand that was killed is back on his feet");
+
+    // Nor is he carried back as an empty slot. A death leaves a hole in the
+    // actor array while the map is underfoot, and a world that remembered
+    // those would fill up with corpses one crossing at a time.
+    int ghosts = 0;
+    for (int i = 0; i < g.actors; i++)
+        if (!g.actor[i].active) ghosts++;
+    CHECK(ghosts == 0, "%d of the dead came back as empty slots", ghosts);
+    CHECK(still_up == standing,
+          "%d hostiles were left alive here and %d came back", standing, still_up);
+    CHECK(aldiths == 1, "the near field holds %d Aldiths", aldiths);
+    if (found_aldith >= 0) {
+        CHECK(g.actor[found_aldith].x == 11 && g.actor[found_aldith].y == 14,
+              "Aldith came back at %d,%d, not where she was left",
+              g.actor[found_aldith].x, g.actor[found_aldith].y);
+        CHECK(g.actor[found_aldith].hp == 7,
+              "Aldith's wound healed itself while nobody was looking (%d)",
+              g.actor[found_aldith].hp);
+    }
+
+    // A world's memory has to survive being put down. Saved here, loaded into
+    // a fresh game, and asked the same questions - including about the map
+    // that is not underfoot.
+    const char *who = "Rememberer";
+    wipe_saves(who);
+    CHECK(gg_save_write(&g, save_base(), who), "the save failed");
+
+    gg_game back;
+    SDL_zero(back);
+    CHECK(gg_save_read(&back, save_base(), who), "the load failed");
+
+    const char *why = "";
+    CHECK(games_match(&g, &back, &why),
+          "the resumed world differs in %s", why);
+    CHECK(back.visiteds == 1, "%d maps came back remembered, expected one",
+          back.visiteds);
+
+    // And the far field's gold is still there after the round trip through a
+    // file, which no amount of comparing two live games would prove.
+    p = gg_player(&back);
+    p->x = 29;
+    p->y = 8;
+    gg_game_act(&back, GG_ACT_E);
+    CHECK(gg_game_travel(&back, far_path, back.travel_x, back.travel_y),
+          "the crossing failed after loading");
+    const int gold = gg_ground_at(&back.map, 6, 6);
+    CHECK(gold >= 0, "the gold dropped in the far field did not survive a save");
+    if (gold >= 0)
+        CHECK(back.map.ground[gold].kind == GG_ITEM_GOLD &&
+              back.map.ground[gold].count == 9,
+              "the gold came back as %d of kind %d",
+              back.map.ground[gold].count, back.map.ground[gold].kind);
+
+    gg_game_free(&back);
+    gg_game_free(&g);
+    wipe_saves(who);
+    SDL_RemovePath(near_path);
+    SDL_RemovePath(far_path);
+}
+
 static void a_way_out_that_leads_nowhere_is_refused(void) {
     const char *path = author_linked_map("test_broken.ggmap", "Nowhere",
                                          "test_no_such_map.ggmap", 5, 5,
@@ -5634,6 +5853,7 @@ int main(void) {
     RUN(the_vale_has_a_story_that_can_be_reached);
 
     RUN(walking_between_two_maps_takes_everything_with_you);
+    RUN(a_map_you_leave_is_as_you_left_it);
     RUN(a_way_out_that_leads_nowhere_is_refused);
     RUN(the_editor_refuses_a_gate_nobody_can_reach);
 

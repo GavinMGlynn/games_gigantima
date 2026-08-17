@@ -535,6 +535,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
             { "spells",   GG_SCREEN_PLAY },
             { "journal",  GG_SCREEN_PLAY },
             { "travel",   GG_SCREEN_PLAY },
+            { "return",   GG_SCREEN_PLAY },
         };
         bool known = false;
         for (size_t k = 0; k < GG_COUNTOF(NAMED); k++)
@@ -835,6 +836,67 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
                                    app->game.travel_x, app->game.travel_y))
                     SDL_Log("gigantima: walked into %s", app->game.map.name);
             }
+        }
+
+        // Out and back again, which is a different claim from `travel`: not
+        // that the crossing works, but that the map behind you kept what you
+        // did in it. Something is put on the floor, the Avatar walks out of
+        // the map and back into it, and the pile has to still be lying where
+        // it was left. The item's own verification, run on the shipped world
+        // in the real binary rather than on a fixture.
+        if (app->screen_name && SDL_strcmp(app->screen_name, "return") == 0) {
+            int dx = -1, dy = -1;
+
+            // North to the way out, then south to the way back: the ordinary
+            // walk and the ordinary crossing, twice.
+            static const gg_action WAY[2] = { GG_ACT_N, GG_ACT_S };
+            for (int leg = 0; leg < 2; leg++) {
+                for (int i = 0; i < 120 && !app->game.want_travel; i++) {
+                    const uint32_t was = app->game.turn;
+                    gg_game_act(&app->game, WAY[leg]);
+                    if (app->game.turn == was) break;   // blocked; do not spin
+                }
+                if (!app->game.want_travel) {
+                    SDL_Log("gigantima: leg %d found no way out", leg + 1);
+                    break;
+                }
+
+                // On the way out, something is left on the last tile before
+                // the gate - which is the tile the way back comes out beside,
+                // so the frame taken at the end has it in it.
+                if (leg == 0) {
+                    const gg_actor *p = gg_player_const(&app->game);
+                    dx = p->from_x;
+                    dy = p->from_y;
+                    gg_ground_drop(&app->game.map, dx, dy, GG_ITEM_SILVER, 3);
+                    SDL_Log("gigantima: left 3 silver at %d,%d in %s",
+                            dx, dy, app->game.map.name);
+                }
+
+                char leaf[GG_MAP_NAME_MAX + 8];
+                SDL_snprintf(leaf, sizeof leaf, "maps/%s", app->game.travel_to);
+                if (!gg_game_travel(&app->game, gg_asset_path(leaf),
+                                    app->game.travel_x, app->game.travel_y))
+                    break;
+                SDL_Log("gigantima: walked into %s", app->game.map.name);
+            }
+
+            // A step clear of the gate, because the way back comes out
+            // directly below the tile the silver is on and the Avatar's head
+            // would be standing in front of it in the photograph.
+            gg_game_act(&app->game, GG_ACT_S);
+            // And let the step finish: the shot is taken from wherever the
+            // interpolation has got to, and a sprite mid-slide is still drawn
+            // on the tile it left.
+            for (int i = 0; i < GG_STEP_TICKS + 2; i++)
+                gg_game_animate(&app->game);
+
+            const int pile = dx >= 0 ? gg_ground_at(&app->game.map, dx, dy) : -1;
+            if (pile >= 0)
+                SDL_Log("gigantima: found %d silver still at %d,%d",
+                        app->game.map.ground[pile].count, dx, dy);
+            else
+                SDL_Log("gigantima: the silver left at %d,%d is gone", dx, dy);
         }
 
         // Learns what the vale has to teach and kills something, so the

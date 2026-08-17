@@ -86,6 +86,14 @@ typedef enum {
 // an unbounded queue is a leak.
 #define GG_EVENTS_MAX 16
 
+// How many maps a world may hold in mind at once. A map you have walked in is
+// kept as you left it - what you took off its floor, what you dropped on it,
+// who is no longer standing in it - rather than re-read from disk.
+//
+// Held on the heap rather than inside gg_game, because a gg_map is nine
+// kilobytes and the save loader builds a whole game on the stack.
+#define GG_VISITED_MAX 12
+
 // How far back the Avatar's footsteps are remembered. One per party slot, plus
 // a couple so the tail of the line is following a real path rather than the
 // leader's current tile.
@@ -117,6 +125,21 @@ typedef struct {
     uint8_t count;     // never zero: an empty slot is removed, not kept
 } gg_pack_slot;
 
+// One map as it was left, kept under the name a way out calls it by.
+//
+// The ground and the terrain are the map itself; the people are kept beside it
+// as whole actors rather than as the map's own placements, because a map
+// records who *lives* somewhere and this has to record who is *standing* there
+// - which is a different list once one of them has been wounded, has wandered,
+// or has fallen. The Avatar and the party are not in it: they are walking away
+// with you.
+typedef struct {
+    char      leaf[GG_MAP_NAME_MAX];
+    gg_map    map;
+    gg_actor *who;                     // exactly `whos` long, or nullptr
+    int       whos;
+} gg_visited;
+
 typedef struct {
     gg_map   map;
     gg_actor actor[GG_ACTORS_MAX];
@@ -125,6 +148,16 @@ typedef struct {
 
     gg_rng   rng;
     gg_mode  mode;
+
+    // Which map is under the Avatar's feet, by the name a way out calls it -
+    // the leaf of the file it came from. Empty for a generated world, which
+    // has no file and nowhere to go back to.
+    char here[GG_MAP_NAME_MAX];
+
+    // Maps walked in and left, as they were left. Allocated once and owned by
+    // the game; gg_game_free lets them go.
+    gg_visited *visited;
+    int         visiteds;
 
     // This world was made by the generator rather than read from a file. It
     // decides who the town is peopled with: the book's residents belong to a
@@ -256,10 +289,10 @@ void gg_game_free(gg_game *g);
 // RNG. What is replaced is the world: the map, the people who live in it, and
 // what is lying about in it.
 //
-// **A map you leave forgets what you did there.** It is re-read from disk on
-// the way back, so an item taken off the floor of one map and a brigand killed
-// in it are both undone by leaving and returning. Carrying every visited map in
-// the save is a named item in docs/COMPLETION_PLAN.md.
+// A map walked in and left is kept as it was left, so what you took off its
+// floor stays taken and who fell on it stays fallen. `path` is only read when
+// the map is one this world has not seen; a return journey costs no disk at
+// all. Up to GG_VISITED_MAX are remembered, oldest let go first.
 //
 // Returns false and changes nothing if the map cannot be read.
 bool gg_game_travel(gg_game *g, const char *path, int x, int y);

@@ -1232,6 +1232,14 @@ static void place_townsfolk(gg_game *g) {
     }
 }
 
+// The last component of a path, which is the name a way out calls a map by.
+static const char *leaf_of(const char *path) {
+    const char *slash = SDL_strrchr(path, '/');
+    const char *back = SDL_strrchr(path, '\\');
+    if (back && (!slash || back > slash)) slash = back;
+    return slash ? slash + 1 : path;
+}
+
 // Whoever lives in the map that is loaded.
 //
 // `book_may_supply` is true only for a *generated* world. The book's residents
@@ -1374,6 +1382,15 @@ void gg_game_rebind_actors(gg_game *g) {
         const gg_speaker *s = gg_dialogue_find(a->name);
         a->greeting = s ? s->greet : nullptr;
     }
+
+    // And everybody waiting in a map that is remembered but not underfoot -
+    // they walk back into the world without passing through a loader again.
+    for (int m = 0; m < g->visiteds; m++)
+        for (int i = 0; i < g->visited[m].whos; i++) {
+            gg_actor *a = &g->visited[m].who[i];
+            const gg_speaker *s = gg_dialogue_find(a->name);
+            a->greeting = s ? s->greet : nullptr;
+        }
 }
 
 bool gg_game_new(gg_game *g, uint32_t seed, const char *profile) {
@@ -1391,16 +1408,104 @@ bool gg_game_new_from_map(gg_game *g, const char *path, const char *profile) {
     g->talking_to = -1;
 
     if (!gg_map_load(&g->map, path)) return false;
+    // The name a way out would call this map by, so leaving and coming back
+    // knows which one it was.
+    SDL_strlcpy(g->here, leaf_of(path), sizeof g->here);
     // The map carries the seed it was generated from, so a loaded world still
     // has a reproducible RNG for whatever the simulation decides afterwards.
     gg_rng_seed(&g->rng, g->map.seed);
     return finish_new_game(g, profile);
 }
 
+// Where a map is kept in mind, or -1.
+static int visited_index(const gg_game *g, const char *leaf) {
+    for (int i = 0; i < g->visiteds; i++)
+        if (SDL_strcasecmp(g->visited[i].leaf, leaf) == 0) return i;
+    return -1;
+}
+
+static void visited_free(gg_visited *v) {
+    gg_map_free(&v->map);
+    SDL_free(v->who);
+    SDL_zerop(v);
+}
+
+// Puts the map now under the Avatar's feet away, as it is. Ownership of its
+// cells and of the people standing in it moves into `visited`; the caller must
+// not free them afterwards.
+static void stash_here(gg_game *g) {
+    if (!g->here[0] || !g->map.cell) return;
+    if (!g->visited) {
+        g->visited = SDL_calloc(GG_VISITED_MAX, sizeof *g->visited);
+        if (!g->visited) return;         // no room to remember; re-read instead
+        g->visiteds = 0;
+    }
+
+    // Everybody still standing here: not the Avatar, not walking away with
+    // them, and still alive. Whoever fell is simply not written down, which is
+    // the whole of "who fell on it stays fallen".
+    int staying = 0;
+    for (int i = 0; i < g->actors; i++)
+        if (i != g->player && g->actor[i].active &&
+            g->actor[i].party == GG_NOT_IN_PARTY) staying++;
+
+    gg_actor *who = nullptr;
+    if (staying > 0) {
+        who = SDL_calloc((size_t)staying, sizeof *who);
+        if (!who) return;                // as above: forget rather than lie
+        int n = 0;
+        for (int i = 0; i < g->actors && n < staying; i++) {
+            if (i == g->player || !g->actor[i].active ||
+                g->actor[i].party != GG_NOT_IN_PARTY) continue;
+            who[n] = g->actor[i];
+            // Mid-stride is not a state to keep: the slide belongs to the
+            // frame it was drawn in, and this map will not be drawn again for
+            // a while. They arrive standing on the tile they were walking to.
+            who[n].from_x = who[n].x;
+            who[n].from_y = who[n].y;
+            who[n].step = 0;
+            n++;
+        }
+    }
+
+    // The map's own placements have been superseded by that list, and leaving
+    // them would put a second copy of everybody on the floor on the way back.
+    g->map.actors = 0;
+
+    int at = visited_index(g, g->here);
+    if (at < 0) {
+        if (g->visiteds >= GG_VISITED_MAX) {
+            // Full. The oldest is let go, which is the one least likely to be
+            // walked back into - and losing it costs a re-read, not a crash.
+            visited_free(&g->visited[0]);
+            for (int i = 1; i < g->visiteds; i++) g->visited[i - 1] = g->visited[i];
+            g->visiteds--;
+        }
+        at = g->visiteds++;
+    } else {
+        visited_free(&g->visited[at]);
+    }
+    SDL_strlcpy(g->visited[at].leaf, g->here, GG_MAP_NAME_MAX);
+    g->visited[at].map = g->map;
+    g->visited[at].who = who;
+    g->visited[at].whos = staying;
+    SDL_zero(g->map);                    // ownership has moved
+}
+
 bool gg_game_travel(gg_game *g, const char *path, int x, int y) {
-    gg_map fresh;
-    SDL_zero(fresh);
-    if (!gg_map_load(&fresh, path)) {
+    const char *leaf = leaf_of(path);
+
+    // A map already in mind is taken back out rather than re-read, which is
+    // what makes a return journey find things as they were left.
+    gg_visited taken;
+    SDL_zero(taken);
+    const int known = visited_index(g, leaf);
+    if (known >= 0) {
+        taken = g->visited[known];
+        for (int i = known + 1; i < g->visiteds; i++)
+            g->visited[i - 1] = g->visited[i];
+        g->visiteds--;
+    } else if (!gg_map_load(&taken.map, path)) {
         gg_log(g, "The way is shut.");
         g->want_travel = false;
         return false;
@@ -1419,8 +1524,14 @@ bool gg_game_travel(gg_game *g, const char *path, int x, int y) {
     // The world is replaced; everything about the party is not. The pack, the
     // words, the quests, the flags, the clock and the RNG all live on the game
     // rather than on the map, so they simply are not touched here.
+    //
+    // The map being left is put away rather than freed, so walking back into
+    // it finds it as it was left.
+    stash_here(g);
     gg_map_free(&g->map);
-    g->map = fresh;
+    g->map = taken.map;
+    SDL_zero(taken.map);
+    SDL_strlcpy(g->here, leaf, sizeof g->here);
     g->actors = 0;
     g->talking_to = -1;
     g->speaker = nullptr;
@@ -1476,8 +1587,16 @@ bool gg_game_travel(gg_game *g, const char *path, int x, int y) {
     g->trailn = 0;
     trail_push(g, g->actor[0].x, g->actor[0].y);
 
-    // And whoever lives here - the map's own people and nobody else.
-    populate_from_map(g, false);
+    // And whoever is here. A map walked in before hands back the people who
+    // were standing in it when it was left, wounds and all; one being seen for
+    // the first time hands back whoever the map says lives there.
+    if (taken.whos > 0) {
+        for (int i = 0; i < taken.whos && g->actors < GG_ACTORS_MAX; i++)
+            g->actor[g->actors++] = taken.who[i];
+    } else {
+        populate_from_map(g, false);
+    }
+    SDL_free(taken.who);
 
     g->want_travel = false;
     g->travel_to[0] = '\0';
@@ -1489,4 +1608,10 @@ void gg_game_free(gg_game *g) {
     if (!g) return;
     gg_path_free(&g->path);
     gg_map_free(&g->map);
+    if (g->visited) {
+        for (int i = 0; i < g->visiteds; i++) visited_free(&g->visited[i]);
+        SDL_free(g->visited);
+        g->visited = nullptr;
+        g->visiteds = 0;
+    }
 }

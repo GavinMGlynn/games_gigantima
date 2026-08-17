@@ -209,12 +209,14 @@ that is reachable while content is C, so the editor comes before the content.
       *Verification: walking between two authored maps preserves party, clock,
       inventory, words learned, quest progress and the RNG — and a way out that
       leads nowhere leaves the world exactly as it was.*
-- [ ] **A world that remembers.** Today a map is re-read from disk on the way
-      back into it, so an item taken off one map's floor and a brigand killed on
-      it are both undone by leaving and returning. Every visited map has to be
-      carried in the save.
-      *Verification: drop something in one map, cross to another and back, and
-      find it where it was left.*
+- [x] **A world that remembers.** A map walked in and left is kept as it was
+      left — what you took off its floor stays taken, who fell on it stays
+      fallen, and who is still standing is where you last saw them, wounds and
+      all. Up to a dozen are carried in the save, so this survives closing the
+      game.
+      *Verification: silver is left on the road in the vale, the Avatar walks
+      out to the standing stones and back, and the frame shows it still lying
+      there. The same round trip is checked over a save file.*
 - [ ] **The main storyline.** *Verification: playable start to finish.*
 
 ## Phase 4 — Fit and finish

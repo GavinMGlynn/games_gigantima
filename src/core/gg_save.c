@@ -239,6 +239,11 @@ bool gg_save_write(const gg_game *g, const char *base, const char *name) {
         return false;
     }
 
+    // Copied into a zeroed field before writing, never written from the
+    // game's own buffer: a fixed-width field is written at its full width.
+    char here[GG_MAP_NAME_MAX] = { 0 };
+    SDL_strlcpy(here, g->here, sizeof here);
+
     bool ok = SDL_WriteIO(io, GG_SAVE_MAGIC, 8) == 8;
     ok = ok && gg_io_w32(io, GG_SAVE_VERSION);
 
@@ -292,9 +297,24 @@ bool gg_save_write(const gg_game *g, const char *base, const char *name) {
     ok = ok && gg_io_w32(io, (uint32_t)g->actors);
     for (int i = 0; ok && i < g->actors; i++) ok = actor_write(io, &g->actor[i]);
 
-    // The map last, because it is by far the largest part and a reader that
-    // fails earlier need not have touched it.
+    // The maps last, because they are by far the largest part and a reader
+    // that fails earlier need not have touched them. The one under the
+    // Avatar's feet, and then every one walked in and left as it was left -
+    // without these a saved world forgets everything you did anywhere but
+    // where you are standing.
+    ok = ok && SDL_WriteIO(io, here, sizeof here) == sizeof here;
     ok = ok && gg_map_write(&g->map, io);
+
+    ok = ok && gg_io_w32(io, (uint32_t)g->visiteds);
+    for (int i = 0; ok && i < g->visiteds; i++) {
+        char leaf[GG_MAP_NAME_MAX] = { 0 };
+        SDL_strlcpy(leaf, g->visited[i].leaf, sizeof leaf);
+        ok = SDL_WriteIO(io, leaf, sizeof leaf) == sizeof leaf &&
+             gg_map_write(&g->visited[i].map, io) &&
+             gg_io_w32(io, (uint32_t)g->visited[i].whos);
+        for (int k = 0; ok && k < g->visited[i].whos; k++)
+            ok = actor_write(io, &g->visited[i].who[k]);
+    }
 
     SDL_CloseIO(io);
     if (!ok) {
@@ -424,12 +444,47 @@ bool gg_save_read(gg_game *g, const char *base, const char *name) {
     for (uint32_t i = 0; ok && i < actors; i++) ok = actor_read(io, &tmp.actor[i]);
     tmp.actors = ok ? (int)actors : 0;
 
+    ok = ok && SDL_ReadIO(io, tmp.here, GG_MAP_NAME_MAX) == GG_MAP_NAME_MAX;
+    tmp.here[GG_MAP_NAME_MAX - 1] = '\0';
     ok = ok && gg_map_read(&tmp.map, io);
+
+    uint32_t visiteds = 0;
+    ok = ok && gg_io_r32(io, &visiteds) && visiteds <= GG_VISITED_MAX;
+    if (ok && visiteds > 0) {
+        tmp.visited = SDL_calloc(GG_VISITED_MAX, sizeof *tmp.visited);
+        ok = tmp.visited != nullptr;
+    }
+    for (uint32_t i = 0; ok && i < visiteds; i++) {
+        ok = SDL_ReadIO(io, tmp.visited[i].leaf, GG_MAP_NAME_MAX) == GG_MAP_NAME_MAX;
+        tmp.visited[i].leaf[GG_MAP_NAME_MAX - 1] = '\0';
+        ok = ok && gg_map_read(&tmp.visited[i].map, io);
+        // Counted as read as soon as its map exists, so a failure in the
+        // people below still frees the map above it.
+        if (ok) tmp.visiteds = (int)(i + 1);
+
+        uint32_t whos = 0;
+        ok = ok && gg_io_r32(io, &whos) && whos <= GG_ACTORS_MAX;
+        if (ok && whos > 0) {
+            tmp.visited[i].who = SDL_calloc(whos, sizeof *tmp.visited[i].who);
+            ok = tmp.visited[i].who != nullptr;
+        }
+        for (uint32_t k = 0; ok && k < whos; k++) {
+            ok = actor_read(io, &tmp.visited[i].who[k]);
+            if (ok) tmp.visited[i].whos = (int)(k + 1);
+        }
+    }
     SDL_CloseIO(io);
 
     if (!ok) {
         SDL_Log("gigantima: %s is truncated or corrupt", path);
         gg_map_free(&tmp.map);
+        // Everything read before the failure, or a bad save leaks every map it
+        // managed to get through.
+        for (int i = 0; i < tmp.visiteds; i++) {
+            gg_map_free(&tmp.visited[i].map);
+            SDL_free(tmp.visited[i].who);
+        }
+        SDL_free(tmp.visited);
         return false;
     }
 
@@ -442,6 +497,11 @@ bool gg_save_read(gg_game *g, const char *base, const char *name) {
 
     if (!gg_path_init(&tmp.path, tmp.map.w, tmp.map.h)) {
         gg_map_free(&tmp.map);
+        for (int i = 0; i < tmp.visiteds; i++) {
+            gg_map_free(&tmp.visited[i].map);
+            SDL_free(tmp.visited[i].who);
+        }
+        SDL_free(tmp.visited);
         return false;
     }
 
