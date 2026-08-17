@@ -15,11 +15,21 @@
 #     notice N           how near you must come before it cares
 #     flees N            health below which it would rather be elsewhere
 #     loot ID MIN MAX PC  a line of its loot table, PC per cent of the time
-#     haunts N           how many the generator puts in a map
+#     haunts N           how many of it a world holds, put down where there is room
+#     haunts N MAP       how many that map holds, the first time it is walked into
+#     haunts N MAP X Y   and standing on that tile - which is how a story places
+#                        its villain without a line of C knowing where he is
 #
 # This art set has no monsters in it at all - it is people, head to foot - so
 # the vale's trouble is people. A caravan that never arrived is better served
 # by that than by a wolf.
+#
+# **The road arms you.** The Avatar leaves the vale with no weapon; what is
+# carried up the north road is taken off the brigands who are on it, which is
+# why they drop a hammer and a shield and why the man at the end of it is
+# beatable by somebody who fought their way there and not by somebody who ran
+# past. That balance is these numbers and nothing else - see
+# a_party_that_walked_the_road_can_beat_the_man_at_the_end_of_it.
 
 creature BRIGAND
   name a brigand
@@ -33,7 +43,7 @@ creature BRIGAND
   notice 8
   flees 4
   loot GOLD 6 14 100
-  loot BREAD 1 1 30
+  loot HAMMER 1 1 50
   haunts 4
 
 creature OUTLAW
@@ -48,7 +58,7 @@ creature OUTLAW
   notice 10
   flees 3
   loot STONE 2 4 100
-  loot NIGHTSHADE 1 1 25
+  loot SHIELD 1 1 40
   haunts 2
 
 # The one that throws. Slower and softer than the others, and dangerous at a
@@ -67,3 +77,21 @@ creature SLINGER
   loot STONE 3 6 100
   loot GOLD 2 6 50
   haunts 2
+
+# The one the story is about. He is not a wandering brigand: he is at the
+# standing stones, in the middle of the ring, and the caravan's silver is on
+# him. One of him, and he does not run.
+creature CHIEF
+  name Rugar, who took the caravan
+  art BRIGAND
+  health 28
+  level 2
+  speed 100
+  damage 4
+  guard 1
+  reach 1
+  notice 12
+  flees 0
+  loot SILVER 3 3 100
+  loot GOLD 20 40 100
+  haunts 1 stones.ggmap 24 22

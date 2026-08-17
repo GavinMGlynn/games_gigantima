@@ -134,8 +134,14 @@ static inline int gg_dist_cheb(int ax, int ay, int bx, int by) {
 // their days, and gg_world.h is below gg_actor.h - putting them there made the
 // two headers include each other, which is a compile error wearing a design
 // mistake's clothes.
-// A place: a region's name, and the town a person says they live in.
+// A place: a region's name, and the town a person says they live in. The same
+// width as a map's name, because both are things one file refers to another by.
 #define GG_PLACE_MAX      48
+#define GG_MAP_NAME_MAX   48
+
+// A flag: one fact the story remembers, by name. Here rather than beside the
+// quests because the dialogue book raises them too.
+#define GG_FLAG_MAX       24
 
 #define GG_ACTOR_NAME_MAX 24
 #define GG_SCHEDULE_MAX   6

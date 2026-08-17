@@ -10,6 +10,7 @@
 #       when COND         what has to be true to enter it
 #       journal TEXT      what the journal says once it is
 #       sets FLAG         a flag raised on entering, for other quests to see
+#       ends              entering it is the end of the story
 #
 # The conditions are things the world already knows how to answer:
 #
@@ -18,11 +19,16 @@
 #   when flag NAME        some other stage raised it
 #   when slain N          N have fallen to the party
 #   when party N          N walk with the Avatar
+#   when at MAP           the Avatar is standing in that map
+#   when at MAP X Y R     ...and within R tiles of that spot in it
 #
 # A `when` with nothing after it follows the stage before it on the same turn,
 # which is how a stage that only writes a line is written. The *first* stage of
 # a quest may not do that - it would begin the moment a game did, which is a
 # quest nobody was given.
+#
+# The line on the stage marked `ends` is what the game says at the end, so the
+# closing words of the story are a line in this file like every other line.
 
 quest CARAVAN
   name The Missing Caravan
@@ -44,6 +50,25 @@ quest CARAVAN
     when knows north
     journal Nobody has come down that road since. Somebody must go and look.
     sets caravan_understood
+  stage
+    when at stones.ggmap
+    journal The stones stand in a ring, and the grass inside them is beaten flat.
+    sets stood_among_the_stones
+  stage
+    when at stones.ggmap 24 22 6
+    journal A man waits in the middle of the ring, and he is not surprised to see thee.
+  stage
+    when has SILVER 3
+    journal Rugar is down, and the caravan's silver is in thy pack. Take it home.
+    sets caravan_avenged
+  stage
+    when at vale.ggmap
+    journal Thou art home with it. Iolo is at his stall; ask him of the SILVER.
+  stage
+    when flag silver_returned
+    journal The caravan's silver is on Iolo's counter, the road north is open, and the vale owes thee a debt it will be telling for years.
+    sets caravan_returned
+    ends
 
 quest COMPANY
   name Not Alone

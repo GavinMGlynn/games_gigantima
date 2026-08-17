@@ -5208,7 +5208,9 @@ static void the_vale_has_a_story_that_can_be_reached(void) {
         }
     }
 
-    // And every flag a quest waits on has to be one some stage raises.
+    // And every flag a quest waits on has to be one something raises - a stage
+    // of some quest, or a topic somebody will answer to. Both are sources now
+    // that handing a thing over is how the story is settled.
     char raised[GG_FLAGS_MAX][GG_FLAG_MAX];
     int r = 0;
     for (int i = 0; i < gg_quests_count(); i++) {
@@ -5216,6 +5218,12 @@ static void the_vale_has_a_story_that_can_be_reached(void) {
         for (int k = 0; k < q->stages; k++)
             if (q->stage[k].sets[0] && r < GG_FLAGS_MAX)
                 SDL_strlcpy(raised[r++], q->stage[k].sets, GG_FLAG_MAX);
+    }
+    for (int i = 0; i < gg_dialogue_speakers(); i++) {
+        const gg_speaker *sp = gg_dialogue_speaker(i);
+        for (int t = 0; t < sp->topics; t++)
+            if (sp->topic[t].raises[0] && r < GG_FLAGS_MAX)
+                SDL_strlcpy(raised[r++], sp->topic[t].raises, GG_FLAG_MAX);
     }
 
     for (int i = 0; i < gg_quests_count(); i++) {
@@ -5238,8 +5246,28 @@ static void the_vale_has_a_story_that_can_be_reached(void) {
                 bool ok = false;
                 for (int t = 0; t < r; t++)
                     if (SDL_strcasecmp(raised[t], s->word) == 0) ok = true;
-                CHECK(ok, "'%s' waits on the flag %s, which no stage raises",
+                CHECK(ok, "'%s' waits on the flag %s, which nothing raises",
                       q->name, s->word);
+            }
+            // A stage that waits on a place has to name a map that ships, or
+            // it is a stage nobody can ever stand in.
+            if (s->what == GG_WHEN_AT) {
+                char leaf[GG_MAP_NAME_MAX + 8];
+                SDL_snprintf(leaf, sizeof leaf, "maps/%s", s->where);
+                gg_map m;
+                SDL_zero(m);
+                const bool there = gg_map_load(&m, gg_asset_path(leaf));
+                CHECK(there, "'%s' waits in %s, which is not a map that ships",
+                      q->name, s->where);
+                if (there) {
+                    // And at a tile inside it, or the story asks the player to
+                    // stand off the edge of the world.
+                    if (s->radius > 0)
+                        CHECK(s->wx >= 0 && s->wx < m.w && s->wy >= 0 && s->wy < m.h,
+                              "'%s' waits at %d,%d, which is outside %s",
+                              q->name, s->wx, s->wy, s->where);
+                    gg_map_free(&m);
+                }
             }
         }
     }
@@ -5431,6 +5459,348 @@ static void walking_between_two_maps_takes_everything_with_you(void) {
 }
 
 // The item's own verification: a map you leave keeps what you did in it.
+// ---------------------------------------------------------------------------
+// The whole story
+// ---------------------------------------------------------------------------
+// Stands the Avatar next to somebody and asks them every word they will answer
+// to, once each. The real machinery throughout: the conversation is entered by
+// facing them and talking, and each word is asked by putting the cursor on it
+// and asking - which is what the two keys do.
+static void ask_everything(gg_game *g, int who) {
+    gg_actor *p = gg_player(g);
+    const gg_actor *them = &g->actor[who];
+
+    // Beside them and facing them. A test may put the Avatar down where it
+    // likes; what it must not do is invent a conversation that the game would
+    // not have started.
+    p->x = (int16_t)them->x;
+    p->y = (int16_t)(them->y + 1);
+    p->from_x = p->x;
+    p->from_y = p->y;
+    p->facing = GG_FACE_UP;
+
+    gg_game_act(g, GG_ACT_TALK);
+    if (g->mode != GG_MODE_CONVERSE) return;
+
+    // Every word once. The list is rebuilt whenever one of them teaches
+    // something, so this walks it by index and re-reads the count each time.
+    for (int i = 0; i < GG_TOPICS_MAX && i < g->askables; i++) {
+        g->ask_cursor = i;
+        gg_conversation_ask(g);
+        if (g->mode != GG_MODE_CONVERSE) return;   // the story ended mid-word
+    }
+    if (g->mode == GG_MODE_CONVERSE) gg_game_act(g, GG_ACT_WAIT);
+}
+
+// Asks the whole town, twice over: what Nystul teaches is what makes Gwenno
+// worth talking to, so one sweep is not enough for a rumour to cross a square.
+static void ask_the_town(gg_game *g) {
+    for (int sweep = 0; sweep < 3; sweep++)
+        for (int i = 0; i < g->actors; i++) {
+            if (i == g->player || !g->actor[i].active || g->actor[i].hostile)
+                continue;
+            if (!gg_dialogue_find(g->actor[i].name)) continue;
+            ask_everything(g, i);
+            if (g->mode == GG_MODE_ENDING) return;
+        }
+}
+
+// "Playable" has to mean winnable, not merely reachable: a story that walks the
+// player to a man who kills them every time is a story with no ending in it.
+//
+// So this fights the fight, twenty times over on twenty seeds, with what the
+// road actually hands you - a hammer off a brigand, a shield off an outlaw,
+// and the two companions the vale offers - and counts how often the party is
+// left standing. Every number in it is a line in bestiary.txt.
+// Fights Rugar twenty times over on twenty seeds and returns how many the
+// party is left standing after. `prepared` is the difference between a player
+// who fought their way up the north road - a hammer off a brigand, a shield
+// off an outlaw, and the two companions the vale offers - and one who ran
+// past everything.
+static int fights_won_against_rugar(bool prepared) {
+    int won = 0;
+    for (uint32_t seed = 1; seed <= 20; seed++) {
+        gg_game g;
+        CHECK(gg_game_new_from_map(&g, gg_asset_path("maps/vale.ggmap"),
+                                   "Fighter"), "the vale would not open");
+
+        if (prepared) {
+            // Recruited the way a player recruits: by asking everybody in the
+            // vale everything, which is what makes the two with a `joins`
+            // topic come along.
+            ask_the_town(&g);
+            CHECK(gg_party_size(&g) == 2, "the vale sent %d along, expected two",
+                  gg_party_size(&g));
+
+            // And armed the way a player is armed: with two things a brigand
+            // and an outlaw drop, put in the pack and readied through the
+            // pack's own action rather than granted as a stat.
+            gg_pack_add(&g, GG_ITEM_HAMMER, 1);
+            gg_pack_add(&g, GG_ITEM_SHIELD, 1);
+            g.pack_cursor = gg_pack_find(&g, GG_ITEM_HAMMER);
+            g.mode = GG_MODE_PACK;
+            gg_game_act(&g, GG_ACT_EQUIP);
+            g.pack_cursor = gg_pack_find(&g, GG_ITEM_SHIELD);
+            gg_game_act(&g, GG_ACT_EQUIP);
+            g.mode = GG_MODE_PLAY;
+            CHECK(gg_attack_power(&g, g.player) >= 5,
+                  "the hammer is not in hand (attack %d)",
+                  gg_attack_power(&g, g.player));
+            CHECK(gg_guard_power(&g, g.player) >= 3,
+                  "the shield is not on the arm (guard %d)",
+                  gg_guard_power(&g, g.player));
+        }
+
+        // Up the road, through the real way out.
+        gg_actor *p = gg_player(&g);
+        p->x = (int16_t)g.map.portal[0].x;
+        p->y = (int16_t)(g.map.portal[0].y + 1);
+        p->from_x = p->x;
+        p->from_y = p->y;
+        gg_game_act(&g, GG_ACT_N);
+        CHECK(gg_game_travel(&g, gg_asset_path("maps/stones.ggmap"),
+                             g.travel_x, g.travel_y), "the crossing failed");
+
+        // A seed apiece, so twenty fights are twenty fights and not one fight
+        // twenty times.
+        gg_rng_seed(&g.rng, seed * 7919u);
+
+        int rugar = -1;
+        for (int i = 0; i < g.actors; i++)
+            if (g.actor[i].active && g.actor[i].hostile) rugar = i;
+        CHECK(rugar > 0, "Rugar is not in the ring");
+        if (rugar < 0) { gg_game_free(&g); break; }
+
+        // Walk at him and keep walking: bumping an enemy is a blow, so this is
+        // a player who closes and fights, which is the fight the story sets up.
+        // Through the pathfinder, because the ring of stones is between them.
+        int turns = 0;
+        while (turns < 400 && g.mode == GG_MODE_PLAY && g.actor[rugar].active) {
+            const gg_actor *me = gg_player_const(&g);
+            int nx = 0, ny = 0;
+            if (!gg_step_toward(&g, g.player, g.actor[rugar].x,
+                                g.actor[rugar].y, &nx, &ny)) break;
+            gg_game_act(&g, gg_action_toward(nx - me->x, ny - me->y));
+            turns++;
+        }
+        CHECK(turns < 400, "a fight ran to the bound without ending");
+
+        if (!g.actor[rugar].active && g.mode != GG_MODE_GAMEOVER) won++;
+        gg_game_free(&g);
+    }
+    return won;
+}
+
+// "Playable" has to mean winnable, not merely reachable: a story that walks the
+// player up to a man who kills them every time is a story with no ending in it.
+// And it has to mean *earned*, or the road between is decoration.
+//
+// Both halves are measured rather than argued, on the shipped content, and
+// every number they depend on is a line in assets/bestiary.txt.
+static void a_party_that_walked_the_road_can_beat_the_man_at_the_end_of_it(void) {
+    CHECK(gg_bestiary_load(gg_asset_path("bestiary.txt")), "no bestiary");
+    CHECK(gg_dialogue_load(gg_asset_path("dialogue.txt")), "no book");
+
+    const int prepared = fights_won_against_rugar(true);
+    const int alone    = fights_won_against_rugar(false);
+
+    // Reported whether or not they pass: these are the two numbers that say
+    // whether the story is beatable and whether beating it takes anything, and
+    // a green tick that hides them is not much use to whoever next changes a
+    // line in the bestiary.
+    SDL_Log("gigantima: Rugar loses %d of 20 to a party that came prepared, "
+            "and %d of 20 to one that did not", prepared, alone);
+
+    // Most of the time, not always: a fight nobody can lose is not a fight.
+    CHECK(prepared >= 14, "a prepared party won only %d of 20; the man at the "
+          "end of the road is too strong", prepared);
+    // And walking up unarmed and alone should not be the same story.
+    CHECK(alone <= prepared - 4, "coming prepared is worth %d fights of 20, "
+          "which is not enough for the road between to mean anything",
+          prepared - alone);
+
+    restore_bestiary();
+    restore_dialogue();
+}
+
+// The plan's own verification for the storyline: playable start to finish.
+//
+// Every step is the game's own - words are learned by asking, the crossing is
+// the crossing, the fight is the fight and the ending is a topic handed over.
+// The Avatar is teleported between them, because walking forty tiles is
+// already pinned by its own tests and doing it again here would only make this
+// slow and flaky.
+static void the_whole_story_can_be_played_from_start_to_finish(void) {
+    CHECK(gg_dialogue_load(gg_asset_path("dialogue.txt")), "no book");
+    CHECK(gg_quests_load(gg_asset_path("quests.txt")), "no quests");
+    CHECK(gg_bestiary_load(gg_asset_path("bestiary.txt")), "no bestiary");
+
+    gg_game g;
+    CHECK(gg_game_new_from_map(&g, gg_asset_path("maps/vale.ggmap"), "Hero"),
+          "the vale would not open");
+
+    const int caravan = gg_quest_find("CARAVAN");
+    CHECK(caravan >= 0, "there is no caravan quest");
+    if (caravan < 0) { gg_game_free(&g); return; }
+    CHECK(g.quest[caravan] == 0, "the story had begun before it began");
+
+    // --- the town ---------------------------------------------------------
+    ask_the_town(&g);
+    gg_quests_tick(&g);
+
+    CHECK(gg_knows(&g, "caravan"), "nobody in the vale mentioned the caravan");
+    CHECK(gg_knows(&g, "north"), "the road north was never named");
+    CHECK(gg_knows(&g, "silver"), "nobody said what to look for");
+    CHECK(gg_flag(&g, "caravan_understood"),
+          "asking the whole town did not add up to a reason to leave");
+    CHECK(gg_party_size(&g) > 0, "nobody in the vale would come along");
+
+    // The vale arms whoever asks: a hammer from Iolo and a shield from the
+    // gate. One each, though the whole town was asked three times over - a
+    // topic that gives is not a purse that never empties.
+    CHECK(gg_pack_count(&g, GG_ITEM_HAMMER) == 1,
+          "asking around produced %d hammers",
+          gg_pack_count(&g, GG_ITEM_HAMMER));
+    CHECK(gg_pack_count(&g, GG_ITEM_SHIELD) == 1,
+          "asking around produced %d shields",
+          gg_pack_count(&g, GG_ITEM_SHIELD));
+
+    // Standing in the vale is not standing at the stones. Without this the
+    // rest of the story would advance while the Avatar is still in the market.
+    CHECK(!gg_flag(&g, "stood_among_the_stones"),
+          "the stones were reached without leaving the vale");
+
+    // --- the road north ---------------------------------------------------
+    CHECK(g.map.portals > 0, "the vale has no way out");
+    gg_actor *p = gg_player(&g);
+    p->x = (int16_t)g.map.portal[0].x;
+    p->y = (int16_t)(g.map.portal[0].y + 1);
+    p->from_x = p->x;
+    p->from_y = p->y;
+    gg_game_act(&g, GG_ACT_N);
+    CHECK(g.want_travel, "the way out of the vale asked for nothing");
+    CHECK(gg_game_travel(&g, gg_asset_path("maps/stones.ggmap"),
+                         g.travel_x, g.travel_y), "the crossing failed");
+    gg_quests_tick(&g);
+    CHECK(gg_flag(&g, "stood_among_the_stones"),
+          "arriving at the stones went unremarked");
+    // The way in is twenty tiles from the ring, and the stage that waits in
+    // the ring has to still be waiting.
+    CHECK(g.quest[caravan] == 6, "the story is at stage %u on arrival; the "
+          "meeting in the ring did not wait to be walked to",
+          g.quest[caravan]);
+
+    // --- the man in the ring ---------------------------------------------
+    int rugar = -1;
+    for (int i = 0; i < g.actors; i++)
+        if (g.actor[i].active && g.actor[i].beast &&
+            gg_bestiary_at(g.actor[i].beast) &&
+            SDL_strcasecmp(gg_bestiary_at(g.actor[i].beast)->id, "CHIEF") == 0)
+            rugar = i;
+    CHECK(rugar > 0, "there is nobody in the ring to answer for the caravan");
+    if (rugar < 0) { gg_game_free(&g); restore_dialogue(); restore_quests();
+                     restore_bestiary(); return; }
+
+    // Near enough to see him, which is a stage of its own.
+    p = gg_player(&g);
+    p->x = (int16_t)g.actor[rugar].x;
+    p->y = (int16_t)(g.actor[rugar].y + 2);
+    p->from_x = p->x;
+    p->from_y = p->y;
+    gg_quests_tick(&g);
+    CHECK(g.quest[caravan] >= 7, "the meeting in the ring was not reached "
+          "(stage %u)", g.quest[caravan]);
+
+    // The fight, struck properly - every blow through gg_game_act, and Rugar
+    // striking back on his own turns. The Avatar is kept on his feet between
+    // swings and given the level to land them: this pins that the story can be
+    // played through, not that it is winnable at level one, which is a matter
+    // of balance and belongs to a test about balance.
+    gg_player(&g)->level = 20;
+    for (int swing = 0; swing < 600 && g.actor[rugar].active; swing++) {
+        gg_actor *me = gg_player(&g);
+        me->hp = me->hp_max;
+        me->x = (int16_t)g.actor[rugar].x;
+        me->y = (int16_t)(g.actor[rugar].y + 1);
+        me->facing = GG_FACE_UP;
+        gg_game_act(&g, GG_ACT_FIGHT);
+    }
+    CHECK(!g.actor[rugar].active, "Rugar could not be brought down");
+
+    // What he was carrying, off the ground and into the pack.
+    const int where = gg_ground_at(&g.map, g.actor[rugar].x, g.actor[rugar].y);
+    CHECK(where >= 0, "Rugar left nothing where he fell");
+    gg_player(&g)->x = g.actor[rugar].x;
+    gg_player(&g)->y = g.actor[rugar].y;
+    for (int i = 0; i < 4; i++) gg_game_act(&g, GG_ACT_GET);
+    CHECK(gg_pack_count(&g, GG_ITEM_SILVER) >= 3,
+          "the caravan's silver is not in the pack (%d of it)",
+          gg_pack_count(&g, GG_ITEM_SILVER));
+    gg_quests_tick(&g);
+    CHECK(gg_flag(&g, "caravan_avenged"), "taking the silver settled nothing");
+
+    // --- home again -------------------------------------------------------
+    CHECK(g.map.portals > 0, "there is no way back from the stones");
+    p = gg_player(&g);
+    p->x = (int16_t)g.map.portal[0].x;
+    p->y = (int16_t)(g.map.portal[0].y - 1);
+    p->from_x = p->x;
+    p->from_y = p->y;
+    gg_game_act(&g, GG_ACT_S);
+    CHECK(g.want_travel, "the way back asked for nothing");
+    CHECK(gg_game_travel(&g, gg_asset_path("maps/vale.ggmap"),
+                         g.travel_x, g.travel_y), "the way back failed");
+    gg_quests_tick(&g);
+
+    int iolo = -1;
+    for (int i = 0; i < g.actors; i++)
+        if (SDL_strcmp(g.actor[i].name, "Iolo") == 0) iolo = i;
+    CHECK(iolo > 0, "Iolo is not at his stall");
+    if (iolo > 0) {
+        CHECK(g.mode != GG_MODE_ENDING,
+              "the story ended by walking into town rather than by finishing it");
+        ask_everything(&g, iolo);
+    }
+
+    // --- the end ----------------------------------------------------------
+    CHECK(g.story_over, "the story did not end");
+    CHECK(g.mode == GG_MODE_ENDING, "the world is in mode %d, not the ending",
+          (int)g.mode);
+    CHECK(gg_pack_count(&g, GG_ITEM_SILVER) == 0,
+          "the silver was handed over and is still in the pack");
+    CHECK(gg_flag(&g, "caravan_returned"), "the last stage raised nothing");
+
+    const char *quest = nullptr, *words = nullptr;
+    CHECK(gg_ending(&g, &quest, &words), "there are no closing words");
+    CHECK(quest && SDL_strcmp(quest, "The Missing Caravan") == 0,
+          "the tale that ended is '%s'", quest ? quest : "(none)");
+    CHECK(words && words[0] != '\0', "the ending says nothing");
+
+    // A world that has ended takes no more orders.
+    const uint32_t turn = g.turn;
+    for (int i = 0; i < 10; i++) gg_game_act(&g, GG_ACT_N);
+    CHECK(g.turn == turn, "the world kept turning after it ended");
+
+    // And it is still over tomorrow.
+    const char *who = "Hero";
+    wipe_saves(who);
+    CHECK(gg_save_write(&g, save_base(), who), "the save failed");
+    gg_game back;
+    SDL_zero(back);
+    CHECK(gg_save_read(&back, save_base(), who), "the load failed");
+    CHECK(back.story_over, "a finished story came back unfinished");
+    CHECK(back.mode == GG_MODE_ENDING, "a finished world came back playable");
+    CHECK(gg_ending(&back, &quest, &words) && words && words[0],
+          "the closing words did not survive being put down");
+    gg_game_free(&back);
+    wipe_saves(who);
+
+    gg_game_free(&g);
+    restore_dialogue();
+    restore_quests();
+    restore_bestiary();
+}
+
 static void a_map_you_leave_is_as_you_left_it(void) {
     const char *near = author_linked_map("test_mem_a.ggmap", "The Near Field",
                                          "test_mem_b.ggmap", 20, 12,
@@ -5914,6 +6284,8 @@ int main(void) {
     RUN(the_vale_has_a_story_that_can_be_reached);
 
     RUN(walking_between_two_maps_takes_everything_with_you);
+    RUN(a_party_that_walked_the_road_can_beat_the_man_at_the_end_of_it);
+    RUN(the_whole_story_can_be_played_from_start_to_finish);
     RUN(a_map_you_leave_is_as_you_left_it);
     RUN(a_way_out_that_leads_nowhere_is_refused);
     RUN(the_editor_refuses_a_gate_nobody_can_reach);

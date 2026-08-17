@@ -31,7 +31,6 @@ typedef struct {
     uint8_t region;    // region index, for naming and for NPC home lookup
 } gg_cell;
 
-#define GG_MAP_NAME_MAX 48
 #define GG_REGION_MAX   32
 
 typedef struct {

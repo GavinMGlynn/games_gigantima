@@ -152,6 +152,8 @@ bool gg_quests_load(const char *path) {
             SDL_strlcpy(st->journal, rest, sizeof st->journal);
         } else if (SDL_strcasecmp(key, "sets") == 0) {
             SDL_strlcpy(st->sets, rest, sizeof st->sets);
+        } else if (SDL_strcasecmp(key, "ends") == 0) {
+            st->ends = true;
         } else if (SDL_strcasecmp(key, "when") == 0) {
             char what[GG_FLAG_MAX];
             if (!next_token(&rest, what, sizeof what)) {
@@ -188,6 +190,33 @@ bool gg_quests_load(const char *path) {
                 }
                 st->what = GG_WHEN_HAS;
                 st->item = (uint8_t)kind;
+            } else if (SDL_strcasecmp(what, "at") == 0) {
+                if (!next_token(&rest, st->where, sizeof st->where)) {
+                    complain(path, lineno, "`at` wants a map");
+                    ok = false;
+                    break;
+                }
+                st->what = GG_WHEN_AT;
+                st->wx = st->wy = -1;
+
+                // A tile and how near is near enough, or nothing and the whole
+                // map counts.
+                char tx[16], ty[16], rad[16];
+                if (next_token(&rest, tx, sizeof tx)) {
+                    int px = 0, py = 0, r = 0;
+                    if (!next_token(&rest, ty, sizeof ty) ||
+                        !next_token(&rest, rad, sizeof rad) ||
+                        !as_int(tx, &px) || !as_int(ty, &py) || !as_int(rad, &r) ||
+                        r < 1) {
+                        complain(path, lineno,
+                                 "`at` with a tile wants an x, a y and how near");
+                        ok = false;
+                        break;
+                    }
+                    st->wx = (int16_t)px;
+                    st->wy = (int16_t)py;
+                    st->radius = (uint8_t)(r > 255 ? 255 : r);
+                }
             } else if (SDL_strcasecmp(what, "slain") == 0 ||
                        SDL_strcasecmp(what, "party") == 0) {
                 char howmany[16];

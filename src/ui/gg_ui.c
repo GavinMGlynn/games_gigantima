@@ -42,6 +42,25 @@ static void gauge(SDL_Renderer *ren, int x, int y, int w, int h,
     SDL_RenderRect(ren, &back);
 }
 
+// `text` shortened until it fits `width` pixels, with an ellipsis where it was
+// cut. The message log is the widest thing in the band and its lines are
+// whatever the world had to say, so one long line used to be drawn straight
+// through the clock in the right-hand column.
+static const char *fit(char *out, size_t n, const char *text, int width) {
+    if (gg_font_width(text) <= width) return text;
+
+    SDL_strlcpy(out, text, n);
+    size_t len = SDL_strlen(out);
+    while (len > 3) {
+        out[len - 3] = '\0';
+        SDL_strlcat(out, "...", n);
+        if (gg_font_width(out) <= width) return out;
+        len -= 3;
+        out[len] = '\0';
+    }
+    return out;
+}
+
 void gg_ui_hud(const gg_game *g, SDL_Renderer *ren) {
     const int top = GG_VIEW_H;
     const SDL_FRect band = { 0, (float)top, (float)GG_SCREEN_W, (float)GG_HUD_H };
@@ -111,12 +130,15 @@ void gg_ui_hud(const gg_game *g, SDL_Renderer *ren) {
     // Drawn last so it can be the widest thing here without the columns
     // having to leave room for its longest possible line.
     const int lx = 250;
+    const int room = rx - lx - 12;
     y = top + 8;
+    char cut[GG_LOG_WIDTH + 4];
     for (int i = 0; i < g->logn; i++) {
         // The newest line is bright, older ones fade back - so the eye lands
         // on what just happened without having to read the whole log.
         const bool newest = (i == g->logn - 1);
-        gg_font_draw(ren, lx, y, newest ? INK : DIM, g->log[i]);
+        gg_font_draw(ren, lx, y, newest ? INK : DIM,
+                     fit(cut, sizeof cut, g->log[i], room));
         y += line;
     }
 }
@@ -260,6 +282,91 @@ void gg_ui_journal(const gg_game *g, SDL_Renderer *ren) {
 
     gg_font_draw(ren, x, (int)(box.y + box.h) - line - 12, DIM,
                  "arrows to read   J or any key to close");
+}
+
+// Words wrapped to a pixel width, drawn one line under another, returning
+// where the next line would go. Measured with the font's own widths rather
+// than counted in characters: VT323 is proportional, so a character count
+// wraps early on a line of thin letters and overruns on a line of wide ones.
+// With a renderer, draws and returns where the next line would go. Without
+// one, draws nothing and returns the number of lines it would have taken -
+// call it with y = 0 and read the count off the result.
+static int wrapped(SDL_Renderer *ren, int x, int y, int width, SDL_Color c,
+                   const char *text) {
+    const int line = gg_font_height() + 4;
+    char buf[256];
+
+    while (*text) {
+        int take = 0, last_space = -1;
+        for (int i = 0; text[i] && i < (int)sizeof buf - 1; i++) {
+            buf[i] = text[i];
+            buf[i + 1] = '\0';
+            if (gg_font_width(buf) > width) break;
+            take = i + 1;
+            if (text[i] == ' ') last_space = i;
+        }
+        // Break at the last space that fitted, unless one word is wider than
+        // the panel - then it is cut, because the alternative is a blank line
+        // followed by the same word forever.
+        if (text[take] && last_space > 0) take = last_space;
+
+        SDL_memcpy(buf, text, (size_t)take);
+        buf[take] = '\0';
+        // No renderer means "how many lines would this be" - which is what the
+        // panel needs before it knows how tall to be.
+        if (ren) gg_font_draw(ren, x, y, c, buf);
+        y += line;
+
+        text += take;
+        while (*text == ' ') text++;
+    }
+    return ren ? y : y / line;
+}
+
+void gg_ui_ending(const gg_game *g, SDL_Renderer *ren) {
+    const int line = gg_font_height();
+    const int row = line + 4;
+    const int width = GG_SCREEN_W - 120 - 40;
+
+    const char *quest = nullptr, *words = nullptr;
+    const bool finished = gg_ending(g, &quest, &words);
+    const char *closing = finished
+        ? (words && *words ? words : "It is done.")
+        : "The vale keeps its troubles a while longer.";
+
+    // Sized to what it has to say, rather than to a guess: the closing line is
+    // a sentence out of a text file and its length is not this file's to know.
+    const int lines = wrapped(nullptr, 0, 0, width, INK, closing);
+    const int height = row + 6                       // the heading
+                     + (finished && quest && *quest ? row : 0)
+                     + lines * (line + 4) + 6        // the words
+                     + row + 8                       // the tally
+                     + row + 12;                     // the way out
+    const SDL_FRect box = { 60, (float)((GG_VIEW_H - height) / 2),
+                            (float)(GG_SCREEN_W - 120), (float)height };
+    panel(ren, box, 252);
+
+    const int x = (int)box.x + 20;
+    int y = (int)box.y + 14;
+
+    if (finished) {
+        gg_font_draw(ren, x, y, AMBER, "Here endeth the tale");
+        y += row + 6;
+        if (quest && *quest) {
+            gg_font_printf(ren, x, y, DIM, "%s", quest);
+            y += row;
+        }
+    } else {
+        gg_font_draw(ren, x, y, BLOOD, "Thou art slain");
+        y += row + 6;
+    }
+
+    y = wrapped(ren, x, y, width, INK, closing);
+    y += 6;
+    gg_font_printf(ren, x, y, DIM, "%u turns, %u %s, %d fallen", g->turn,
+                   g->day, g->day == 1 ? "day" : "days", (int)g->slain);
+    y += row + 8;
+    gg_font_draw(ren, x, y, DIM, "any key to leave the world");
 }
 
 void gg_ui_spells(const gg_game *g, SDL_Renderer *ren) {

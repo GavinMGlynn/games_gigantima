@@ -260,6 +260,7 @@ bool gg_save_write(const gg_game *g, const char *base, const char *name) {
     // index, because the book is a text file somebody may have edited between
     // saves and an index into it is a promise it never made.
     ok = ok && gg_io_w32(io, g->slain);
+    ok = ok && gg_io_w32(io, g->story_over ? 1u : 0u);
     ok = ok && gg_io_w32(io, (uint32_t)gg_quests_count());
     for (int i = 0; ok && i < gg_quests_count() && i < GG_QUESTS_MAX; i++) {
         char id[GG_QUEST_NAME_MAX] = { 0 };
@@ -369,6 +370,9 @@ bool gg_save_read(gg_game *g, const char *base, const char *name) {
     tmp.light_power = ok ? gg_clampi((int)light_power, 0, GG_LIGHT_MAX_RADIUS) : 0;
 
     ok = ok && gg_io_r32(io, &tmp.slain);
+    uint32_t over = 0;
+    ok = ok && gg_io_r32(io, &over);
+    tmp.story_over = over != 0;
     uint32_t quests = 0;
     ok = ok && gg_io_r32(io, &quests) && quests <= GG_QUESTS_MAX;
     for (uint32_t i = 0; ok && i < quests; i++) {
@@ -517,7 +521,9 @@ bool gg_save_read(gg_game *g, const char *base, const char *name) {
     // that outlives a conversation: a game saved with the Avatar already dead
     // must come back dead, not walk out of the grave because the loader
     // assumed everything resumes into play.
-    g->mode = gg_player_const(g)->hp > 0 ? GG_MODE_PLAY : GG_MODE_GAMEOVER;
+    g->mode = g->story_over  ? GG_MODE_ENDING
+            : gg_player_const(g)->hp > 0 ? GG_MODE_PLAY
+            : GG_MODE_GAMEOVER;
     g->talking_to = -1;
     g->speaker = nullptr;
     g->saids = 0;

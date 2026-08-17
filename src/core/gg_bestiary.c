@@ -153,6 +153,7 @@ bool gg_bestiary_load(const char *path) {
             b->reach = 1;
             b->notice = 8;
             b->haunts = 0;
+            b->haunt_x = b->haunt_y = -1;
             continue;
         }
 
@@ -199,8 +200,32 @@ bool gg_bestiary_load(const char *path) {
             ok = number_into(path, lineno, rest, 0, 30000, &v);
             b->flees = (int16_t)v;
         } else if (SDL_strcasecmp(key, "haunts") == 0) {
-            ok = number_into(path, lineno, rest, 0, 64, &v);
+            char howmany[16];
+            if (!next_token(&rest, howmany, sizeof howmany) ||
+                !number_into(path, lineno, howmany, 0, 64, &v)) {
+                ok = false;
+                break;
+            }
             b->haunts = (uint8_t)v;
+
+            // An optional map, and an optional tile in it.
+            char where[GG_MAP_NAME_MAX];
+            if (next_token(&rest, where, sizeof where)) {
+                SDL_strlcpy(b->haunt_map, where, sizeof b->haunt_map);
+                char tx[16], ty[16];
+                if (next_token(&rest, tx, sizeof tx)) {
+                    int px = 0, py = 0;
+                    if (!next_token(&rest, ty, sizeof ty) ||
+                        !number_into(path, lineno, tx, 0, 4096, &px) ||
+                        !number_into(path, lineno, ty, 0, 4096, &py)) {
+                        complain(path, lineno, "a tile wants both an x and a y");
+                        ok = false;
+                        break;
+                    }
+                    b->haunt_x = (int16_t)px;
+                    b->haunt_y = (int16_t)py;
+                }
+            }
         } else if (SDL_strcasecmp(key, "loot") == 0) {
             if (b->loots >= GG_BEAST_LOOT_MAX) {
                 complain(path, lineno, "more loot than one creature may carry");

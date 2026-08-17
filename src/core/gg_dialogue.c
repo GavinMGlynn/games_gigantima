@@ -259,6 +259,57 @@ bool gg_dialogue_load(const char *path) {
                 break;
             }
             topic->joins = true;
+        } else if (word_eq(key, "wants") || word_eq(key, "gives")) {
+            const bool giving = word_eq(key, "gives");
+            if (!topic) {
+                complain(path, lineno, "a thing changing hands outside any topic");
+                ok = false;
+                break;
+            }
+            // `wants ITEM N` / `gives ITEM N`: the thing, and how many.
+            char thing[GG_WORD_MAX] = { 0 };
+            int  count = 0;
+            {
+                char *p = skip_spaces(rest);
+                char *w = p;
+                while (*p && *p != ' ' && *p != '\t') p++;
+                const char save = *p;
+                *p = '\0';
+                SDL_strlcpy(thing, w, sizeof thing);
+                *p = save;
+                p = skip_spaces(p);
+                for (const char *d = p; *d; d++) {
+                    if (*d < '0' || *d > '9') { count = 0; break; }
+                    count = count * 10 + (*d - '0');
+                }
+            }
+            int kind = -1;
+            for (int i = 0; i < GG_ITEM_COUNT; i++)
+                if (word_eq(GG_ITEM[i].id, thing)) kind = i;
+            if (kind < 0 || count < 1) {
+                complain(path, lineno, "that wants a thing and how many");
+                ok = false;
+                break;
+            }
+            if (giving) {
+                topic->gives = (uint8_t)kind;
+                topic->gives_count = (uint8_t)(count > 255 ? 255 : count);
+            } else {
+                topic->wants = (uint8_t)kind;
+                topic->wants_count = (uint8_t)(count > 255 ? 255 : count);
+            }
+        } else if (word_eq(key, "raises")) {
+            if (!topic) {
+                complain(path, lineno, "`raises` outside any topic");
+                ok = false;
+                break;
+            }
+            if (!*rest) {
+                complain(path, lineno, "`raises` wants a flag");
+                ok = false;
+                break;
+            }
+            SDL_strlcpy(topic->raises, rest, sizeof topic->raises);
         } else if (word_eq(key, "teach")) {
             if (!topic) {
                 complain(path, lineno, "`teach` outside any topic");

@@ -119,6 +119,26 @@ jobs:
           grep -q "found 3 silver still at" return.log || {
             echo "what was left on the floor did not survive the round trip"; exit 1; }
 
+      # And the whole story, played through in one run of the real game: the
+      # vale is asked what is wrong, the north road is walked, the man at the
+      # end of it is killed, and the caravan's silver is carried home and handed
+      # back. Everything the run does goes through the ordinary turn, so a story
+      # a player could not finish is one this cannot finish either.
+      - name: Smoke test - the story can be played to its end
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_RENDER_DRIVER: software
+          SDL_AUDIODRIVER: dummy
+        run: |
+          ./build/gigantima --map assets/maps/vale.ggmap --profile CIEnd --new \
+            --play --shot-at 0 --screen ending --shot ending.bmp > ending.log 2>&1
+          cat ending.log
+          test -s ending.bmp || { echo "the ending drew nothing"; exit 1; }
+          grep -q "Rugar has fallen" ending.log || {
+            echo "the man at the end of the road was not beaten"; exit 1; }
+          grep -q "the story ended" ending.log || {
+            echo "the story could not be played to its end"; exit 1; }
+
       # The editor is a second binary on the same core, and it has to keep
       # building and drawing. The map it authors being playable is checked by
       # the unit tests; this is the window.

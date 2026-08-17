@@ -23,6 +23,7 @@ typedef enum {
     GG_MODE_SPELL,       // choosing a spell to speak
     GG_MODE_JOURNAL,     // reading what has happened so far
     GG_MODE_GAMEOVER,
+    GG_MODE_ENDING,      // the story is finished
 } gg_mode;
 
 // Everything the player can ask for in one turn. Kept as an enum rather than
@@ -158,6 +159,12 @@ typedef struct {
     // the game; gg_game_free lets them go.
     gg_visited *visited;
     int         visiteds;
+
+    // The story has been seen through to its end. Saved, so a world that was
+    // finished is still finished when it is opened again - and derived from
+    // nothing else, because "did the last stage of a quest that ends the story
+    // get entered" is exactly what it means.
+    bool story_over;
 
     // This world was made by the generator rather than read from a file. It
     // decides who the town is peopled with: the book's residents belong to a
@@ -341,9 +348,26 @@ void gg_emit(gg_game *g, gg_event e);
 // many were taken.
 int gg_events_drain(gg_game *g, gg_event *out, int max);
 
+// Which tile `who` should step to next on the way to (tx, ty), going round
+// whatever is between - the same search the townsfolk walk on. False when
+// there is nowhere to go at all, or they are already there.
+//
+// A query rather than a move: what the caller does with the answer - step,
+// strike, talk - is the caller's business, which is what lets the same call
+// serve a scripted walk and, later, a player pointing at a tile. The target
+// itself need not be walkable; walking *at* somebody is how this world talks
+// to them and fights them both.
+bool gg_step_toward(gg_game *g, int who, int tx, int ty, int *nx, int *ny);
+
 // Maps a direction action to a tile delta. Returns false for non-movement
 // actions, which is how the caller tells them apart.
 bool gg_action_delta(gg_action a, int *dx, int *dy);
+
+// And the way back: the action that steps one tile in a direction. Anything
+// outside a single step is clamped to one, and no movement at all is
+// GG_ACT_WAIT. Needed because the pathfinder answers in tiles and the world
+// only takes actions.
+gg_action gg_action_toward(int dx, int dy);
 
 // --- the party -------------------------------------------------------------
 // How many walk with the Avatar, not counting the Avatar.
@@ -393,6 +417,12 @@ void gg_quests_tick(gg_game *g);
 // How many journal lines there are, and the i'th of them. Built from the
 // quests and how far along each is, rather than stored - the state is the
 // stage number, and everything else is read out of the book.
+// The closing words, if the story is over: which quest ended it and what its
+// last stage said. Read out of the book rather than stored, so the ending is a
+// line in quests.txt like every other line the game says. False while the
+// story is still going.
+bool gg_ending(const gg_game *g, const char **quest, const char **words);
+
 int gg_journal_lines(const gg_game *g);
 bool gg_journal_line(const gg_game *g, int i, const char **quest_name,
                      const char **text, bool *done);

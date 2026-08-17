@@ -42,7 +42,14 @@ typedef struct {
     gg_loot loot[GG_BEAST_LOOT_MAX];
     int     loots;
 
-    uint8_t haunts;     // how many the generator puts in a map
+    // Where it is found. `haunts` alone is how many of it a world holds, put
+    // down wherever there is room; naming a map puts them in that map instead,
+    // the first time it is walked into; naming a tile as well puts them there.
+    // A story's villain stands where the story says, and nothing in C knows
+    // where that is.
+    uint8_t haunts;
+    char    haunt_map[GG_MAP_NAME_MAX];
+    int16_t haunt_x, haunt_y;           // -1,-1 when no tile is named
 } gg_beast;
 
 // All or nothing, and every complaint names the file and the line.

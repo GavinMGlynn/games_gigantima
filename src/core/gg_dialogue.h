@@ -43,6 +43,21 @@ typedef struct {
     // C, so who can be recruited - and what they have to be asked - is content
     // like everything else they say.
     bool joins;
+
+    // What asking it hands over, and what it settles. A topic that wants
+    // something can only be asked while it is in the pack, and asking it gives
+    // it away - which is how a thing is handed to somebody rather than merely
+    // carried past them. The flag is what the story watches for.
+    uint8_t wants;                      // gg_item_id
+    uint8_t wants_count;                // zero means it wants nothing
+
+    // And what asking it hands *over*, which is how somebody arms you or pays
+    // you. Given only when the pack holds none of that kind already, so a
+    // topic asked twice is not a purse that never empties.
+    uint8_t gives;                      // gg_item_id
+    uint8_t gives_count;                // zero means it gives nothing
+
+    char    raises[GG_FLAG_MAX];
 } gg_topic;
 
 typedef struct {

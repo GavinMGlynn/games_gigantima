@@ -20,10 +20,11 @@
 #include "core/gg_ids.h"
 
 #define GG_QUESTS_MAX        12
-#define GG_STAGES_MAX         8
+// Twelve, because the main storyline is one quest with a beginning, a
+// journey, a confrontation and a way home in it.
+#define GG_STAGES_MAX        12
 #define GG_QUEST_NAME_MAX    48
 #define GG_JOURNAL_LINE_MAX 132
-#define GG_FLAG_MAX          24
 #define GG_FLAGS_MAX         32
 
 // What has to be true for a stage to be entered.
@@ -34,6 +35,7 @@ typedef enum {
     GG_WHEN_FLAG,       // another stage set it
     GG_WHEN_SLAIN,      // N have fallen to the party
     GG_WHEN_PARTY,      // N walk with the Avatar
+    GG_WHEN_AT,         // the Avatar is in a map, or near a tile in one
     GG_WHEN_COUNT
 } gg_when;
 
@@ -43,8 +45,19 @@ typedef struct {
     uint8_t item;                        // for HAS
     int     count;                       // for HAS, SLAIN, PARTY
 
+    // For AT: which map, and optionally where in it. `radius` of zero means
+    // anywhere in the map at all.
+    char    where[GG_MAP_NAME_MAX];
+    int16_t wx, wy;
+    uint8_t radius;
+
     char journal[GG_JOURNAL_LINE_MAX];
     char sets[GG_FLAG_MAX];              // a flag raised on entering, or ""
+
+    // Entering this stage is the end of the story. The journal line is what
+    // the ending says, so the closing words of the game are a line in a text
+    // file like every other line the game says.
+    bool ends;
 } gg_stage;
 
 typedef struct {

@@ -662,6 +662,12 @@ Damage is deliberately **not defaulted**. A creature that can hurt nobody is
 scenery, and the loader refuses one — but a default of 1 made that check
 unreachable, which the malformed-bestiary test caught.
 
+**Where it is found is a line in the same file.** `haunts 4` is how many of it
+a world holds, scattered where there is room; `haunts 1 stones.ggmap 24 22` puts
+one of it in a named map on a named tile, the first time that map is walked
+into. That is how the storyline's villain stands in the middle of the ring
+without a line of C knowing where he is.
+
 *Verification: `a_creature_can_be_added_in_a_file_alone` (the plan's own — every
 number read back out of the world, plus the generator placing it without being
 told what it is), `a_creature_flees_when_it_is_hurt_enough`,
@@ -682,7 +688,9 @@ changes, and the whole of a quest's state is one number: how far along it is.
 
 **The conditions are things the world already knows how to answer** — a word
 you have learned, something you are carrying, a flag another stage raised, how
-many have fallen to the party, how many walk with you. Nothing here reached into
+many have fallen to the party, how many walk with you, and where you are
+standing (`when at stones.ggmap 24 22 6`, which is a map and optionally a spot
+in it). Nothing here reached into
 the simulation to invent new state, because a condition that needs its own
 bookkeeping is a condition that can go out of step with the world. The one
 number the story did need is a tally of the slain.
@@ -707,14 +715,78 @@ did, which is a quest nobody was given. A bare `when` is allowed on any later
 stage and means "at once", which is how a stage that only writes a line is
 written.
 
+A stage may be marked **`ends`**, and entering it is the end of the story: the
+world stops taking orders and the closing panel goes up. What it says is that
+stage's own journal line, read back out of the book rather than stored, so the
+last words of the game are a line in a text file like every other line it says.
+The save carries one bit — whether the story is over — and everything else about
+the ending is derived.
+
 *Verification: `a_two_stage_quest_is_completed_and_remembered` (the plan's own,
 including that one loaf does not satisfy a condition wanting two, and that a
 finished quest cannot run past its end), `a_quest_cannot_skip_a_stage`,
 `one_quest_can_open_another`, `killing_things_moves_a_quest_on`,
 `a_quest_file_that_does_not_parse_loads_nothing` (nine malformed books and a
 missing one), and `the_vale_has_a_story_that_can_be_reached` — which refuses a
-quest waiting on a word nobody teaches or a flag no stage raises. Plus a
-`--shot` frame of the journal, taken in CI.*
+quest waiting on a word nobody teaches, a flag nothing raises, a map that does
+not ship, or a spot outside it. Plus a `--shot` frame of the journal, taken in
+CI.*
+
+### The main storyline
+
+**A caravan out of the north never arrived.** The vale tells you why one person
+at a time — Iolo has empty shelves and names the caravan, Shamino watched the
+road, Nell has seen a cold light among the standing stones, Nystul knows what a
+light with no fire is not, and Gwenno's husband walked north with it. Two of
+them will come with you and two of them arm you. The road north has brigands on
+it. At the end of it, in the middle of a ring of standing stones, Rugar is
+waiting with the caravan's silver on him. Bring it back to the market it was
+bound for and hand it to Iolo, and the story ends.
+
+Every part of that is a text file: `quests.txt` has the arc and the closing
+words, `dialogue.txt` has what everybody says and what they hand over,
+`bestiary.txt` has who is on the road and who is at the end of it. Three
+mechanisms were added to make it sayable in those files, and nothing else in the
+game knows the story exists.
+
+**Where a creature is found is in the bestiary.** `haunts 4` is how many of it a
+world holds, put down where there is room; `haunts 1 stones.ggmap 24 22` is one
+of it, in that map, on that tile, the first time the map is walked into. Stocking
+happens once per map per world — a map walked back into is remembered, not
+re-read — so the villain is never there twice.
+
+**A topic can hand something over, and take something back.** `gives HAMMER 1`
+arms whoever asks, but only when the pack holds none already, so a topic asked
+twice is not a purse that never empties. `wants SILVER 3` is the other way: the
+topic is only offered while the pack holds them, and asking gives them away.
+`raises FLAG` is how a conversation reaches the story — the quests watch for the
+flag and nothing in the conversation knows which quest cares.
+
+**The road arms you, and that is the balance.** The Avatar leaves the vale with
+no weapon; a hammer comes from Iolo, a shield from the gate, a phial from
+Katrina, and better of each off the brigands on the way. Rugar's numbers are set
+so that this matters: a party that came prepared wins 17 fights in 20, and one
+that walked up alone and empty-handed wins none of 20. Both figures are measured
+by the test on every run and logged whether it passes or not, because they are
+the numbers that say whether the story is beatable and whether beating it takes
+anything.
+
+*Verification: `the_whole_story_can_be_played_from_start_to_finish` — a real
+playthrough on the shipped content, asking the town for its words, crossing to
+the stones, meeting Rugar, killing him with ordinary blows, taking the silver,
+walking home and handing it over, then checking the world takes no more orders
+and comes back finished from a save file. Five were checked by breaking the rule
+they pin: a stage that ends the story not ending it, a topic that wants
+something not taking it, a place condition that ignores which map you are in,
+one that ignores how near you are, and a topic that gives handing over a fresh
+hammer every time it is asked. Plus
+`a_party_that_walked_the_road_can_beat_the_man_at_the_end_of_it`, forty fights
+on the shipped numbers.*
+
+*And on the real game: `--screen ending` plays the whole story through in one
+run — every step of it through the ordinary turn, so a story a player could not
+finish is one it cannot finish either — and photographs the closing panel. It is
+a CI smoke test, and it checks the log says Rugar fell and the story ended.*
 
 ### Magic
 
@@ -890,6 +962,15 @@ pointer into the loaded book, and nobody wants to resume mid-sentence.
 The panel lists the words this person will answer to, out of the words you know,
 rather than asking you to type. That is what makes it work on a pad, and it is
 also more discoverable than Ultima's blank prompt ever was.
+
+**Three things a topic can do besides speak.** `teach WORD` hands over a word,
+which is the whole of the gating. `gives ITEM N` hands over a thing, and only
+when the pack holds none of that kind already, so a topic asked twice is not a
+purse that never empties. `wants ITEM N` is the other direction: the topic is
+only offered while the pack holds them, and asking hands them over — which is
+how something is *given* to somebody rather than merely carried past them. And
+`raises FLAG` is how a conversation reaches the story; the quests watch for the
+flag and nothing here knows which quest cares.
 
 *Verification: `a_topic_unlocks_only_after_the_word_is_learned` (the plan's
 own), `a_word_learned_from_one_person_opens_another`,
@@ -1082,16 +1163,17 @@ Named plainly, because a reader should not have to infer absence:
 
 | | |
 | --- | --- |
-| The story itself | the machine works and four small quests use it, but they are a demonstration rather than a plot - see the main-storyline item |
+| The story beyond the first | one storyline, playable start to finish, and three small quests beside it. What is missing is a second one |
+| Levelling | experience is counted and saved and spends on nothing; the Avatar ends the story at level one |
 | Combat depth | blows, initiative, reach, loot and fleeing exist; there are no skills, no criticals and three kinds of foe |
 | Magic beyond three effects | light, heal and harm. No summoning, no travel, no enchantment, no mana - reagents are the whole cost |
 | Arms | a hammer, a throwing stone and a shield. No swords: this art set has none that stand on their own |
 | Trade | nothing. Items carry a value in copper, and no one buys or sells |
-| Conversation beyond words | topics and a vocabulary, but nobody reacts to anything — no quests, no trade, no one who does something because you asked |
+| Trade in conversation | a topic can give a thing, take a thing and raise a flag, which is enough for a story. Nobody haggles, and no price is ever paid |
 | Composed audio | the sounds are synthesised tones and noise, and the tunes a drone and an arpeggio. The mechanism is finished; the music is placeholder |
 | Editor conveniences | no undo, no fill, no copy, no file dialog - it saves beside the profiles under one name |
 | Party roles | up to four follow, and have health and a level, but nothing distinguishes one companion from another - no classes, no skills, no orders to give |
-| Screens not yet needed | no journal, character sheet or map page — there is nothing yet for them to show |
+| Screens not yet needed | no character sheet or map page — there is nothing yet for them to show |
 
 ---
 

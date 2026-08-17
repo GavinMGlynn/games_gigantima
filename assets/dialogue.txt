@@ -12,6 +12,11 @@
 #     say  TEXT        a line of the answer; up to three
 #     teach WORD       asking this hands over a word you did not have
 #     joins            asking this takes them with thee
+#     wants ITEM N     only askable while thou hast N of it, and asking gives
+#                      them away - which is how a thing is handed to somebody
+#     gives ITEM N     asking hands N of it over, but only if thou hast none
+#                      already - so a topic asked twice is not a free purse
+#     raises FLAG      asking this settles something the story is watching for
 #   bye    TEXT        what they say as you leave
 #
 # The offsets in `at` are from the centre of their `home`, not tiles on the map:
@@ -46,7 +51,15 @@ topic job market stall
 topic caravan
   say Three weeks late out of the north, and not a word from it since.
   say Shamino watched the road that fortnight. Ask HIM what he saw.
+  say And take my father's hammer. Thou wilt not walk that road empty-handed.
   teach road
+  gives HAMMER 1
+topic silver
+  say Silver? Out of the north, with the caravan's mark still on it?
+  say Then it is true, and thou hast walked further than any of us dared.
+  say Give it here, Avatar. The vale is in thy debt and the stall is open.
+  wants SILVER 3
+  raises silver_returned
 bye Come back when thou hast coin, Avatar.
 
 person Shamino
@@ -66,7 +79,9 @@ topic caravan
 topic road
   say The north road runs past the standing stones and into the fells.
   say Nell has walked it longer than I have been alive. Ask her of the STONES.
+  say Here - a shield off the rack. The gate can spare one and thou canst not.
   teach stones
+  gives SHIELD 1
 bye Keep thy blade keen.
 
 person Nell
@@ -88,6 +103,7 @@ topic stones
 topic light
   say A cold light, and it does not flicker as a fire does.
   say It began the week thy caravan failed to come. Make of that what thou wilt.
+  teach silver
 topic caravan
   say Goods do not simply stop. Somebody stopped them.
 bye Mind thy step in the dark, child.
@@ -125,6 +141,8 @@ topic name
   say Katrina. I keep the herbs, and the herbs keep the vale.
 topic job herbs healing
   say I mend what walks in. Bring me anything that bleeds.
+  say Take a phial with thee. Thou wilt be further from me than thou likest.
+  gives POTION 1
 topic light
   say I have had three folk in this month with the same tale of a cold light.
   say All three came back from the north road. None of them will go again.

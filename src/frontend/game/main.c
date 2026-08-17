@@ -208,6 +208,9 @@ static void draw(gg_app *app) {
             gg_ui_spells(&app->game, app->ren);
         else if (app->game.mode == GG_MODE_JOURNAL)
             gg_ui_journal(&app->game, app->ren);
+        else if (app->game.mode == GG_MODE_ENDING ||
+                 app->game.mode == GG_MODE_GAMEOVER)
+            gg_ui_ending(&app->game, app->ren);
     }
 
     if (app->screens.id != GG_SCREEN_PLAY)
@@ -330,19 +333,18 @@ static bool screen_act(gg_app *app, gg_screen_result r) {
 // ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------
-// One step of a scripted walk toward a tile, for the staged screens below.
+// A scripted player, for the staged screens below and for the smoke test that
+// plays the whole story through in one run.
 //
-// The world these walk through is a living one - somebody is standing on the
+// The world it walks through is a living one - somebody is standing on the
 // road, a brigand has noticed you - so a plain "act north until it stops
 // working" walks two tiles and gives up, which is what it did the first time
-// the vale had people in it. Walking into somebody is a conversation and
-// walking into a brigand is a blow, both of which are ordinary play; this only
-// has to notice which happened and keep going.
-//
-// Toward a tile rather than in a direction, because a walk that sidesteps
-// something has to come back to its line afterwards: the first version drifted
-// one tile east going round a townsperson and then walked straight past the
-// gate it was aiming at. Returns false when it truly cannot move.
+// the vale had people in it. Everything here goes through gg_game_act: walking
+// into somebody is a conversation, walking into a brigand is a blow, and this
+// only has to notice which happened and keep going.
+
+// One step toward a tile, round whatever is between. Returns false when there
+// is nowhere to go at all.
 static bool step_toward(gg_app *app, int tx, int ty) {
     gg_game *g = &app->game;
 
@@ -353,53 +355,162 @@ static bool step_toward(gg_app *app, int tx, int ty) {
     if (g->mode != GG_MODE_PLAY) return false;
 
     const int px = gg_player_const(g)->x, py = gg_player_const(g)->y;
-    const int dx = tx > px ? 1 : (tx < px ? -1 : 0);
-    const int dy = ty > py ? 1 : (ty < py ? -1 : 0);
-    if (!dx && !dy) return false;                 // already there
+    int nx = 0, ny = 0;
+    // The pathfinder, not a greedy step: the first version drifted one tile
+    // going round a townsperson and then walked straight past the gate it was
+    // aiming at, and no greedy step gets inside a ring of standing stones.
+    if (!gg_step_toward(g, g->player, tx, ty, &nx, &ny)) return false;
 
-    // The way wanted, then either half of it: a diagonal is a real move in
-    // this world, so going round somebody costs the same one turn.
-    static const gg_action BY[3][3] = {
-        { GG_ACT_NW, GG_ACT_N, GG_ACT_NE },
-        { GG_ACT_W,  GG_ACT_WAIT, GG_ACT_E },
-        { GG_ACT_SW, GG_ACT_S, GG_ACT_SE },
-    };
-    const gg_action want[3] = {
-        BY[dy + 1][dx + 1],
-        BY[1][dx + 1],
-        BY[dy + 1][1],
-    };
-
-    for (int i = 0; i < 3; i++) {
-        if (want[i] == GG_ACT_WAIT) continue;
-        const uint32_t was = g->turn;
-        gg_game_act(g, want[i]);
-        gg_game_animate(g);
-        if (g->mode == GG_MODE_CONVERSE) {
-            gg_game_act(g, GG_ACT_WAIT);          // greeted somebody; walk on
-            continue;
-        }
-        // A turn passed: either a step was taken or a blow was struck, and
-        // both are progress.
-        if (g->turn != was) return true;
-    }
-
-    // Nothing worked. One turn of standing still, so whoever is in the way has
-    // a chance to move on.
     const uint32_t was = g->turn;
+    gg_game_act(g, gg_action_toward(nx - px, ny - py));
+    gg_game_animate(g);
+    if (g->mode == GG_MODE_CONVERSE) return true;    // greeted somebody
+    if (g->turn != was) return true;                 // stepped, or struck
+
+    // Blocked by something that is not a turn. One turn of standing still, so
+    // whoever is in the way has a chance to move on.
     gg_game_act(g, GG_ACT_WAIT);
     gg_game_animate(g);
     return g->turn != was;
 }
 
-// Walks to the first way out of the map underfoot. Returns false if there is
-// none, or if it could not be reached.
+// Walks until within `near` tiles of a spot, picking up whatever it walks over.
+static bool walk_to(gg_app *app, int tx, int ty, int near, int patience) {
+    gg_game *g = &app->game;
+    for (int i = 0; i < patience; i++) {
+        const gg_actor *me = gg_player_const(g);
+        if (gg_dist_cheb(me->x, me->y, tx, ty) <= near) return true;
+        if (g->want_travel) return true;
+        if (!step_toward(app, tx, ty)) return false;
+
+        // Anything underfoot goes in the pack. A player picks up what they
+        // walk over, and on this road what they walk over is what the last
+        // brigand was carrying.
+        me = gg_player_const(g);
+        if (g->mode == GG_MODE_PLAY && gg_ground_at(&g->map, me->x, me->y) >= 0)
+            gg_game_act(g, GG_ACT_GET);
+    }
+    const gg_actor *me = gg_player_const(g);
+    return gg_dist_cheb(me->x, me->y, tx, ty) <= near;
+}
+
+// Readies the best weapon and the best armour in the pack, through the pack's
+// own action. What is best is what the item table says, so a better hammer
+// found later is readied without this knowing there is such a thing.
+static void ready_the_best(gg_app *app) {
+    gg_game *g = &app->game;
+    const gg_mode was = g->mode;
+    g->mode = GG_MODE_PACK;
+
+    for (int slot = 0; slot < GG_SLOT_COUNT; slot++) {
+        int best = -1, best_worth = 0;
+        for (int i = 0; i < g->packn; i++) {
+            const gg_item_def *d = &GG_ITEM[g->pack[i].kind];
+            if (d->slot != slot) continue;
+            const int worth = slot == GG_SLOT_WEAPON ? d->damage : d->guard;
+            if (worth > best_worth) { best_worth = worth; best = i; }
+        }
+        if (best < 0 || g->equipped[slot] == best) continue;
+        g->pack_cursor = best;
+        gg_game_act(g, GG_ACT_EQUIP);
+    }
+    g->mode = was;
+}
+
+// Drinks something if there is something to drink and it is needed. A player
+// carrying a phial and dying with it in their pack is not a player; it is a
+// script that does not know what it is carrying.
+static void drink_if_hurt(gg_app *app) {
+    gg_game *g = &app->game;
+    const gg_actor *me = gg_player_const(g);
+    if (me->hp * 2 > me->hp_max) return;
+
+    for (int i = 0; i < g->packn; i++) {
+        if (GG_ITEM[g->pack[i].kind].use == GG_USE_NONE) continue;
+        if (GG_ITEM[g->pack[i].kind].heal == 0) continue;
+        const gg_mode was = g->mode;
+        g->mode = GG_MODE_PACK;
+        g->pack_cursor = i;
+        gg_game_act(g, GG_ACT_USE);
+        g->mode = was;
+        return;
+    }
+}
+
+// Hunts what is in the hills until there is a weapon in hand, or `most` of
+// them have fallen. The road arms you: a brigand drops a hammer and an outlaw
+// drops a shield, and a scripted player that walks past all of them arrives at
+// the end of the story with its fists - which is exactly what this did the
+// first time it was run.
+static void hunt_for_gear(gg_app *app, int most) {
+    gg_game *g = &app->game;
+
+    for (int hunt = 0; hunt < most; hunt++) {
+        if (gg_attack_power(g, g->player) > 0 &&
+            gg_guard_power(g, g->player) > 0) return;
+
+        int prey = -1, near = 0;
+        const gg_actor *me = gg_player_const(g);
+        for (int i = 0; i < g->actors; i++) {
+            if (!g->actor[i].active || !g->actor[i].hostile) continue;
+            const int d = gg_dist_cheb(me->x, me->y, g->actor[i].x, g->actor[i].y);
+            if (prey < 0 || d < near) { prey = i; near = d; }
+        }
+        if (prey < 0) return;
+
+        for (int i = 0; i < 300 && g->actor[prey].active &&
+                        g->mode == GG_MODE_PLAY; i++)
+            if (!step_toward(app, g->actor[prey].x, g->actor[prey].y)) break;
+        if (g->mode != GG_MODE_PLAY) return;
+        drink_if_hurt(app);
+
+        // Onto the tile they fell on, and take what is there.
+        walk_to(app, g->actor[prey].x, g->actor[prey].y, 0, 60);
+        for (int i = 0; i < 4; i++) gg_game_act(g, GG_ACT_GET);
+        ready_the_best(app);
+    }
+}
+
+// Walks up to somebody and asks them every word they will answer to, once
+// each - the two keys a player presses, in a loop.
+static void ask_everything(gg_app *app, int who) {
+    gg_game *g = &app->game;
+    if (who < 0 || who >= g->actors || !g->actor[who].active) return;
+    if (!walk_to(app, g->actor[who].x, g->actor[who].y, 1, 300)) return;
+
+    if (g->mode != GG_MODE_CONVERSE) {
+        const gg_actor *me = gg_player_const(g);
+        gg_game_act(g, gg_action_toward(g->actor[who].x - me->x,
+                                        g->actor[who].y - me->y));
+    }
+    if (g->mode != GG_MODE_CONVERSE) return;
+
+    for (int i = 0; i < GG_TOPICS_MAX && i < g->askables; i++) {
+        g->ask_cursor = i;
+        gg_conversation_ask(g);
+        if (g->mode != GG_MODE_CONVERSE) return;   // the story ended mid-word
+    }
+    gg_game_act(g, GG_ACT_WAIT);
+}
+
+// Walks to the first way out of the map underfoot and steps on it.
 static bool walk_to_the_way_out(gg_app *app) {
     if (app->game.map.portals < 1) return false;
-    const int tx = app->game.map.portal[0].x, ty = app->game.map.portal[0].y;
-    for (int i = 0; i < 400 && !app->game.want_travel; i++)
-        if (!step_toward(app, tx, ty)) break;
+    walk_to(app, app->game.map.portal[0].x, app->game.map.portal[0].y, 0, 600);
     return app->game.want_travel;
+}
+
+// Crosses, wherever the way out leads. The frontend half of a crossing, which
+// the frame loop does for a player and this has to do for itself.
+static bool cross_over(gg_app *app) {
+    if (!app->game.want_travel) return false;
+    char leaf[GG_MAP_NAME_MAX + 8];
+    SDL_snprintf(leaf, sizeof leaf, "maps/%s", app->game.travel_to);
+    if (!gg_game_travel(&app->game, gg_asset_path(leaf), app->game.travel_x,
+                        app->game.travel_y))
+        return false;
+    SDL_Log("gigantima: walked into %s", app->game.map.name);
+    return true;
 }
 
 static void usage(void) {
@@ -611,6 +722,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
             { "journal",  GG_SCREEN_PLAY },
             { "travel",   GG_SCREEN_PLAY },
             { "return",   GG_SCREEN_PLAY },
+            { "ending",   GG_SCREEN_PLAY },
         };
         bool known = false;
         for (size_t k = 0; k < GG_COUNTOF(NAMED); k++)
@@ -717,6 +829,19 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
             }
         }
 
+        // The world has ended, one way or the other. Any key leaves it, and
+        // there is nothing else to do here - the world takes no more orders,
+        // so a key that is not a way out is a key that does nothing at all.
+        if (app->game.mode == GG_MODE_ENDING ||
+            app->game.mode == GG_MODE_GAMEOVER) {
+            if (event->key.scancode == SDL_SCANCODE_F11) {
+                toggle_fullscreen(app);
+                return SDL_APP_CONTINUE;
+            }
+            screen_go(app, GG_SCREEN_TITLE);
+            return SDL_APP_CONTINUE;
+        }
+
         switch (event->key.scancode) {
         case SDL_SCANCODE_ESCAPE:
             // Escape backs out of whatever is open before it reaches for the
@@ -819,6 +944,17 @@ static bool step_once(gg_app *app) {
         return true;
     }
 
+    // The world has ended. Anything on the pad leaves it, the same as anything
+    // on the keyboard - a controller must never be the one that cannot get out
+    // of a screen.
+    if (app->started && (app->game.mode == GG_MODE_ENDING ||
+                         app->game.mode == GG_MODE_GAMEOVER)) {
+        if (gg_input_take(&app->in) != GG_ACT_NONE)
+            screen_go(app, GG_SCREEN_TITLE);
+        gg_game_animate(&app->game);
+        return true;
+    }
+
     // A way out was stepped on. The simulation named the map; this is where
     // maps live, which is knowledge src/core is not allowed to have. Maps ship
     // in assets/maps/, and one saved by the editor sits beside the profiles -
@@ -899,32 +1035,22 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
         // photographed. The walk is the ordinary one and the crossing is the
         // ordinary crossing; only the destination is chosen.
         if (app->screen_name && SDL_strcmp(app->screen_name, "travel") == 0) {
-            if (walk_to_the_way_out(app)) {
-                char leaf[GG_MAP_NAME_MAX + 8];
-                SDL_snprintf(leaf, sizeof leaf, "maps/%s", app->game.travel_to);
-                if (gg_game_travel(&app->game, gg_asset_path(leaf),
-                                   app->game.travel_x, app->game.travel_y))
-                    SDL_Log("gigantima: walked into %s", app->game.map.name);
-            }
+            if (walk_to_the_way_out(app)) cross_over(app);
         }
 
         // Out and back again, which is a different claim from `travel`: not
         // that the crossing works, but that the map behind you kept what you
-        // did in it. Something is put on the floor, the Avatar walks out of
-        // the map and back into it, and the pile has to still be lying where
-        // it was left. The item's own verification, run on the shipped world
-        // in the real binary rather than on a fixture.
+        // did in it. Something is put on the floor, the Avatar walks out of the
+        // map and back into it, and the pile has to still be lying where it was
+        // left. The item's own verification, run on the shipped world in the
+        // real binary rather than on a fixture.
         if (app->screen_name && SDL_strcmp(app->screen_name, "return") == 0) {
             int dx = -1, dy = -1;
-
-            // Out to the way out, and then to the way back: the ordinary walk
-            // and the ordinary crossing, twice.
             for (int leg = 0; leg < 2; leg++) {
                 if (!walk_to_the_way_out(app)) {
                     SDL_Log("gigantima: leg %d found no way out", leg + 1);
                     break;
                 }
-
                 // On the way out, something is left on the last tile before
                 // the gate - which is the tile the way back comes out beside,
                 // so the frame taken at the end has it in it.
@@ -936,22 +1062,13 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
                     SDL_Log("gigantima: left 3 silver at %d,%d in %s",
                             dx, dy, app->game.map.name);
                 }
-
-                char leaf[GG_MAP_NAME_MAX + 8];
-                SDL_snprintf(leaf, sizeof leaf, "maps/%s", app->game.travel_to);
-                if (!gg_game_travel(&app->game, gg_asset_path(leaf),
-                                    app->game.travel_x, app->game.travel_y))
-                    break;
-                SDL_Log("gigantima: walked into %s", app->game.map.name);
+                if (!cross_over(app)) break;
             }
 
             // A step clear of the gate, because the way back comes out
             // directly below the tile the silver is on and the Avatar's head
             // would be standing in front of it in the photograph.
             gg_game_act(&app->game, GG_ACT_S);
-            // And let the step finish: the shot is taken from wherever the
-            // interpolation has got to, and a sprite mid-slide is still drawn
-            // on the tile it left.
             for (int i = 0; i < GG_STEP_TICKS + 2; i++)
                 gg_game_animate(&app->game);
 
@@ -961,6 +1078,86 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
                         app->game.map.ground[pile].count, dx, dy);
             else
                 SDL_Log("gigantima: the silver left at %d,%d is gone", dx, dy);
+        }
+
+        // The whole story, played through in one run of the real game: ask the
+        // vale what is wrong, walk the north road, kill the man at the end of
+        // it, carry the silver home and hand it back. Nothing here reaches into
+        // the world - it walks, talks, fights, picks things up and hands one
+        // over, all through gg_game_act - so a story that cannot be finished by
+        // a player cannot be finished by this either.
+        if (app->screen_name && SDL_strcmp(app->screen_name, "ending") == 0) {
+            gg_game *g = &app->game;
+
+            // Ask everybody, three times over: what Nystul teaches is what
+            // makes Gwenno worth talking to, so one sweep is not enough for a
+            // rumour to cross a square.
+            for (int sweep = 0; sweep < 3; sweep++)
+                for (int i = 0; i < g->actors; i++) {
+                    if (i == g->player || !g->actor[i].active ||
+                        g->actor[i].hostile) continue;
+                    if (!gg_dialogue_find(g->actor[i].name)) continue;
+                    ask_everything(app, i);
+                }
+            SDL_Log("gigantima: %d words learned, %d walking with the Avatar",
+                    g->knownn, gg_party_size(g));
+
+            // Whatever the vale handed over, in hand - and only then the
+            // hills, and only if the vale handed over nothing. Hunting first
+            // meant fighting the first brigand bare-handed with a hammer in
+            // the pack, which is how this arrived at the stones on four
+            // health.
+            ready_the_best(app);
+            hunt_for_gear(app, 6);
+            drink_if_hurt(app);
+            SDL_Log("gigantima: leaving the vale with attack %d, guard %d, "
+                    "%d/%d health", gg_attack_power(g, g->player),
+                    gg_guard_power(g, g->player), gg_player_const(g)->hp,
+                    gg_player_const(g)->hp_max);
+
+            if (walk_to_the_way_out(app) && cross_over(app)) {
+                ready_the_best(app);
+                SDL_Log("gigantima: attack %d, guard %d",
+                        gg_attack_power(g, g->player),
+                        gg_guard_power(g, g->player));
+
+                // The man in the ring. Walking at him is striking him.
+                int rugar = -1;
+                for (int i = 0; i < g->actors; i++)
+                    if (g->actor[i].active && g->actor[i].hostile) rugar = i;
+                if (rugar > 0) {
+                    for (int i = 0; i < 400 && g->actor[rugar].active &&
+                                    g->mode == GG_MODE_PLAY; i++) {
+                        drink_if_hurt(app);
+                        if (!step_toward(app, g->actor[rugar].x,
+                                         g->actor[rugar].y)) break;
+                    }
+                    SDL_Log("gigantima: Rugar %s",
+                            g->actor[rugar].active ? "is still standing"
+                                                   : "has fallen");
+
+                    // What he was carrying.
+                    walk_to(app, g->actor[rugar].x, g->actor[rugar].y, 0, 40);
+                    for (int i = 0; i < 4; i++) gg_game_act(g, GG_ACT_GET);
+                    SDL_Log("gigantima: %d silver in the pack",
+                            gg_pack_count(g, GG_ITEM_SILVER));
+                }
+
+                // Home with it, and hand it over.
+                if (walk_to_the_way_out(app) && cross_over(app)) {
+                    int iolo = -1;
+                    for (int i = 0; i < g->actors; i++)
+                        if (SDL_strcmp(g->actor[i].name, "Iolo") == 0) iolo = i;
+                    if (iolo > 0) ask_everything(app, iolo);
+                }
+            }
+
+            const char *quest = nullptr, *words = nullptr;
+            if (gg_ending(g, &quest, &words))
+                SDL_Log("gigantima: the story ended - %s: %s", quest, words);
+            else
+                SDL_Log("gigantima: the story did not end (mode %d, %u turns)",
+                        (int)g->mode, g->turn);
         }
 
         // Learns what the vale has to teach and kills something, so the

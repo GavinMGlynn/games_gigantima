@@ -215,7 +215,17 @@ that is reachable while content is C, so the editor comes before the content.
       *Verification: silver is left on the road in the vale, the Avatar walks
       out to the standing stones and back, and the frame shows it still lying
       there. The same round trip is checked over a save file.*
-- [ ] **The main storyline.** *Verification: playable start to finish.*
+- [x] **The main storyline.** A caravan out of the north never arrived. The
+      vale tells you why one person at a time, arms whoever asks, and sends you
+      up a road with brigands on it to a ring of standing stones where the man
+      who took it is waiting. Bring the silver home to the market it was bound
+      for and the story ends. All of it is text files — the quest, what everyone
+      says, who is on the road and who is at the end of it.
+      *Verification: the game plays its own story through in one run — asking
+      the vale what is wrong, walking the road, killing the man at the end of
+      it and handing the silver back — and photographs the ending. The fight
+      itself is measured rather than assumed: a party that came prepared wins
+      17 times in 20, and one that walked up alone and empty-handed wins none.*
 
 ## Phase 4 — Fit and finish
 
@@ -276,3 +286,26 @@ Recorded here as they turn up, so they are not rediscovered:
   baker's art check with nine texels — the tip of a flame, the rest of the torch
   being on the row below — and baked to an invisible sprite. **A check on art
   has to be a coverage figure, not a yes/no.**
+- The frontend built the world **before** it read the dialogue, the bestiary and
+  the quests, so every world started from the command line had no townsfolk and
+  nothing hostile in it — two actors where there should have been seventeen.
+  Nobody noticed because the title screen's New Game happens after the load.
+  **Content has to be read before the world that is made of it.**
+- A scripted walk that acts in a compass direction until it stops working walks
+  two tiles in a town and gives up, and one that sidesteps drifts off its line
+  and past the gate it was aiming at. The staged screens now walk *to a tile*,
+  through the same pathfinder the townsfolk use.
+- Nothing guarded `GG_MODE_GAMEOVER`, so a slain Avatar kept walking. Found while
+  adding the ending, which needed the same guard.
+- **An authored map ships with seed 0**, so every playthrough of the vale rolls
+  the same dice — the same creatures in the same places and the same loot. The
+  map format carries a seed and nothing sets one; the editor should, and a new
+  game on an authored map should be allowed to override it.
+- **The editor is the only thing that can write a map, and it needs a mouse.**
+  The two shipped maps cannot be regenerated from anything, so a format change
+  strands them — which is why creatures are placed from the bestiary by map name
+  rather than by the map itself. A text source the editor can read, or a headless
+  authoring path, would fix both.
+- Experience is counted, saved, and spends on nothing: there is no levelling. The
+  Avatar is level one at the end of the story as at the start, and what makes the
+  fight winnable is what the road hands over rather than what it teaches.

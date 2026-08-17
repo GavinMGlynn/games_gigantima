@@ -25,6 +25,12 @@ void gg_ui_weight(char *out, size_t n, int hundredths);
 // record of the story rather than a second copy of it.
 void gg_ui_journal(const gg_game *g, SDL_Renderer *ren);
 
+// The end of it all, drawn over the world while mode is GG_MODE_ENDING or
+// GG_MODE_GAMEOVER. Two endings, one panel: the story seen through, and the
+// story cut short. What either says comes out of the book rather than out of
+// here - see gg_ending.
+void gg_ui_ending(const gg_game *g, SDL_Renderer *ren);
+
 // The spells whose runes are known, drawn over the world while mode is
 // GG_MODE_SPELL. Shows the phrase, the price and whether it can be paid, so a
 // player can see why a spell is out of reach without leaving the book.

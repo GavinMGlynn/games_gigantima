@@ -108,6 +108,13 @@ void gg_conversation_refresh(gg_game *g) {
         // Any synonym will do, but the first one is what gets shown - so a
         // player who learned "market" is offered "job", which is the word the
         // author chose to label it with.
+        // A topic that wants something can only be raised while it is in the
+        // pack. Otherwise the player would be offered the word that hands over
+        // the silver before they have any, and be told no by a line of speech.
+        if (t->wants_count > 0 &&
+            gg_pack_count(g, (gg_item_id)t->wants) < t->wants_count)
+            continue;
+
         for (int w = 0; w < t->words; w++) {
             if (!gg_knows(g, t->word[w])) continue;
             SDL_strlcpy(g->askable[g->askables++], t->word[0], GG_WORD_MAX);
@@ -173,6 +180,43 @@ void gg_conversation_ask(gg_game *g) {
         gg_conversation_refresh(g);
     }
 
+    // Handing something over. The topic was only offered because the pack held
+    // it, so this cannot fail - and the goods go before the flag is raised, so
+    // a story that ends here ends with the silver on the counter.
+    if (t->wants_count > 0) {
+        int left = t->wants_count;
+        while (left > 0) {
+            const int slot = gg_pack_find(g, (gg_item_id)t->wants);
+            if (slot < 0) break;
+            const int took = gg_pack_take(g, slot, left);
+            if (took <= 0) break;
+            left -= took;
+        }
+        gg_emit(g, GG_EV_DROP);
+        gg_log(g, "Thou dost hand over the %s.",
+               t->wants_count > 1 ? GG_ITEM[t->wants].many
+                                 : GG_ITEM[t->wants].one);
+        gg_conversation_refresh(g);
+    }
+
+    // And what it hands over. Only when the pack holds none of that kind, so
+    // asking twice is not a purse that never empties - the rule is in the
+    // book's own documentation and this is the whole of it.
+    if (t->gives_count > 0 && gg_pack_count(g, (gg_item_id)t->gives) == 0) {
+        const int took = gg_pack_add(g, (gg_item_id)t->gives, t->gives_count);
+        if (took > 0) {
+            gg_emit(g, GG_EV_TAKE);
+            gg_log(g, "Thou art given %s.", took > 1 ? GG_ITEM[t->gives].many
+                                                     : GG_ITEM[t->gives].one);
+        } else {
+            gg_log(g, "Thou canst carry no more.");
+        }
+    }
+
+    // And what it settles. A flag is how the story hears about a conversation:
+    // the quests watch for it, and nothing here knows which quest cares.
+    if (t->raises[0] && gg_raise_flag(g, t->raises)) gg_quests_tick(g);
+
     // Recruiting is the one thing a conversation does beyond handing over a
     // word, and it is declared in the book rather than here.
     if (t->joins && g->talking_to >= 0) {
@@ -223,6 +267,12 @@ static bool stage_ready(const gg_game *g, const gg_stage *s) {
     case GG_WHEN_HAS:    return gg_pack_count(g, (gg_item_id)s->item) >= s->count;
     case GG_WHEN_SLAIN:  return (int)g->slain >= s->count;
     case GG_WHEN_PARTY:  return gg_party_size(g) >= s->count;
+    case GG_WHEN_AT: {
+        if (SDL_strcasecmp(g->here, s->where) != 0) return false;
+        if (s->radius == 0) return true;
+        const gg_actor *p = gg_player_const(g);
+        return gg_dist_cheb(p->x, p->y, s->wx, s->wy) <= s->radius;
+    }
     default:             return false;
     }
 }
@@ -245,6 +295,15 @@ void gg_quests_tick(gg_game *g) {
             if (q->stage[at].sets[0]) gg_raise_flag(g, q->stage[at].sets);
             gg_emit(g, GG_EV_LEARN);
             gg_log(g, "%s: %s", q->name, q->stage[at].journal);
+
+            // The end of the story. The world stops taking orders here, the
+            // same way it does when the Avatar falls - and for the same
+            // reason: what happens next is a screen, not a turn.
+            if (q->stage[at].ends) {
+                g->story_over = true;
+                g->mode = GG_MODE_ENDING;
+                return;
+            }
         }
     }
 }
@@ -1009,6 +1068,12 @@ static void do_open(gg_game *g) {
 }
 
 void gg_game_act(gg_game *g, gg_action a) {
+    // A world that has ended takes no more orders. Both endings - the Avatar's
+    // and the story's - are a screen rather than a turn, and a world that kept
+    // taking steps after either would be a world where being slain is a state
+    // you walk out of.
+    if (g->mode == GG_MODE_GAMEOVER || g->mode == GG_MODE_ENDING) return;
+
     // In a conversation the directions run down the list of words this person
     // will answer to, and asking is the same button that started the talk.
     // Nothing here advances the world: a conversation costs no time, which is
@@ -1293,6 +1358,67 @@ static void populate_from_map(gg_game *g) {
     place_townsfolk(g);
 }
 
+// What haunts the map underfoot, out of the bestiary.
+//
+// `first_world` is true only for the map a game begins in, which is the one
+// that gets the creatures with nowhere in particular to be. A creature that
+// names a map is put in that map instead, the first time it is walked into -
+// and a creature that names a tile as well stands on it, which is how a story
+// puts its villain where the story says without a line of C knowing where that
+// is.
+//
+// Called once per map per world: a map walked back into is remembered rather
+// than re-read, so nothing is stocked twice.
+static void stock_creatures(gg_game *g, bool first_world) {
+    // Away from the town's own doorstep for the ones with nowhere to be: the
+    // vale should be safe to leave a house in, and dangerous to walk out of.
+    int cx = g->map.start_x, cy = g->map.start_y;
+    for (int i = 0; i < g->map.regions; i++)
+        if (g->map.region[i].kind == GG_REGION_TOWN) {
+            cx = g->map.region[i].x + g->map.region[i].w / 2;
+            cy = g->map.region[i].y + g->map.region[i].h / 2;
+            break;
+        }
+
+    for (int kind = 0; kind < gg_bestiary_count(); kind++) {
+        const gg_beast *b = gg_bestiary_at(kind);
+        if (!b || b->haunts == 0) continue;
+
+        const bool named = b->haunt_map[0] != '\0';
+        if (named) {
+            if (SDL_strcasecmp(b->haunt_map, g->here) != 0) continue;
+        } else if (!first_world) {
+            continue;
+        }
+
+        // A tile of its own: exactly there, or the nearest place it fits.
+        // Somewhere near where the story says beats nowhere at all.
+        if (named && b->haunt_x >= 0) {
+            bool placed = false;
+            for (int r = 0; r < 12 && !placed; r++)
+                for (int oy = -r; oy <= r && !placed; oy++)
+                    for (int ox = -r; ox <= r && !placed; ox++)
+                        if (gg_spawn_foe(g, kind, b->haunt_x + ox,
+                                         b->haunt_y + oy) >= 0)
+                            placed = true;
+            if (!placed)
+                SDL_Log("gigantima: nowhere to put %s at %d,%d in %s", b->id,
+                        b->haunt_x, b->haunt_y, g->here);
+            if (b->haunts <= 1) continue;
+        }
+
+        int placed = 0;
+        for (int tries = 0; tries < 300 && placed < b->haunts; tries++) {
+            const int x = gg_rand_belowi(&g->rng, g->map.w);
+            const int y = gg_rand_belowi(&g->rng, g->map.h);
+            if (!named && gg_dist_cheb(cx, cy, x, y) < 24) continue;
+            const gg_cell *c = gg_map_at_const(&g->map, x, y);
+            if (!c || (c->flags & GG_CELL_INDOORS)) continue;
+            if (gg_spawn_foe(g, kind, x, y) >= 0) placed++;
+        }
+    }
+}
+
 // Everything a new game needs once its map exists, however the map got there.
 static bool finish_new_game(gg_game *g, const char *profile) {
     if (!gg_path_init(&g->path, g->map.w, g->map.h)) {
@@ -1351,39 +1477,49 @@ static bool finish_new_game(gg_game *g, const char *profile) {
 
     populate_from_map(g);
 
-    // Trouble in the wilderness, well away from the town gate. How many of
-    // what comes out of the bestiary - nothing here knows a brigand from a
-    // slinger, which is what lets a creature be added to a file alone.
-    {
-        int cx = g->map.start_x, cy = g->map.start_y;
-        for (int i = 0; i < g->map.regions; i++)
-            if (g->map.region[i].kind == GG_REGION_TOWN) {
-                cx = g->map.region[i].x + g->map.region[i].w / 2;
-                cy = g->map.region[i].y + g->map.region[i].h / 2;
-                break;
-            }
-
-        for (int kind = 0; kind < gg_bestiary_count(); kind++) {
-            const gg_beast *b = gg_bestiary_at(kind);
-            if (!b || b->haunts == 0) continue;
-
-            int placed = 0;
-            for (int tries = 0; tries < 300 && placed < b->haunts; tries++) {
-                const int x = gg_rand_belowi(&g->rng, g->map.w);
-                const int y = gg_rand_belowi(&g->rng, g->map.h);
-                // Not on the town's doorstep: the vale should be safe to leave
-                // a house in, and dangerous to walk out of.
-                if (gg_dist_cheb(cx, cy, x, y) < 24) continue;
-                const gg_cell *c = gg_map_at_const(&g->map, x, y);
-                if (!c || (c->flags & GG_CELL_INDOORS)) continue;
-                if (gg_spawn_foe(g, kind, x, y) >= 0) placed++;
-            }
-        }
-    }
+    stock_creatures(g, true);
 
     g->mode = GG_MODE_PLAY;
     gg_log(g, "%s. Day %u, %s.", g->map.name, g->day, gg_game_place(g));
     gg_log(g, "Thou art the Avatar. Seek the vale's troubles.");
+    return true;
+}
+
+gg_action gg_action_toward(int dx, int dy) {
+    static const gg_action BY[3][3] = {
+        { GG_ACT_NW, GG_ACT_N,    GG_ACT_NE },
+        { GG_ACT_W,  GG_ACT_WAIT, GG_ACT_E  },
+        { GG_ACT_SW, GG_ACT_S,    GG_ACT_SE },
+    };
+    return BY[gg_clampi(dy, -1, 1) + 1][gg_clampi(dx, -1, 1) + 1];
+}
+
+bool gg_step_toward(gg_game *g, int who, int tx, int ty, int *nx, int *ny) {
+    if (who < 0 || who >= g->actors) return false;
+    const gg_actor *a = &g->actor[who];
+    if (a->x == tx && a->y == ty) return false;
+
+    gg_walk_ctx ctx = { .g = g, .self = who };
+    return gg_path_next_step(&g->path, path_passable, &ctx, a->x, a->y, tx, ty,
+                             GG_PATH_BUDGET, nx, ny);
+}
+
+bool gg_ending(const gg_game *g, const char **quest, const char **words) {
+    if (!g->story_over) return false;
+    for (int i = 0; i < gg_quests_count() && i < GG_QUESTS_MAX; i++) {
+        const gg_quest *q = gg_quest_at(i);
+        if (!q || g->quest[i] < 1) continue;
+        const gg_stage *last = &q->stage[g->quest[i] - 1];
+        if (!last->ends) continue;
+        if (quest) *quest = q->name;
+        if (words) *words = last->journal;
+        return true;
+    }
+    // The story is over and the book no longer says so - somebody edited
+    // quests.txt between one session and the next. A world that ended is still
+    // a world that ended.
+    if (quest) *quest = "";
+    if (words) *words = "";
     return true;
 }
 
@@ -1609,11 +1745,15 @@ bool gg_game_travel(gg_game *g, const char *path, int x, int y) {
     // And whoever is here. A map walked in before hands back the people who
     // were standing in it when it was left, wounds and all; one being seen for
     // the first time hands back whoever the map says lives there.
-    if (taken.whos > 0) {
+    // Remembered, or new. A map walked in before hands back exactly the people
+    // it was left with - including nobody, if they all fell - and one being
+    // seen for the first time is peopled and stocked.
+    if (known >= 0) {
         for (int i = 0; i < taken.whos && g->actors < GG_ACTORS_MAX; i++)
             g->actor[g->actors++] = taken.who[i];
     } else {
         populate_from_map(g);
+        stock_creatures(g, false);
     }
     SDL_free(taken.who);
 
