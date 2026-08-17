@@ -599,7 +599,7 @@ static void a_one_tile_road_takes_a_verge_on_both_sides(void) {
     CHECK(land_scene(&m) != nullptr, "alloc failed");
     for (int y = 0; y < 7; y++) m.cell[y * 7 + 3].terrain = GG_TILE_ROAD;
 
-    const uint16_t mask = gg_render_overlay_mask(&m, 3, 3);
+    const uint16_t mask = gg_render_overlay_mask(&m, 3, 3, GG_OVERLAY_GRASS);
     CHECK(mask & (1u << GG_EDGE_W), "no verge on the west side");
     CHECK(mask & (1u << GG_EDGE_E), "no verge on the east side");
     CHECK(!(mask & (1u << GG_EDGE_N)), "north is road, not grass");
@@ -612,7 +612,7 @@ static void a_lone_patch_takes_a_verge_on_all_four_sides(void) {
     CHECK(land_scene(&m) != nullptr, "alloc failed");
     m.cell[3 * 7 + 3].terrain = GG_TILE_SAND;
 
-    const uint16_t mask = gg_render_overlay_mask(&m, 3, 3);
+    const uint16_t mask = gg_render_overlay_mask(&m, 3, 3, GG_OVERLAY_GRASS);
     for (int p = 0; p < 4; p++) {
         static const int SIDES[4] = { GG_EDGE_N, GG_EDGE_S, GG_EDGE_E, GG_EDGE_W };
         CHECK(mask & (1u << SIDES[p]), "side %d has no verge", p);
@@ -631,7 +631,7 @@ static void a_diagonal_only_neighbour_uses_the_concave_piece(void) {
     for (int i = 0; i < 49; i++) m.cell[i].terrain = GG_TILE_DIRT;
     m.cell[2 * 7 + 2].terrain = GG_TILE_GRASS;
 
-    const uint16_t mask = gg_render_overlay_mask(&m, 3, 3);
+    const uint16_t mask = gg_render_overlay_mask(&m, 3, 3, GG_OVERLAY_GRASS);
     CHECK(mask == (1u << GG_EDGE_IN_NW),
           "expected only the concave NW piece, got mask 0x%x", mask);
     gg_map_free(&m);
@@ -644,7 +644,7 @@ static void a_straight_verge_suppresses_its_own_corner(void) {
     m.cell[2 * 7 + 2].terrain = GG_TILE_GRASS;   // north-west diagonal
     m.cell[2 * 7 + 3].terrain = GG_TILE_GRASS;   // due north
 
-    const uint16_t mask = gg_render_overlay_mask(&m, 3, 3);
+    const uint16_t mask = gg_render_overlay_mask(&m, 3, 3, GG_OVERLAY_GRASS);
     CHECK(mask & (1u << GG_EDGE_N), "the north verge is missing");
     CHECK(!(mask & (1u << GG_EDGE_IN_NW)),
           "the north piece already covers that corner; drawing both doubles it");
@@ -655,8 +655,58 @@ static void a_patch_touching_no_grass_needs_no_overlay(void) {
     gg_map m;
     CHECK(land_scene(&m) != nullptr, "alloc failed");
     for (int i = 0; i < 49; i++) m.cell[i].terrain = GG_TILE_DIRT;
-    CHECK(gg_render_overlay_mask(&m, 3, 3) == 0,
+    CHECK(gg_render_overlay_mask(&m, 3, 3, GG_OVERLAY_GRASS) == 0,
           "a cell surrounded by its own kind should draw nothing");
+    gg_map_free(&m);
+}
+
+static void a_boundary_is_drawn_from_the_softer_side_only(void) {
+    // Rank decides which way round a transition goes, and it must go one way
+    // only: if both sides drew onto each other the boundary would be doubled,
+    // and each cell would be fringed with the other's colour.
+    gg_map m;
+    CHECK(land_scene(&m) != nullptr, "alloc failed");
+    for (int i = 0; i < 49; i++) m.cell[i].terrain = GG_TILE_DESERT;
+    for (int x = 0; x < 7; x++) m.cell[2 * 7 + x].terrain = GG_TILE_SAND;
+
+    // Sand outranks desert, so the desert cell below the sand takes a verge...
+    const uint16_t onto_desert =
+        gg_render_overlay_mask(&m, 3, 3, GG_OVERLAY_SAND);
+    CHECK(onto_desert & (1u << GG_EDGE_N), "sand should bleed onto desert");
+
+    // ...and the sand cell above it takes nothing from the desert.
+    const uint16_t onto_sand =
+        gg_render_overlay_mask(&m, 3, 2, GG_OVERLAY_DESERT);
+    CHECK(onto_sand == 0, "desert must not bleed back onto sand, got 0x%x",
+          onto_sand);
+    gg_map_free(&m);
+}
+
+static void equal_ranks_do_not_transition(void) {
+    // Grass and worn grass are the same ground wearing different amounts of
+    // traffic; fringing one with the other would be visible and pointless.
+    gg_map m;
+    CHECK(land_scene(&m) != nullptr, "alloc failed");
+    for (int x = 0; x < 7; x++) m.cell[2 * 7 + x].terrain = GG_TILE_GRASS_WORN;
+
+    CHECK(gg_render_overlay_mask(&m, 3, 3, GG_OVERLAY_GRASS) == 0,
+          "grass and worn grass should not fringe each other");
+    gg_map_free(&m);
+}
+
+static void water_and_masonry_take_no_overlay(void) {
+    // Water carries its bank in its own edge sets, and GG_TILE_CLIFF stands in
+    // for masonry - a grass fringe up the side of every building is worse than
+    // a hard edge on the few loose cliffs.
+    gg_map m;
+    CHECK(land_scene(&m) != nullptr, "alloc failed");
+    m.cell[3 * 7 + 3].terrain = GG_TILE_WATER;
+    CHECK(gg_render_overlay_mask(&m, 3, 3, GG_OVERLAY_GRASS) == 0,
+          "water should take no land overlay");
+
+    m.cell[3 * 7 + 3].terrain = GG_TILE_CLIFF;
+    CHECK(gg_render_overlay_mask(&m, 3, 3, GG_OVERLAY_GRASS) == 0,
+          "masonry should take no land overlay");
     gg_map_free(&m);
 }
 
@@ -665,8 +715,8 @@ static void the_map_edge_grows_no_verge(void) {
     gg_map m;
     CHECK(land_scene(&m) != nullptr, "alloc failed");
     for (int i = 0; i < 49; i++) m.cell[i].terrain = GG_TILE_DIRT;
-    CHECK(gg_render_overlay_mask(&m, 0, 0) == 0, "the top-left corner sprouted a verge");
-    CHECK(gg_render_overlay_mask(&m, 6, 6) == 0, "the bottom-right corner sprouted a verge");
+    CHECK(gg_render_overlay_mask(&m, 0, 0, GG_OVERLAY_GRASS) == 0, "the top-left corner sprouted a verge");
+    CHECK(gg_render_overlay_mask(&m, 6, 6, GG_OVERLAY_GRASS) == 0, "the bottom-right corner sprouted a verge");
     gg_map_free(&m);
 }
 
@@ -765,6 +815,9 @@ int main(void) {
     RUN(a_diagonal_only_neighbour_uses_the_concave_piece);
     RUN(a_straight_verge_suppresses_its_own_corner);
     RUN(a_patch_touching_no_grass_needs_no_overlay);
+    RUN(a_boundary_is_drawn_from_the_softer_side_only);
+    RUN(equal_ranks_do_not_transition);
+    RUN(water_and_masonry_take_no_overlay);
     RUN(the_map_edge_grows_no_verge);
 
     RUN(every_terrain_and_item_has_a_name);

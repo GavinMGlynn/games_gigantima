@@ -33,12 +33,16 @@ void gg_render_screen_to_tile(const gg_game *g, int sx, int sy, int *tx, int *ty
 // trivial to catch in a test.
 int gg_render_water_piece(const gg_map *m, int x, int y);
 
-// Which pieces of the grass ring to draw over a non-grass cell, as a bitmask
-// over the 13 piece indices. Zero when the cell touches no grass.
+// Which pieces of overlay ring `set` to draw over the cell at (x, y), as a
+// bitmask over the 13 piece indices. Zero when no neighbour of that set
+// encroaches here.
 //
 // A mask, not a single piece: overlays are transparent, so more than one can
-// be drawn, and only that can express grass on two opposite sides - which is
-// what a one-tile-wide road is.
-uint16_t gg_render_overlay_mask(const gg_map *m, int x, int y);
+// be drawn, and only that can express a neighbour on two opposite sides -
+// which is what a one-tile-wide road has.
+//
+// `set` is a gg_overlay_id. The renderer asks once per set, because a cell can
+// have different terrains encroaching from different sides.
+uint16_t gg_render_overlay_mask(const gg_map *m, int x, int y, int set);
 
 #endif // GG_RENDER_H

@@ -261,6 +261,7 @@ def build_tiles():
     rows = (len(TILES) + cols - 1) // cols
     out = Image.new("RGBA", (cols * TILE, rows * TILE), (0, 0, 0, 0))
     entries = []
+    images = {}          # named fills, for the synthesised overlay rings
     cache = {}
     for i, (name, rel, c, r) in enumerate(TILES):
         if rel not in cache:
@@ -273,7 +274,8 @@ def build_tiles():
         x, y = (i % cols) * TILE, (i // cols) * TILE
         out.paste(tile, (x, y))
         entries.append((name, x, y, TILE, TILE))
-    return out, entries
+        images[name] = tile
+    return out, entries, images
 
 
 def _mean_rgb(img):
@@ -412,9 +414,22 @@ def build_edges():
 # renderer know that, the bake rotates the ring 180 degrees (index k -> 8-k) so
 # both kinds index identically: piece k means "the other terrain lies in
 # direction k".
+# The sheet carries exactly one overlay ring, grass's. The others are
+# *synthesised* from it: the ring's alpha is a jagged organic fringe, and
+# filling that shape with another terrain's own fill tile gives that terrain
+# the same irregular boundary. Checked by eye before being relied on - at this
+# tile size the fringe reads as a natural edge rather than as grass blades, so
+# sand and dirt wear it convincingly.
+#
+# Entries are (name, fill tile name), or (name, sheet, col, row) for a real
+# ring read straight from the art.
 OVERLAYS = [
-    # name        sheet      col row
-    ("GRASS",     TERRAIN,     0,  0),
+    ("GRASS",    TERRAIN, 0, 0),   # real art; the shape all the others borrow
+    ("FARMLAND", "FARMLAND"),
+    ("DIRT",     "DIRT"),
+    ("ROAD",     "ROAD"),
+    ("SAND",     "SAND"),
+    ("DESERT",   "DESERT"),
 ]
 
 
@@ -424,26 +439,45 @@ def _alpha_weight(piece):
     return [a[x, y] / 255.0 for y in range(TILE) for x in range(TILE)]
 
 
-def build_overlays():
+def build_overlays(tile_images):
     cells_per_set = 13
     out = Image.new("RGBA", (cells_per_set * TILE, TILE * len(OVERLAYS)), (0, 0, 0, 0))
     entries = []
     cache = {}
-    for i, (name, rel, c, r) in enumerate(OVERLAYS):
-        if rel not in cache:
-            cache[rel] = sheet(rel)
-        src = cache[rel]
+    shape = None            # the grass ring's alpha, borrowed by the rest
 
-        ring = [src.crop(((c + k % 3) * TILE, (r + k // 3) * TILE,
-                         (c + k % 3 + 1) * TILE, (r + k // 3 + 1) * TILE))
-                for k in range(9)]
+    for i, spec in enumerate(OVERLAYS):
+        name = spec[0]
 
-        if ring[4].getchannel("A").getextrema()[0] != 255:
-            sys.exit(f"overlay {name} at {rel} ({c},{r}) has a transparent "
-                     f"centre - that is not a filled ring")
-
-        # Rotate into "the other terrain lies in direction k" order.
-        piece = [ring[8 - k] for k in range(9)]
+        if len(spec) == 4:
+            _, rel, c, r = spec
+            if rel not in cache:
+                cache[rel] = sheet(rel)
+            src = cache[rel]
+            ring = [src.crop(((c + k % 3) * TILE, (r + k // 3) * TILE,
+                             (c + k % 3 + 1) * TILE, (r + k // 3 + 1) * TILE))
+                    for k in range(9)]
+            if ring[4].getchannel("A").getextrema()[0] != 255:
+                sys.exit(f"overlay {name} at {rel} ({c},{r}) has a transparent "
+                         f"centre - that is not a filled ring")
+            # Rotate into "the other terrain lies in direction k" order.
+            piece = [ring[8 - k] for k in range(9)]
+            if shape is None:
+                shape = [p.getchannel("A") for p in piece]
+        else:
+            if shape is None:
+                sys.exit("the first overlay entry must be a real ring - the "
+                         "synthesised ones borrow its shape")
+            fill_name = spec[1]
+            if fill_name not in tile_images:
+                sys.exit(f"overlay {name} wants fill tile {fill_name}, which is "
+                         f"not in TILES")
+            fill = tile_images[fill_name]
+            piece = []
+            for k in range(9):
+                img = fill.copy()
+                img.putalpha(shape[k])
+                piece.append(img)
 
         # Concave corners start from *nothing* rather than from a fill: a cell
         # touched only on one diagonal should carry a nub of grass and be
@@ -745,7 +779,7 @@ def emit_credits(path):
     used = sorted({os.path.dirname(rel) for _n, rel, *_ in TILES} |
                   {os.path.dirname(rel) for _n, rel, *_ in PROPS} |
                   {os.path.dirname(rel) for _n, rel, *_ in EDGES} |
-                  {os.path.dirname(rel) for _n, rel, *_ in OVERLAYS} |
+                  {os.path.dirname(s[1]) for s in OVERLAYS if len(s) == 4} |
                   {"Characters"})
     parts = [
         "# Art credits\n",
@@ -774,7 +808,7 @@ def main():
     os.makedirs(ASSETS, exist_ok=True)
     print("gigantima: baking art from ext/lpc-revised")
 
-    tiles_img, tiles = build_tiles()
+    tiles_img, tiles, tile_images = build_tiles()
     tiles_img.save(os.path.join(ASSETS, "atlas_tiles.png"))
     print(f"  tiles   {tiles_img.size[0]:4d}x{tiles_img.size[1]:<4d} {len(tiles):3d} entries")
 
@@ -782,7 +816,7 @@ def main():
     edges_img.save(os.path.join(ASSETS, "atlas_edges.png"))
     print(f"  edges   {edges_img.size[0]:4d}x{edges_img.size[1]:<4d} {len(edges):3d} sets")
 
-    ov_img, overlays = build_overlays()
+    ov_img, overlays = build_overlays(tile_images)
     ov_img.save(os.path.join(ASSETS, "atlas_overlays.png"))
     print(f"  overlay {ov_img.size[0]:4d}x{ov_img.size[1]:<4d} {len(overlays):3d} sets")
 

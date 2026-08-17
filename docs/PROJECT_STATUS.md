@@ -192,10 +192,19 @@ east. Overlays are transparent, so one straight piece per grassy side
 composites into the right shape, and the concave pieces cover only what a
 straight piece cannot reach.
 
-**The remaining gap** is a boundary between two *non-grass* terrains — sand
-meeting dirt, say. The sheet carries an overlay ring for grass and for nothing
-else, so those still butt hard. Rare in the world as it stands. Named in the
-plan.
+**Every terrain pair is covered.** The sheet has an overlay ring for grass and
+for nothing else, so the rest are synthesised at bake time by filling the grass
+ring's shape with each terrain's own fill tile — the ring's edge is a jagged
+organic fringe, and at this tile size it reads as a natural boundary rather
+than as grass blades, so sand and dirt wear it convincingly.
+
+A **rank** decides which way round each boundary is drawn: softer, more
+vegetated ground bleeds onto barer ground and never the reverse, so a boundary
+is drawn once and from one side. Equal ranks do not transition at all, which
+keeps grass and worn grass from fringing each other. Water is excluded because
+its edge sets already carry a bank, and `GG_TILE_CLIFF` because it stands in
+for masonry — a grass fringe up every building would be worse than a hard edge
+on a few loose cliffs.
 
 *Verification: `a_square_lake_selects_all_nine_edge_pieces` (all nine pieces of
 a square lake, each exactly once), `water_at_the_map_edge_draws_no_shoreline_against_nothing`,
@@ -278,7 +287,6 @@ Named plainly, because a reader should not have to infer absence:
 | Title/menus/setup pages | a title screen with a prompt. No menus, no options, no profile pages |
 | Level editor | nothing. The map format exists for it |
 | Buildings | rectangles of wall with a door. No roofs, windows, interiors or furniture |
-| Transitions between two non-grass terrains | sand meeting dirt still butts hard; only grass has an overlay ring |
 | Indoor lighting | the light quad covers the whole view; `GG_CELL_INDOORS` is set but unused |
 | Pathfinding | greedy stepping only |
 | Party | the avatar is alone |

@@ -116,42 +116,60 @@ int gg_render_water_piece(const gg_map *m, int x, int y) {
 // ---------------------------------------------------------------------------
 // Land meeting land
 //
-// Water replaces a cell's tile; grass is drawn *over* one. Only grass has an
-// overlay ring in the source art, which turns out to be the one that matters:
-// grass is the ground and dirt, road, sand, desert and farmland are all
-// patches cut into it, so a single ring covers every land boundary the world
-// has. If a second dominant terrain ever needs one, this generalises to a
-// precedence order; today it is deliberately binary.
+// Water *replaces* a cell's tile; land is drawn *over* one. That difference is
+// what lets several boundaries meet on the same cell without fighting: a patch
+// of dirt with grass to the north and sand to the east gets both, as two
+// transparent passes.
+//
+// Which way round a boundary is drawn comes from a rank. The source art has an
+// overlay ring for grass and for nothing else; the rest are synthesised at
+// bake time by filling the grass ring's shape with each terrain's own fill, so
+// every pair has one. See tools/make_atlas.py.
 // ---------------------------------------------------------------------------
-static bool is_grassy(const gg_cell *c) {
-    return c->terrain == GG_TILE_GRASS || c->terrain == GG_TILE_GRASS_WORN;
-}
-
-// Cells grass is allowed to bleed onto. Water is excluded because its edge
-// sets already carry a bank, and doubling up would put a grass fringe on top
-// of a beach.
-static bool takes_overlay(const gg_cell *c) {
-    switch (c->terrain) {
-    case GG_TILE_DIRT:  case GG_TILE_EARTH_DARK: case GG_TILE_FARMLAND:
-    case GG_TILE_ROAD:  case GG_TILE_SAND:       case GG_TILE_DESERT:
-    // Rock takes a verge too. It is not obvious that it should - grass does
-    // not grow on a cliff face - but the alternative is a hard staircase where
-    // the mountains meet the grass, which reads as a tiling artifact rather
-    // than as a cliff. With the verge it reads as scree and foothills.
-    case GG_TILE_MOUNTAIN:
-        return true;
-    // GG_TILE_CLIFF is deliberately absent: it stands in for masonry as well
-    // as for rock, and a grass fringe up the side of every building is worse
-    // than a hard edge on the few loose cliffs.
-    default:
-        return false;
+// How strongly a terrain encroaches on its neighbours. Softer, more vegetated
+// ground bleeds onto harder, barer ground and never the other way, so a
+// boundary is drawn once and from one side only. Equal ranks do not transition
+// at all, which is what keeps grass and worn grass, or dirt and a building's
+// earth floor, from fringing each other pointlessly.
+//
+// Rank -1 means "no overlay at all": water carries its bank in its own edge
+// sets, and GG_TILE_CLIFF stands in for masonry as well as rock, where a grass
+// fringe up the side of every building would be worse than a hard edge.
+static int terrain_rank(uint8_t t) {
+    switch (t) {
+    case GG_TILE_GRASS:  case GG_TILE_GRASS_WORN:               return 4;
+    case GG_TILE_FARMLAND: case GG_TILE_DIRT: case GG_TILE_EARTH_DARK: return 3;
+    case GG_TILE_ROAD:   case GG_TILE_SAND:                     return 2;
+    case GG_TILE_DESERT:                                        return 1;
+    // Rock takes a verge but never gives one. Not obvious - grass does not
+    // grow on a cliff face - but the alternative is a hard staircase where the
+    // mountains meet the grass, and that reads as a tiling artifact rather
+    // than as a cliff.
+    case GG_TILE_MOUNTAIN:                                      return 0;
+    default:                                                    return -1;
     }
 }
 
-static bool grassy_at(const gg_map *m, int x, int y) {
+// Which ring a terrain bleeds *with*. Several terrains share one: a building's
+// earth floor uses dirt's, because they are the same material.
+static int overlay_of(uint8_t t) {
+    switch (t) {
+    case GG_TILE_GRASS: case GG_TILE_GRASS_WORN: return GG_OVERLAY_GRASS;
+    case GG_TILE_FARMLAND:                       return GG_OVERLAY_FARMLAND;
+    case GG_TILE_DIRT:  case GG_TILE_EARTH_DARK: return GG_OVERLAY_DIRT;
+    case GG_TILE_ROAD:                           return GG_OVERLAY_ROAD;
+    case GG_TILE_SAND:                           return GG_OVERLAY_SAND;
+    case GG_TILE_DESERT:                         return GG_OVERLAY_DESERT;
+    default:                                     return -1;
+    }
+}
+
+// Does the cell at (x, y) bleed onto a cell of rank `rank` using ring `set`?
+// Off-map never does: the map edge should not sprout a verge.
+static bool encroaches(const gg_map *m, int x, int y, int set, int rank) {
     const gg_cell *c = gg_map_at_const(m, x, y);
-    // Off-map is not grass: the map edge should not sprout a verge.
-    return c && is_grassy(c);
+    if (!c) return false;
+    return terrain_rank(c->terrain) > rank && overlay_of(c->terrain) == set;
 }
 
 // Which overlay pieces to draw, as a bitmask over the 13 piece indices.
@@ -167,9 +185,16 @@ static bool grassy_at(const gg_map *m, int x, int y) {
 // north and west drawn together *is* the north-west corner. The concave pieces
 // then cover only the case a straight piece cannot reach, a grass neighbour on
 // a diagonal with neither of its own sides grassy.
-uint16_t gg_render_overlay_mask(const gg_map *m, int x, int y) {
-    const bool n = grassy_at(m, x, y - 1), s = grassy_at(m, x, y + 1);
-    const bool w = grassy_at(m, x - 1, y), e = grassy_at(m, x + 1, y);
+uint16_t gg_render_overlay_mask(const gg_map *m, int x, int y, int set) {
+    const gg_cell *c = gg_map_at_const(m, x, y);
+    if (!c) return 0;
+    const int rank = terrain_rank(c->terrain);
+    if (rank < 0) return 0;              // water and masonry take no overlay
+
+    const bool n = encroaches(m, x, y - 1, set, rank);
+    const bool s = encroaches(m, x, y + 1, set, rank);
+    const bool w = encroaches(m, x - 1, y, set, rank);
+    const bool e = encroaches(m, x + 1, y, set, rank);
 
     uint16_t mask = 0;
     if (n) mask |= 1u << GG_EDGE_N;
@@ -177,10 +202,10 @@ uint16_t gg_render_overlay_mask(const gg_map *m, int x, int y) {
     if (w) mask |= 1u << GG_EDGE_W;
     if (e) mask |= 1u << GG_EDGE_E;
 
-    if (grassy_at(m, x - 1, y - 1) && !n && !w) mask |= 1u << GG_EDGE_IN_NW;
-    if (grassy_at(m, x + 1, y - 1) && !n && !e) mask |= 1u << GG_EDGE_IN_NE;
-    if (grassy_at(m, x - 1, y + 1) && !s && !w) mask |= 1u << GG_EDGE_IN_SW;
-    if (grassy_at(m, x + 1, y + 1) && !s && !e) mask |= 1u << GG_EDGE_IN_SE;
+    if (encroaches(m, x - 1, y - 1, set, rank) && !n && !w) mask |= 1u << GG_EDGE_IN_NW;
+    if (encroaches(m, x + 1, y - 1, set, rank) && !n && !e) mask |= 1u << GG_EDGE_IN_NE;
+    if (encroaches(m, x - 1, y + 1, set, rank) && !s && !w) mask |= 1u << GG_EDGE_IN_SW;
+    if (encroaches(m, x + 1, y + 1, set, rank) && !s && !e) mask |= 1u << GG_EDGE_IN_SE;
     return mask;
 }
 
@@ -310,11 +335,16 @@ void gg_render_world(const gg_game *g, SDL_Renderer *ren) {
             // Land meeting land: a second, transparent pass over the base
             // tile. Nothing to draw when the cell touches no grass, which is
             // the common case, so the lookup exits early.
-            if (c && takes_overlay(c)) {
-                const uint16_t mask = gg_render_overlay_mask(&g->map, wx, wy);
+            // Land meeting land: transparent passes over the base tile, one
+            // per ring that encroaches here. Asked per set because a cell can
+            // have grass on one side and sand on another, and each brings its
+            // own boundary. Ordered low rank to high so the softer ground ends
+            // up on top where two meet at a corner.
+            for (int set = GG_OVERLAY_COUNT - 1; set >= 0; set--) {
+                const uint16_t mask = gg_render_overlay_mask(&g->map, wx, wy, set);
                 for (int p = 0; mask >> p; p++) {
                     if (!(mask & (1u << p))) continue;
-                    const gg_rect *o = &GG_OVERLAY_RECT[GG_OVERLAY_GRASS][p];
+                    const gg_rect *o = &GG_OVERLAY_RECT[set][p];
                     const SDL_FRect osrc = { (float)o->x, (float)o->y,
                                              (float)o->w, (float)o->h };
                     SDL_RenderTexture(ren, g_overlays, &osrc, &dst);

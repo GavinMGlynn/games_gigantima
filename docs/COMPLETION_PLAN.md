@@ -91,13 +91,15 @@ item to tick the easy half is the same violation wearing a different shape.
       `a_straight_verge_suppresses_its_own_corner`,
       `a_patch_touching_no_grass_needs_no_overlay`,
       `the_map_edge_grows_no_verge`. Detail in `PROJECT_STATUS.md`.*
-- [ ] **Transitions between two non-grass terrains.** Sand meeting dirt, or
-      desert meeting road, still butt hard. The sheet carries an overlay ring
-      for grass and for nothing else, so this needs either more rings found or
-      drawn, or a precedence order over several. Rare in the world as it
-      stands, which is why it is separate rather than blocking.
-      *Verification: an authored scene with sand abutting dirt, rendered with
-      no straight-line edge.*
+- [x] **Transitions between two non-grass terrains.** The sheet carries an
+      overlay ring for grass and for nothing else, so the rest are synthesised
+      at bake time by filling the grass ring's shape with each terrain's own
+      fill. A rank decides which side of a boundary draws it, so it is drawn
+      once and from the softer side.
+      *Verification: `a_boundary_is_drawn_from_the_softer_side_only`,
+      `equal_ranks_do_not_transition`, `water_and_masonry_take_no_overlay`, and
+      an authored scene banding desert / sand / road / dirt / farmland / grass
+      with no straight-line edge anywhere in it.*
 - [ ] **Real buildings.** Walls, roofs, windows, doorframes and interior floors
       from the LPC Structure sheets, replacing the current rectangles of
       `GG_TILE_MOUNTAIN`. *Verification: a town frame in which buildings read
