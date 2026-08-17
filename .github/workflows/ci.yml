@@ -82,7 +82,7 @@ jobs:
           SDL_RENDER_DRIVER: software
           SDL_AUDIODRIVER: dummy
         run: |
-          for s in title profiles name options pause play pack talk party fight spells journal; do
+          for s in title profiles name options keys pause play pack talk party fight spells journal; do
             ./build/gigantima --screen "$s" --profile CI --shot "screen-$s.bmp"
             test -s "screen-$s.bmp" || { echo "$s drew nothing"; exit 1; }
           done
@@ -158,6 +158,24 @@ jobs:
           grep -q "identical" replay.log || {
             echo "the replay did not end on the world it was recorded from"
             exit 1; }
+
+      # Every screen again with the larger text, which is a different layout
+      # and not the same one scaled: a row that fits at the baked size and runs
+      # off the bottom at twice it is a setting that makes the game *less*
+      # playable, which is the opposite of the point.
+      - name: Smoke test - every screen draws with large text
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_RENDER_DRIVER: software
+          SDL_AUDIODRIVER: dummy
+          XDG_DATA_HOME: ${{ runner.temp }}/bigprefs
+        run: |
+          mkdir -p "$XDG_DATA_HOME/gigantima/gigantima"
+          printf 'text_scale = 2\n' > "$XDG_DATA_HOME/gigantima/gigantima/settings.txt"
+          for s in title profiles name options keys pause play pack talk spells journal; do
+            ./build/gigantima --screen "$s" --profile CIBig --new --shot "big-$s.bmp"
+            test -s "big-$s.bmp" || { echo "$s drew nothing at large text"; exit 1; }
+          done
 
       # And that a controller is not the poor relation. A **virtual** gamepad
       # is attached through SDL and the game is played with it and nothing

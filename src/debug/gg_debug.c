@@ -37,7 +37,54 @@ void gg_debug_quit(SDL_Renderer *ren) {
 // Props are coloured too, not just terrain. Without them the overview showed a
 // featureless green field with a town in it - the woodland that covers much of
 // the map was invisible, which made the generator look far emptier than it is.
+// The overview says what kind of ground a tile is by colouring it, and green
+// against brown against red is the exact pair the commonest colour blindness
+// cannot separate - so there is a second palette that separates by **lightness**
+// instead, which every kind of colour vision keeps, and marks the Avatar with a
+// shape rather than only with a colour.
+static bool g_plain;
+
+void gg_debug_plain_colours(bool plain) {
+    g_plain = plain;
+    // The overview texture is built once and cached; it has to be rebuilt in
+    // the other palette.
+    g_map_w = g_map_h = 0;
+}
+
+static uint32_t plain_colour(const gg_cell *c) {
+    // Blue for water, and everything else a step on one grey ramp: passable
+    // ground light, scrub darker, canopy darker still, masonry darkest. Nothing
+    // here depends on telling one hue from another.
+    if (c->flags & GG_CELL_BLOCKED) return 0xFF201F1Eu;
+    if (c->flags & GG_CELL_DOOR)    return 0xFF56B4E9u;   // the one bright hue
+
+    if (GG_HAS_PROP(c)) {
+        switch (GG_PROP_OF(c)) {
+        case GG_PROP_TREE_OAK:  case GG_PROP_TREE_ELM:
+        case GG_PROP_TREE_TALL: case GG_PROP_TREE_BARE:
+        case GG_PROP_TREE_PINE: case GG_PROP_TREE_FIR:
+            return 0xFF4A4A48u;
+        default:
+            return 0xFF6B6B67u;
+        }
+    }
+    switch (c->terrain) {
+    case GG_TILE_WATER:      return 0xFF2C6FA8u;
+    case GG_TILE_WATER_DEEP: return 0xFF14375Cu;
+    case GG_TILE_MOUNTAIN:
+    case GG_TILE_CLIFF:      return 0xFF35342Fu;
+    case GG_TILE_ROAD:       return 0xFFE8E4D8u;   // the lightest thing on it
+    case GG_TILE_SAND:
+    case GG_TILE_DESERT:     return 0xFFC9C4B4u;
+    case GG_TILE_DIRT:
+    case GG_TILE_EARTH_DARK:
+    case GG_TILE_FARMLAND:   return 0xFF8C8880u;
+    default:                 return 0xFFA6A29Au;   // grass
+    }
+}
+
 static uint32_t terrain_colour(const gg_cell *c) {
+    if (g_plain) return plain_colour(c);
     if (c->flags & GG_CELL_BLOCKED) return 0xFF503C28u;   // masonry
     if (c->flags & GG_CELL_DOOR)    return 0xFF00D0FFu;
 
@@ -117,14 +164,28 @@ static void draw_map(const gg_game *g, SDL_Renderer *ren, int ox, int oy) {
     for (int i = 0; i < g->actors; i++) {
         const gg_actor *a = &g->actor[i];
         if (!a->active || i == g->player) continue;
-        SDL_SetRenderDrawColor(ren, 255, 220, 90, 255);
+        if (g_plain) SDL_SetRenderDrawColor(ren, 30, 28, 26, 255);
+        else         SDL_SetRenderDrawColor(ren, 255, 220, 90, 255);
         const SDL_FRect r = { dst.x + a->x * s - 1, dst.y + a->y * s - 1, 3, 3 };
         SDL_RenderFillRect(ren, &r);
     }
     const gg_actor *p = gg_player_const(g);
-    SDL_SetRenderDrawColor(ren, 255, 60, 60, 255);
-    const SDL_FRect pr = { dst.x + p->x * s - 2, dst.y + p->y * s - 2, 5, 5 };
-    SDL_RenderFillRect(ren, &pr);
+    if (g_plain) {
+        // A cross, not a dot: the Avatar has to be findable among a dozen
+        // other marks without depending on its colour being the different one.
+        SDL_SetRenderDrawColor(ren, 0, 0, 0, 255);
+        const SDL_FRect back = { dst.x + p->x * s - 5, dst.y + p->y * s - 5, 11, 11 };
+        SDL_RenderRect(ren, &back);
+        SDL_SetRenderDrawColor(ren, 255, 255, 255, 255);
+        const SDL_FRect across = { dst.x + p->x * s - 5, dst.y + p->y * s - 1, 11, 3 };
+        const SDL_FRect down   = { dst.x + p->x * s - 1, dst.y + p->y * s - 5, 3, 11 };
+        SDL_RenderFillRect(ren, &across);
+        SDL_RenderFillRect(ren, &down);
+    } else {
+        SDL_SetRenderDrawColor(ren, 255, 60, 60, 255);
+        const SDL_FRect pr = { dst.x + p->x * s - 2, dst.y + p->y * s - 2, 5, 5 };
+        SDL_RenderFillRect(ren, &pr);
+    }
 
     // The camera's footprint, so it is obvious how much of the world the
     // player can actually see at once.

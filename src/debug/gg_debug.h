@@ -24,4 +24,9 @@ void gg_debug_quit(SDL_Renderer *ren);
 // Draws the whole debug view. Does not present.
 void gg_debug_draw(const gg_game *g, SDL_Renderer *ren, uint32_t seed);
 
+// Draw the overview in colours chosen to stay apart for the commonest kinds of
+// colour blindness, and tell the markers apart by shape as well as by shade.
+// Off by default: the ordinary palette reads better for everyone it works for.
+void gg_debug_plain_colours(bool plain);
+
 #endif // GG_DEBUG_H

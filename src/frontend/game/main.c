@@ -311,9 +311,13 @@ static bool screen_act(gg_app *app, gg_screen_result r) {
     case GG_ACTION_GO:
         // Applying the options on the way out of the page is what makes them
         // feel applied, rather than needing a separate "apply" row.
-        if (app->screens.id == GG_SCREEN_OPTIONS) {
+        if (app->screens.id == GG_SCREEN_OPTIONS ||
+            app->screens.id == GG_SCREEN_KEYS) {
             gg_settings_save(&app->settings, gg_pref_file(GG_SETTINGS_FILE));
             app->in.no_rumble = !app->settings.rumble;
+            gg_input_bind(&app->in, &app->settings);
+            gg_font_scale(app->settings.text_scale);
+            gg_debug_plain_colours(app->settings.plain_colours);
             gg_audio_volumes(app->settings.music, app->settings.effects);
             if (app->settings.fullscreen != app->faux_fs) toggle_fullscreen(app);
             if (app->win && !app->faux_fs)
@@ -1039,6 +1043,11 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
         SDL_Log("gigantima: no audio; the world will be silent");
 
     gg_settings_load(&app->settings, gg_pref_file(GG_SETTINGS_FILE));
+    // The keys, from the settings rather than from a switch in the input
+    // layer. Called again by the options page whenever one is changed.
+    gg_input_bind(&app->in, &app->settings);
+    gg_font_scale(app->settings.text_scale);
+    gg_debug_plain_colours(app->settings.plain_colours);
     gg_audio_volumes(app->settings.music, app->settings.effects);
     if (app->settings.rumble == false) app->in.no_rumble = true;
     if (no_rumble) app->settings.rumble = false;
@@ -1063,6 +1072,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
             { "profiles", GG_SCREEN_PROFILES },
             { "name",     GG_SCREEN_NAME },
             { "options",  GG_SCREEN_OPTIONS },
+            { "keys",     GG_SCREEN_KEYS },
             { "pause",    GG_SCREEN_PAUSE },
             { "play",     GG_SCREEN_PLAY },
             // The pack is a mode of the world rather than a screen of its own,
@@ -1144,6 +1154,19 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
 
     case SDL_EVENT_KEY_DOWN:
         if (event->key.repeat && app->screens.id != GG_SCREEN_NAME) break;
+
+        // The keys page is waiting to be told which key. Every key belongs to
+        // it while it is - including the ones that would otherwise navigate,
+        // because a player rebinding "walk north" has to be able to choose the
+        // down arrow.
+        if (app->screens.binding >= 0 && app->screens.id == GG_SCREEN_KEYS) {
+            if (gg_screens_bind(&app->screens, &app->settings,
+                                event->key.scancode)) {
+                gg_settings_save(&app->settings, gg_pref_file(GG_SETTINGS_FILE));
+                gg_input_bind(&app->in, &app->settings);
+            }
+            return SDL_APP_CONTINUE;
+        }
 
         // A menu is showing: it takes the navigation keys, and the world does
         // not see them.

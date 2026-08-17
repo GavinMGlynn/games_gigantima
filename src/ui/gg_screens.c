@@ -25,8 +25,11 @@ static const SDL_Color WARN  = { 200,  96,  72, 255 };
 // ---------------------------------------------------------------------------
 #define KEYS_COLS 11
 #define KEYS_ROWS 6
-#define KEY_CELL_W 30
-#define KEY_CELL_H 24
+// A key of the on-screen alphabet, sized from the font rather than fixed: at
+// large text a 30x24 cell holds a 14-pixel-wide letter and the grid becomes a
+// jumble, which is what the first screenshot of it showed.
+static int key_cell_w(void) { return gg_font_height() * 30 / GG_FONT_CELL_H; }
+static int key_cell_h(void) { return gg_font_height() * 24 / GG_FONT_CELL_H; }
 
 static const char *const KEYS[KEYS_ROWS] = {
     "ABCDEFGHIJK",
@@ -113,6 +116,12 @@ static void build_options(gg_screens *s, const gg_settings *set) {
                 set->music);
     gg_menu_add(&s->menu, true, "Effects", set->effects > 0 ? "%d of 10" : "off",
                 set->effects);
+    gg_menu_add(&s->menu, true, "Text size",
+                set->text_scale > 1 ? "large" : "normal");
+    gg_menu_add(&s->menu, true, "Map colours",
+                set->plain_colours ? "told apart by shape and shade"
+                                   : "usual");
+    gg_menu_add(&s->menu, true, "Keys", "what every key does");
     gg_menu_add(&s->menu, true, "Back", nullptr);
     gg_menu_select(&s->menu, 0);
 }
@@ -136,6 +145,116 @@ static void build_name(gg_screens *s) {
     s->key_col = 0;
 }
 
+// The keys page. Twenty actions do not fit on one screen at this row height,
+// so it shows nine at a time and turns the page - which also keeps the whole
+// thing inside the one menu widget every other screen uses.
+#define KEYS_PER_PAGE 6
+
+// The actions this page offers, in the order a player would look for them:
+// how to move first, then what to do.
+static const gg_action BINDABLE[] = {
+    GG_ACT_N, GG_ACT_S, GG_ACT_W, GG_ACT_E,
+    GG_ACT_NW, GG_ACT_NE, GG_ACT_SW, GG_ACT_SE,
+    GG_ACT_WAIT,
+    GG_ACT_TALK, GG_ACT_LOOK, GG_ACT_OPEN, GG_ACT_GET, GG_ACT_FIGHT,
+    GG_ACT_CAST, GG_ACT_JOURNAL, GG_ACT_PACK, GG_ACT_USE, GG_ACT_EQUIP,
+    GG_ACT_DROP,
+};
+#define BINDABLE_N ((int)(sizeof BINDABLE / sizeof BINDABLE[0]))
+#define KEY_PAGES  ((BINDABLE_N + KEYS_PER_PAGE - 1) / KEYS_PER_PAGE)
+
+// What a player calls each of them. Not gg_action_name: that spells the file
+// format, and "the action called SE" is not how anybody thinks about walking
+// down and to the right.
+static const char *bindable_name(gg_action a) {
+    switch (a) {
+    case GG_ACT_N:  return "Walk north";
+    case GG_ACT_S:  return "Walk south";
+    case GG_ACT_W:  return "Walk west";
+    case GG_ACT_E:  return "Walk east";
+    case GG_ACT_NW: return "Walk north-west";
+    case GG_ACT_NE: return "Walk north-east";
+    case GG_ACT_SW: return "Walk south-west";
+    case GG_ACT_SE: return "Walk south-east";
+    case GG_ACT_WAIT:    return "Wait";
+    case GG_ACT_TALK:    return "Talk";
+    case GG_ACT_LOOK:    return "Look";
+    case GG_ACT_OPEN:    return "Open";
+    case GG_ACT_GET:     return "Pick up";
+    case GG_ACT_FIGHT:   return "Strike";
+    case GG_ACT_CAST:    return "Cast a spell";
+    case GG_ACT_JOURNAL: return "Journal";
+    case GG_ACT_PACK:    return "Pack";
+    case GG_ACT_USE:     return "Use";
+    case GG_ACT_EQUIP:   return "Ready";
+    case GG_ACT_DROP:    return "Set down";
+    default: return "";
+    }
+}
+
+static void key_pair(const gg_settings *set, gg_action a, char *out, size_t n) {
+    const char *one = set->key[a] ? SDL_GetScancodeName((SDL_Scancode)set->key[a])
+                                  : nullptr;
+    const char *two = set->alt[a] ? SDL_GetScancodeName((SDL_Scancode)set->alt[a])
+                                  : nullptr;
+    if (one && two)      SDL_snprintf(out, n, "%s   or   %s", one, two);
+    else if (one)        SDL_snprintf(out, n, "%s", one);
+    else if (two)        SDL_snprintf(out, n, "%s", two);
+    else                 SDL_strlcpy(out, "not bound", n);
+}
+
+static void build_keys(gg_screens *s, const gg_settings *set) {
+    char page[24];
+    SDL_snprintf(page, sizeof page, "Keys - page %d of %d", s->key_page + 1,
+                 KEY_PAGES);
+    gg_menu_reset(&s->menu, page);
+
+    const int first = s->key_page * KEYS_PER_PAGE;
+    for (int i = first; i < first + KEYS_PER_PAGE && i < BINDABLE_N; i++) {
+        char keys[GG_MENU_TEXT_MAX];
+        key_pair(set, BINDABLE[i], keys, sizeof keys);
+        gg_menu_add(&s->menu, true, bindable_name(BINDABLE[i]), "%s", keys);
+    }
+    gg_menu_add(&s->menu, KEY_PAGES > 1, "More keys", nullptr);
+    gg_menu_add(&s->menu, true, "Put them all back", "the keys a fresh game has");
+    gg_menu_add(&s->menu, true, "Back", nullptr);
+    gg_menu_select(&s->menu, 0);
+}
+
+// The three rows at the bottom of every page.
+static int keys_rows(const gg_screens *s) {
+    const int first = s->key_page * KEYS_PER_PAGE;
+    const int rest = BINDABLE_N - first;
+    return rest < KEYS_PER_PAGE ? rest : KEYS_PER_PAGE;
+}
+
+bool gg_screens_bind(gg_screens *s, gg_settings *set, int scancode) {
+    if (s->id != GG_SCREEN_KEYS || s->binding < 0) return false;
+
+    const gg_action a = BINDABLE[s->binding];
+    s->binding = -1;
+
+    if (scancode == SDL_SCANCODE_ESCAPE || scancode == SDL_SCANCODE_UNKNOWN) {
+        SDL_strlcpy(s->notice, "Left as it was.", sizeof s->notice);
+        build_keys(s, set);
+        return false;
+    }
+
+    // A key that already does something else loses that job rather than doing
+    // both. Two actions on one key is a game that does two things at once and
+    // a player who cannot tell which.
+    for (int i = 0; i < GG_ACT_COUNT; i++) {
+        if (set->key[i] == (uint16_t)scancode) set->key[i] = 0;
+        if (set->alt[i] == (uint16_t)scancode) set->alt[i] = 0;
+    }
+    set->key[a] = (uint16_t)scancode;
+
+    SDL_snprintf(s->notice, sizeof s->notice, "%s is now %s.",
+                 bindable_name(a), SDL_GetScancodeName((SDL_Scancode)scancode));
+    build_keys(s, set);
+    return true;
+}
+
 void gg_screens_enter(gg_screens *s, gg_screen_id id, const char *base,
                       const gg_settings *set, const gg_game *g, bool have_game) {
     const gg_screen_id from = s->id;
@@ -152,6 +271,11 @@ void gg_screens_enter(gg_screens *s, gg_screen_id id, const char *base,
         s->options_from = (from == GG_SCREEN_PAUSE && have_game)
                         ? GG_SCREEN_PAUSE : GG_SCREEN_TITLE;
         build_options(s, set);
+        break;
+    case GG_SCREEN_KEYS:
+        if (from != GG_SCREEN_KEYS) s->key_page = 0;
+        s->binding = -1;
+        build_keys(s, set);
         break;
     case GG_SCREEN_PAUSE:
         if (have_game) build_pause(s, g);
@@ -231,6 +355,8 @@ static void cycle_option(gg_screens *s, gg_settings *set, int row) {
     // silence gets there by holding one direction like everything else here.
     case 3: set->music = set->music >= 10 ? 0 : set->music + 1; break;
     case 4: set->effects = set->effects >= 10 ? 0 : set->effects + 1; break;
+    case 5: set->text_scale = set->text_scale > 1 ? 1 : 2; break;
+    case 6: set->plain_colours = !set->plain_colours; break;
     default: return;
     }
     const int keep = s->menu.cursor;
@@ -312,8 +438,35 @@ gg_screen_result gg_screens_choose(gg_screens *s, const char *base,
 
     case GG_SCREEN_OPTIONS:
         if (row == s->menu.n - 1) return go(s->options_from);
+        if (row == s->menu.n - 2) return go(GG_SCREEN_KEYS);
         cycle_option(s, set, row);
         return nothing();
+
+    case GG_SCREEN_KEYS: {
+        const int rows = keys_rows(s);
+        if (row < rows) {
+            // Waiting for a key. Nothing else on this screen answers until one
+            // arrives or the player changes their mind.
+            s->binding = s->key_page * KEYS_PER_PAGE + row;
+            SDL_snprintf(s->notice, sizeof s->notice,
+                         "Press the key for %s. Esc to leave it alone.",
+                         bindable_name(BINDABLE[s->binding]));
+            return nothing();
+        }
+        if (row == rows) {                      // more keys
+            s->key_page = (s->key_page + 1) % KEY_PAGES;
+            build_keys(s, set);
+            return nothing();
+        }
+        if (row == rows + 1) {                  // put them all back
+            gg_settings_default_keys(set);
+            SDL_strlcpy(s->notice, "The keys are as they were on a fresh game.",
+                        sizeof s->notice);
+            build_keys(s, set);
+            return nothing();
+        }
+        return go(GG_SCREEN_OPTIONS);
+    }
 
     case GG_SCREEN_NAME: {
         // On the alphabet, choosing means typing. Only "Begin" - or an
@@ -369,6 +522,7 @@ gg_screen_result gg_screens_back(gg_screens *s) {
     case GG_SCREEN_PROFILES:
     case GG_SCREEN_NAME:     return go(GG_SCREEN_TITLE);
     case GG_SCREEN_OPTIONS:  return go(s->options_from);
+    case GG_SCREEN_KEYS:     return go(GG_SCREEN_OPTIONS);
     case GG_SCREEN_PAUSE:    return go(GG_SCREEN_PLAY);
     case GG_SCREEN_PLAY:     return go(GG_SCREEN_PAUSE);
     default: {
@@ -429,31 +583,41 @@ static void draw_key(SDL_Renderer *ren, int x, int y, int w, int h,
 
 // Returns the y below the grid.
 static int draw_alphabet(const gg_screens *s, SDL_Renderer *ren, int cx, int top) {
-    const int grid_w = KEYS_COLS * KEY_CELL_W;
+    const int cw = key_cell_w(), ch = key_cell_h();
+    const int grid_w = KEYS_COLS * cw;
     const int left   = cx - grid_w / 2;
 
     for (int r = 0; r < KEYS_ROWS; r++) {
         for (int c = 0; c < KEYS_COLS; c++) {
             char one[2];
-            draw_key(ren, left + c * KEY_CELL_W, top + r * KEY_CELL_H,
-                     KEY_CELL_W, KEY_CELL_H,
+            draw_key(ren, left + c * cw, top + r * ch, cw, ch,
                      key_label(KEYS[r][c], one),
                      s->key_row == r && s->key_col == c, false);
         }
     }
 
-    const int by = top + KEYS_ROWS * KEY_CELL_H + 10;
+    const int by = top + KEYS_ROWS * ch + 10;
+    const int wide = cw * 4;
     const bool ends = s->key_row == KEY_ROW_ENDS;
-    draw_key(ren, cx - 130, by, 120, KEY_CELL_H, "Rub out",
+    draw_key(ren, cx - wide - 10, by, wide, ch, "Rub out",
              ends && s->key_col == KEY_END_ERASE, true);
-    draw_key(ren, cx + 10, by, 120, KEY_CELL_H, "Begin",
+    draw_key(ren, cx + 10, by, wide, ch, "Begin",
              ends && s->key_col == KEY_END_BEGIN, true);
-    return by + KEY_CELL_H;
+    return by + ch;
 }
+
+// The same question gg_menu asks: is the text larger than this layout was
+// drawn around?
+static bool large_text(void) { return gg_font_height() > GG_FONT_CELL_H; }
 
 void gg_screens_draw(const gg_screens *s, SDL_Renderer *ren, uint64_t frame) {
     const int cx = GG_SCREEN_W / 2;
     const int line = gg_font_height();
+
+    // Where the menu starts. Derived from the wordmark rather than a fixed
+    // number, because at large text the wordmark is twice as tall and a fixed
+    // 230 put the first row through the middle of the subtitle.
+    const int mark_y = large_text() ? 40 : 96;
 
     if (s->id == GG_SCREEN_PAUSE) {
         // Over the world, dimmed - so it is obvious the game is still there
@@ -464,18 +628,25 @@ void gg_screens_draw(const gg_screens *s, SDL_Renderer *ren, uint64_t frame) {
         SDL_RenderFillRect(ren, &all);
     } else {
         draw_backdrop(ren);
-        draw_wordmark(ren, cx, 96);
-        gg_font_center(ren, cx, 96 + line * TITLE_SCALE + 10, DIM,
-                       "a world in the manner of Ultima VI");
+        // The naming screen is the tallest of them - an alphabet grid, a
+        // caret and two lines of hint - and at large text the wordmark is the
+        // one thing on it that can be given up.
+        if (!large_text() || s->id != GG_SCREEN_NAME)
+            draw_wordmark(ren, cx, mark_y);
+        // The subtitle is decoration, and at large text the room it takes is
+        // room a row of the menu needs more.
+        if (!large_text())
+            gg_font_center(ren, cx, mark_y + line * TITLE_SCALE + 10, DIM,
+                           "a world in the manner of Ultima VI");
     }
 
-    int y = (s->id == GG_SCREEN_PAUSE) ? 170 : 230;
+    int y = (s->id == GG_SCREEN_PAUSE) ? 170 : mark_y + line * TITLE_SCALE + 40;
 
     if (s->id == GG_SCREEN_NAME) {
         // Below the wordmark and its line, with the grid and its two hint
         // lines this screen is the tallest of them - so it sets its own start
         // rather than sharing the menu screens'.
-        y = 224;
+        y = large_text() ? 30 : 224;
         gg_font_center(ren, cx, y, AMBER, "Name thy journey");
         y += line * 2;
 

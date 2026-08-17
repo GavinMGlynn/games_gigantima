@@ -69,6 +69,59 @@ void gg_ui_hud(const gg_game *g, SDL_Renderer *ren) {
     const gg_actor *p = gg_player_const(g);
     const int line = gg_font_height();
 
+    // **The band lays itself out from what fits, not from a fixed shape.** At
+    // the ordinary size there is room for four rows of status down the left
+    // and five lines of log beside them; at twice that there is room for
+    // three rows of anything. So the large layout puts the same facts in
+    // three rows and gives up log lines rather than giving up the health
+    // gauge - the band is furniture of a fixed height, and something has to
+    // go. Deciding from the height rather than from the setting means any
+    // future size is handled by the same two branches.
+    const bool roomy = line * 4 + 24 <= GG_HUD_H;
+
+    const int carried = gg_pack_weight(g);
+    char load[24];
+    gg_ui_weight(load, sizeof load, carried);
+    const int party = gg_party_size(g);
+
+    const int h = gg_game_hour(g);
+    const char *part = h < 5  ? "deep night" : h < 8  ? "dawn"
+                     : h < 12 ? "morning"    : h < 14 ? "midday"
+                     : h < 18 ? "afternoon"  : h < 21 ? "dusk" : "night";
+
+    if (!roomy) {
+        // Three rows: who and how hale, then where and when, then the two
+        // newest things that happened.
+        int x = 10, y = top + 6;
+        char health[24];
+        SDL_snprintf(health, sizeof health, "%d/%d", p->hp, p->hp_max);
+
+        // Laid out from the widths of what is actually there, so nothing
+        // drifts when a name is long or health reaches three figures.
+        gg_font_printf(ren, x, y, AMBER, "%s", p->name);
+        int at = x + gg_font_width(p->name) + line / 2;
+        gg_font_draw(ren, at, y, INK, health);
+        at += gg_font_width(health) + line / 2;
+        gauge(ren, at, y + line / 3, GG_SCREEN_W - at - 10, line / 3,
+              p->hp, p->hp_max, BLOOD);
+        y += line;
+
+        gg_font_printf(ren, x, y, DIM, "%s, day %u, %02d:%02d, %s",
+                       gg_game_place(g), g->day, h, gg_game_minute(g), part);
+        if (party > 0)
+            gg_font_printf(ren, x, y, DIM, "%s, day %u, %02d:%02d, %s, %d with thee",
+                           gg_game_place(g), g->day, h, gg_game_minute(g), part,
+                           party);
+        y += line;
+
+        char cut[GG_LOG_WIDTH + 4];
+        if (g->logn > 0)
+            gg_font_draw(ren, x, y, INK,
+                         fit(cut, sizeof cut, g->log[g->logn - 1],
+                             GG_SCREEN_W - 20));
+        return;
+    }
+
     // --- left column: who you are ------------------------------------------
     int x = 10, y = top + 8;
     gg_font_printf(ren, x, y, AMBER, "%s", p->name);
@@ -84,9 +137,6 @@ void gg_ui_hud(const gg_game *g, SDL_Renderer *ren) {
     // Gold, and the load. The load is here rather than only on the pack screen
     // because it is the number that stops a player picking something up, and
     // finding that out while standing over it is too late.
-    const int carried = gg_pack_weight(g);
-    char load[24];
-    gg_ui_weight(load, sizeof load, carried);
     gg_font_printf(ren, x, y, DIM, "Gold %d", gg_pack_count(g, GG_ITEM_GOLD));
     gg_font_printf(ren, x + 110, y, carried * 10 >= GG_CARRY_MAX * 9 ? AMBER : DIM,
                    "Load %s/%d st", load, GG_CARRY_MAX / 100);
@@ -118,10 +168,6 @@ void gg_ui_hud(const gg_game *g, SDL_Renderer *ren) {
 
     // Naming the part of the day is worth a line: the player needs to know
     // night is coming before it is dark enough to notice.
-    const int h = gg_game_hour(g);
-    const char *part = h < 5  ? "deep night" : h < 8  ? "dawn"
-                     : h < 12 ? "morning"    : h < 14 ? "midday"
-                     : h < 18 ? "afternoon"  : h < 21 ? "dusk" : "night";
     gg_font_printf(ren, rx, y, DIM, "%s", part);
     y += line;
     gg_font_printf(ren, rx, y, DIM, "turn %u", g->turn);
@@ -147,15 +193,34 @@ void gg_ui_weight(char *out, size_t n, int hundredths) {
     SDL_snprintf(out, n, "%d.%d", hundredths / 100, (hundredths % 100) / 10);
 }
 
+// Which row a list should start at so that `cursor` is on screen, given how
+// many rows there are and how many fit. A list longer than its panel has to
+// scroll rather than draw through the bottom of it - which is what the spell
+// book did the first time it was drawn at large text.
+static int scrolled_to(int cursor, int rows, int fits) {
+    if (rows <= fits) return 0;
+    int top = cursor - fits / 2;
+    if (top < 0) top = 0;
+    if (top > rows - fits) top = rows - fits;
+    return top;
+}
+
 void gg_ui_pack(const gg_game *g, SDL_Renderer *ren, SDL_Texture *items) {
     const int line = gg_font_height();
-    const int row_h = 36;
+    // Two lines of text and a little air. Fixed at 36 this was exactly right
+    // for the baked font size and exactly wrong for any other, which is what
+    // the first screenshot at large text showed: every row through the one
+    // below it.
+    const int row_h = line * 2 + 2;
+    const int icon = line * 40 / GG_FONT_CELL_H;
 
     // Tall enough for what is actually carried, and no taller. A fixed panel
     // with four things in it is mostly empty box.
     const int rows = g->packn > 0 ? g->packn : 1;
     const int inner = (line + 8) + rows * row_h + (line + 30);
     const int height = gg_clampi(inner, 140, GG_VIEW_H - 80);
+    const int fits = (height - (line + 8) - (line + 30)) / row_h;
+    const int top_row = scrolled_to(g->pack_cursor, g->packn, fits > 0 ? fits : 1);
 
     const SDL_FRect box = { 120, (float)((GG_VIEW_H - height) / 2),
                             (float)(GG_SCREEN_W - 240), (float)height };
@@ -168,7 +233,8 @@ void gg_ui_pack(const gg_game *g, SDL_Renderer *ren, SDL_Texture *items) {
     char load[24];
     gg_ui_weight(load, sizeof load, carried);
     gg_font_draw(ren, x, y, AMBER, "What thou carriest");
-    gg_font_printf(ren, x + 260, y, carried * 10 >= GG_CARRY_MAX * 9 ? AMBER : DIM,
+    gg_font_printf(ren, x + gg_font_width("What thou carriest") + line, y,
+                   carried * 10 >= GG_CARRY_MAX * 9 ? AMBER : DIM,
                    "%s of %d stone", load, GG_CARRY_MAX / 100);
     y += line + 8;
 
@@ -176,10 +242,10 @@ void gg_ui_pack(const gg_game *g, SDL_Renderer *ren, SDL_Texture *items) {
         gg_font_draw(ren, x, y, DIM, "Nothing at all.");
     }
 
-    for (int i = 0; i < g->packn; i++) {
+    for (int i = top_row; i < g->packn && i - top_row < fits; i++) {
         const gg_item_def *d = &GG_ITEM[g->pack[i].kind];
         const bool here = (i == g->pack_cursor);
-        const int ry = y + i * row_h;
+        const int ry = y + (i - top_row) * row_h;
 
         if (here) {
             SDL_SetRenderDrawColor(ren, 217, 145, 63, 45);
@@ -193,7 +259,7 @@ void gg_ui_pack(const gg_game *g, SDL_Renderer *ren, SDL_Texture *items) {
         if (items) {
             const gg_rect *r = &GG_ITEM_RECT[g->pack[i].kind];
             const SDL_FRect src = { (float)r->x, (float)r->y, (float)r->w, (float)r->h };
-            const SDL_FRect dst = { (float)x, (float)(ry + row_h - 8 - r->h),
+            const SDL_FRect dst = { (float)x, (float)(ry + row_h - 6 - r->h),
                                     (float)r->w, (float)r->h };
             SDL_RenderTexture(ren, items, &src, &dst);
         }
@@ -201,7 +267,7 @@ void gg_ui_pack(const gg_game *g, SDL_Renderer *ren, SDL_Texture *items) {
         // Held things say so, because the pack is the only place it shows.
         const bool held = (d->slot != GG_SLOT_NONE &&
                            g->equipped[d->slot] == i);
-        const int tx = x + 40;
+        const int tx = x + icon;
         if (g->pack[i].count == 1)
             gg_font_printf(ren, tx, ry, here ? AMBER : INK, "%s", d->one);
         else
@@ -215,8 +281,13 @@ void gg_ui_pack(const gg_game *g, SDL_Renderer *ren, SDL_Texture *items) {
     }
 
     const int fy = (int)(box.y + box.h) - line - 12;
-    gg_font_draw(ren, x, fy, DIM,
-                 "U or A use   R or Y ready   P or X set down   G take   I or B close");
+    // The long hint if it fits, the short one if it does not: a line of help
+    // running off the edge of its own panel helps nobody.
+    const char *hint =
+        "U or A use   R or Y ready   P or X set down   G take   I or B close";
+    if (gg_font_width(hint) > (int)box.w - 32)
+        hint = "U use  R ready  P set down  I close";
+    gg_font_draw(ren, x, fy, DIM, hint);
 }
 
 void gg_ui_journal(const gg_game *g, SDL_Renderer *ren) {
@@ -238,7 +309,8 @@ void gg_ui_journal(const gg_game *g, SDL_Renderer *ren) {
 
     const int n = gg_journal_lines(g);
     gg_font_draw(ren, x, y, AMBER, "What has happened");
-    gg_font_printf(ren, x + 330, y, DIM, "%d entries", n);
+    gg_font_printf(ren, (int)(box.x + box.w) - 16 - gg_font_width("00 entries"),
+                   y, DIM, "%d entries", n);
     y += line + 8;
 
     if (n == 0) {
@@ -275,8 +347,9 @@ void gg_ui_journal(const gg_game *g, SDL_Renderer *ren) {
                                     box.w - 16, (float)row };
             SDL_RenderFillRect(ren, &bar);
         }
-        gg_font_printf(ren, x + 16, y, i == g->journal_cursor ? INK : DIM,
-                       "%s", text);
+        char cut[GG_JOURNAL_LINE_MAX + 4];
+        gg_font_draw(ren, x + line, y, i == g->journal_cursor ? INK : DIM,
+                     fit(cut, sizeof cut, text, (int)box.w - line * 2 - 24));
         y += row;
     }
 
@@ -371,7 +444,27 @@ void gg_ui_ending(const gg_game *g, SDL_Renderer *ren) {
 
 void gg_ui_spells(const gg_game *g, SDL_Renderer *ren) {
     const int line = gg_font_height();
-    const int row_h = 34;
+    const int row_h = line * 2;
+
+    // The three columns, set from the widest phrase and the widest name rather
+    // than from 150 and 300 - which were the right numbers for one font size
+    // and put every column through the next one at any other.
+    int phrase_w = gg_font_width("VAS IN FLAM"), name_w = gg_font_width("Great Light");
+    for (int i = 0; i < gg_magic_spells(); i++) {
+        const gg_spell *sp = gg_magic_spell(i);
+        if (!sp || !gg_spell_known(g, i)) continue;
+        char full[64] = { 0 };
+        for (int r = 0; r < sp->runes; r++) {
+            if (r) SDL_strlcat(full, " ", sizeof full);
+            SDL_strlcat(full, sp->rune[r], sizeof full);
+        }
+        const int w = gg_font_width(full);
+        if (w > phrase_w) phrase_w = w;
+        const int nw = gg_font_width(sp->name);
+        if (nw > name_w) name_w = nw;
+    }
+    const int col2 = phrase_w + line;
+    const int col3 = col2 + name_w + line;
 
     // Only what is known, because the book is the answer to "what can I do".
     int known = 0;
@@ -381,6 +474,7 @@ void gg_ui_spells(const gg_game *g, SDL_Renderer *ren) {
     const int rows = known > 0 ? known : 1;
     const int height = gg_clampi((line + 8) + rows * row_h + (line + 30),
                                  140, GG_VIEW_H - 60);
+    const int fits = (height - (line + 8) - (line + 30)) / row_h;
     const SDL_FRect box = { 100, (float)((GG_VIEW_H - height) / 2),
                             (float)(GG_SCREEN_W - 200), (float)height };
     panel(ren, box, 238);
@@ -389,7 +483,7 @@ void gg_ui_spells(const gg_game *g, SDL_Renderer *ren) {
     int y = (int)box.y + 12;
 
     gg_font_draw(ren, x, y, AMBER, "Words of power");
-    gg_font_printf(ren, x + 300, y, DIM, "%d known of %d", known,
+    gg_font_printf(ren, x + col3, y, DIM, "%d known of %d", known,
                    gg_magic_spells());
     y += line + 8;
 
@@ -397,15 +491,26 @@ void gg_ui_spells(const gg_game *g, SDL_Renderer *ren) {
         gg_font_draw(ren, x, y, DIM, "Thou knowest no words at all. Ask a mage.");
     }
 
+    // Which of the known spells the cursor is on, so the list can be scrolled
+    // by row rather than by spell id - the two are not the same list.
+    int at = 0, seen = 0;
+    for (int i = 0; i < gg_magic_spells(); i++) {
+        if (!gg_spell_known(g, i)) continue;
+        if (i == g->spell_cursor) at = seen;
+        seen++;
+    }
+    const int top_row = scrolled_to(at, known, fits > 0 ? fits : 1);
+
     int row = 0;
     for (int i = 0; i < gg_magic_spells(); i++) {
         if (!gg_spell_known(g, i)) continue;
+        const int mine = row++;
+        if (mine < top_row || mine - top_row >= fits) continue;
         const gg_spell *sp = gg_magic_spell(i);
         const bool here = (i == g->spell_cursor);
         const bool can = gg_spell_afford(g, i) &&
                          gg_player_const(g)->level >= sp->circle;
-        const int ry = y + row * row_h;
-        row++;
+        const int ry = y + (mine - top_row) * row_h;
 
         if (here) {
             SDL_SetRenderDrawColor(ren, 217, 145, 63, 45);
@@ -423,12 +528,12 @@ void gg_ui_spells(const gg_game *g, SDL_Renderer *ren) {
         }
         gg_font_printf(ren, x, ry, here ? AMBER : (can ? INK : GREY_OUT),
                        "%s", phrase);
-        gg_font_printf(ren, x + 150, ry, can ? INK : GREY_OUT, "%s", sp->name);
-        gg_font_printf(ren, x + 300, ry, DIM, "circle %u", sp->circle);
+        gg_font_printf(ren, x + col2, ry, can ? INK : GREY_OUT, "%s", sp->name);
+        gg_font_printf(ren, x + col3, ry, DIM, "circle %u", sp->circle);
 
         // And the price, with what is missing shown in the colour of a thing
         // you have not got.
-        int px = x + 150;
+        int px = x + col2;
         for (int r = 0; r < sp->reagents; r++) {
             const gg_item_def *d = &GG_ITEM[sp->reagent[r]];
             const bool enough = gg_pack_count(g, (gg_item_id)sp->reagent[r]) >=
@@ -441,8 +546,9 @@ void gg_ui_spells(const gg_game *g, SDL_Renderer *ren) {
         }
     }
 
-    gg_font_draw(ren, x, (int)(box.y + box.h) - line - 12, DIM,
-                 "U or A to speak it   C or B to close the book");
+    const char *say = "U or A to speak it   C or B to close the book";
+    if (gg_font_width(say) > (int)box.w - 32) say = "U speak   C close";
+    gg_font_draw(ren, x, (int)(box.y + box.h) - line - 12, DIM, say);
 }
 
 void gg_ui_converse(const gg_game *g, SDL_Renderer *ren) {
@@ -452,9 +558,18 @@ void gg_ui_converse(const gg_game *g, SDL_Renderer *ren) {
 
     // Sized to what is actually being said and asked. A conversation is mostly
     // two lines and four words; a fixed box for it is mostly empty box.
-    const int says = g->saids > 0 ? g->saids : 1;
     const int words = g->askables;
-    const int height = 14 + line + 6 + says * line + 10 +
+    const int room = GG_SCREEN_W - 120 - 28;
+
+    // How many lines the speech will really take once it is wrapped to the
+    // panel: at large text one line of dialogue is two or three, and a box
+    // sized by the number of *said* lines cut them off.
+    int says = 0;
+    for (int i = 0; i < g->saids; i++)
+        says += wrapped(nullptr, 0, 0, room, INK, g->said[i]);
+    if (says == 0) says = 1;
+
+    const int height = 14 + line + 6 + says * (line + 4) + 10 +
                        (words ? line + words * line + 8 : 0) + line + 14;
 
     const SDL_FRect box = { 60, (float)(GG_VIEW_H - height - 24),
@@ -473,11 +588,13 @@ void gg_ui_converse(const gg_game *g, SDL_Renderer *ren) {
     }
     for (int i = 0; i < g->saids; i++) {
         // Quoted on the first line and last only, so a three-line answer reads
-        // as one speech rather than three separate remarks.
-        gg_font_printf(ren, x, y, INK, "%s%s%s",
-                       i == 0 ? "\"" : " ", g->said[i],
-                       i == g->saids - 1 ? "\"" : "");
-        y += line;
+        // as one speech rather than three separate remarks - and wrapped to
+        // the panel, because what people say is written for meaning rather
+        // than to a column width.
+        char said[GG_LINE_MAX + 4];
+        SDL_snprintf(said, sizeof said, "%s%s%s", i == 0 ? "\"" : " ",
+                     g->said[i], i == g->saids - 1 ? "\"" : "");
+        y = wrapped(ren, x, y, room, INK, said);
     }
     y += 10;
 

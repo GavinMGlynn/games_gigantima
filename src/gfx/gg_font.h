@@ -23,7 +23,15 @@ void gg_font_printf(SDL_Renderer *ren, int x, int y, SDL_Color c,
 // Width of `text` in pixels, using the same advances gg_font_draw will.
 int gg_font_width(const char *text);
 
-static inline int gg_font_height(void) { return GG_FONT_CELL_H; }
+// How large text is drawn, as a whole-number multiple of the baked size. Whole
+// numbers only: the glyphs were rasterised without antialiasing on purpose, and
+// half a texel is a blurred one.
+//
+// Everything that lays out text asks gg_font_height() for its line spacing and
+// gg_font_width() for its measurements, so setting this moves the panels and
+// the menus with it rather than making them overlap.
+void gg_font_scale(int n);
+int  gg_font_height(void);
 
 // Draws `text` centred on `cx`.
 void gg_font_center(SDL_Renderer *ren, int cx, int y, SDL_Color c, const char *text);

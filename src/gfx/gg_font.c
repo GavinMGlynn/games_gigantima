@@ -62,9 +62,15 @@ void gg_font_quit(void) {
     }
 }
 
+static int g_scale = 1;
+
+void gg_font_scale(int n) { g_scale = gg_clampi(n, 1, 4); }
+int  gg_font_height(void) { return GG_FONT_CELL_H * g_scale; }
+
 static int advance_of(unsigned char ch) {
-    if (ch < GG_FONT_FIRST || ch > GG_FONT_LAST) return GG_FONT_ADV[0];
-    return GG_FONT_ADV[ch - GG_FONT_FIRST];
+    const int adv = (ch < GG_FONT_FIRST || ch > GG_FONT_LAST)
+                  ? GG_FONT_ADV[0] : GG_FONT_ADV[ch - GG_FONT_FIRST];
+    return adv * g_scale;
 }
 
 int gg_font_width(const char *text) {
@@ -87,7 +93,7 @@ void gg_font_draw(SDL_Renderer *ren, int x, int y, SDL_Color c, const char *text
     for (const unsigned char *p = (const unsigned char *)text; *p; p++) {
         if (*p == '\n') {
             x = x0;
-            y += GG_FONT_CELL_H;
+            y += GG_FONT_CELL_H * g_scale;
             continue;
         }
         if (*p < GG_FONT_FIRST || *p > GG_FONT_LAST) continue;
@@ -99,7 +105,8 @@ void gg_font_draw(SDL_Renderer *ren, int x, int y, SDL_Color c, const char *text
             (float)GG_FONT_CELL_W, (float)GG_FONT_CELL_H,
         };
         const SDL_FRect dst = { (float)x, (float)y,
-                                (float)GG_FONT_CELL_W, (float)GG_FONT_CELL_H };
+                                (float)(GG_FONT_CELL_W * g_scale),
+                                (float)(GG_FONT_CELL_H * g_scale) };
         SDL_RenderTexture(ren, tex, &src, &dst);
         x += advance_of(*p);
     }

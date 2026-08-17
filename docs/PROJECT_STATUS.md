@@ -1094,9 +1094,9 @@ at any step.
 `a_value_can_be_nudged_both_ways_without_leaving_the_page`,
 `the_menu_cursor_skips_disabled_rows_and_wraps`,
 `a_menu_with_nothing_choosable_chooses_nothing`, `settings_round_trip_and_clamp`;
-plus `--screen NAME --shot` in CI, which opens and photographs all six — the
-unit tests exercise the logic without a renderer, so a page that crashes or
-draws nothing would otherwise pass.*
+plus `--screen NAME --shot` in CI, which opens and photographs every one of them
+at both text sizes — the unit tests exercise the logic without a renderer, so a
+page that crashes or draws nothing would otherwise pass.*
 
 ### Art pipeline
 
@@ -1162,6 +1162,56 @@ somewhere unreachable.
 The overview is a streaming texture rather than one draw call per tile: 30,000
 `SDL_RenderPoint` calls a frame would halve the frame rate of the window meant
 to be diagnosing it.
+
+### Getting at the game
+
+Three things a player might need in order to play at all, each set from the
+options page and each kept in `settings.txt`.
+
+**Every key is rebindable, walking included.** The input layer used to hold a
+switch of scancodes; it now holds a table copied from the settings — one key and
+one alternate per action, so the arrows *and* WASD both survive, and the eight
+directions are rebindable like every other verb because they are actions like
+every other verb. Bindings are stored as SDL **scancodes** — positions on the
+keyboard rather than the letters printed on them — so a binding made on one
+layout is the same physical key on another, and written to the file by name
+(`key.TALK = T`) because a settings file is a thing a player may open. The keys
+page shows six at a time over four pages, offers "put them all back", and takes
+the next key pressed; a key that already had a job loses it rather than doing
+both.
+
+**Text at twice the size**, everywhere: the band, the menus, the screens and
+every panel over the world. Whole-number scaling only — the glyphs were
+rasterised without antialiasing on purpose, and half a texel is a blurred one.
+This was not a matter of multiplying a number: **every layout that was written
+around the baked font size had to be written around the font instead**, and the
+screenshots at twice the size are what found each one. The status band drops to
+three rows and gives up log lines rather than the health gauge; a menu row puts
+its detail beside its label instead of under it; the naming screen gives up the
+wordmark to keep its alphabet; the pack and the spell book scroll to their
+cursor instead of drawing through the bottom of the panel; speech wraps and the
+journal clips with an ellipsis; and the long key hints are replaced by short
+ones when they no longer fit.
+
+**A debug overview that does not depend on hue.** The ordinary palette is green
+against brown against blue, which is the one distinction the commonest colour
+blindness cannot make. The plain palette separates by **lightness** on one grey
+ramp — roads lightest, grass, scrub, canopy, masonry darkest — with a single
+blue for water, and marks the Avatar with a white cross in a black box rather
+than with the one red dot among yellow ones. Off by default: the ordinary
+palette reads better for everyone it works for.
+
+*Verification: `a_key_can_be_moved_and_the_world_hears_the_new_one` rebinds from
+the page a player would use, then feeds real SDL key events through the input
+layer and requires the new key to work and the old one not to — plus that one
+key cannot hold two jobs, that Escape leaves a binding alone, and that "put them
+all back" does. `what_makes_the_game_reachable_survives_being_put_down` sets the
+text size and the palette from the options page by row *name*, writes them out,
+reads them back, and checks every one of the forty bindings survived the trip.*
+
+*And every screen and panel photographed at both sizes — thirteen of them at the
+baked size and eleven at twice it, in CI, because "larger text" that runs off
+the bottom of its own panel is a setting that makes the game less playable.*
 
 ### The controller
 

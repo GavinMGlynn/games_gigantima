@@ -24,6 +24,7 @@
 #include "editor/gg_edit.h"
 #include "ui/gg_menu.h"
 #include "ui/gg_screens.h"
+#include "gfx/gg_font.h"
 #include "platform/gg_settings.h"
 #include "platform/gg_input.h"
 
@@ -590,6 +591,23 @@ static void every_screen_is_reachable_by_directions_alone(void) {
               (int)WAYS[i].lands);
         seen[WAYS[i].lands] = true;
     }
+
+    // The keys page is one further in, behind Options - the only screen that
+    // is not reachable from the title in one step.
+    gg_screens_enter(&s, GG_SCREEN_OPTIONS, base, &set, &g, true);
+    CHECK(menu_reach(&s, "Keys"),
+          "the options page's 'Keys' row cannot be reached with directions");
+    const gg_screen_result keys = gg_screens_choose(&s, base, &set, true);
+    CHECK(keys.action == GG_ACTION_GO && keys.next == GG_SCREEN_KEYS,
+          "'Keys' led to %d rather than the keys page", (int)keys.next);
+    seen[GG_SCREEN_KEYS] = true;
+
+    // And backing out of it goes to the page it came from rather than to the
+    // title, the same rule Options itself follows.
+    gg_screens_enter(&s, GG_SCREEN_KEYS, base, &set, &g, true);
+    const gg_screen_result out = gg_screens_back(&s);
+    CHECK(out.action == GG_ACTION_GO && out.next == GG_SCREEN_OPTIONS,
+          "backing out of the keys page went to %d", (int)out.next);
 
     // Continue leads to the world, which is the only screen not reached by a
     // GO - the frontend has a save to load first.
@@ -4672,6 +4690,157 @@ static void the_state_hash_notices_every_part_of_the_world(void) {
 }
 
 // ---------------------------------------------------------------------------
+// Getting at the game
+// ---------------------------------------------------------------------------
+// Rebinding a key, from the page a player would do it on, and then proving the
+// input layer answers to the new key and no longer to the old one.
+static void a_key_can_be_moved_and_the_world_hears_the_new_one(void) {
+    const char *base = save_base();
+    gg_settings set;
+    gg_settings_defaults(&set);
+
+    gg_game g;
+    CHECK(gg_game_new(&g, 3, "Rebind"), "new game failed");
+
+    gg_screens s;
+    SDL_zero(s);
+    gg_screens_enter(&s, GG_SCREEN_KEYS, base, &set, &g, true);
+    CHECK(s.binding < 0, "the keys page opened already waiting for a key");
+    CHECK(s.menu.n > 3, "the keys page has %d rows", s.menu.n);
+
+    // Choosing a row asks for a key and answers nothing else until it has one.
+    gg_menu_select(&s.menu, 0);
+    const gg_screen_result waiting = gg_screens_choose(&s, base, &set, true);
+    CHECK(waiting.action == GG_ACTION_NONE, "choosing a key row went somewhere");
+    CHECK(s.binding >= 0, "the keys page is not waiting for a key");
+    CHECK(s.notice[0] != '\0', "the page does not say it is waiting");
+
+    // The first row is walking north, which starts on the up arrow.
+    CHECK(set.key[GG_ACT_N] == SDL_SCANCODE_UP, "north does not start on Up");
+    CHECK(gg_screens_bind(&s, &set, SDL_SCANCODE_HOME), "binding changed nothing");
+    CHECK(set.key[GG_ACT_N] == SDL_SCANCODE_HOME, "north was not moved to Home");
+    CHECK(s.binding < 0, "the page is still waiting after being told a key");
+
+    // The world hears the new key, and no longer the old one.
+    gg_input in;
+    SDL_zero(in);
+    gg_input_bind(&in, &set);
+
+    SDL_Event ev;
+    SDL_zero(ev);
+    ev.type = SDL_EVENT_KEY_DOWN;
+    ev.key.scancode = SDL_SCANCODE_HOME;
+    CHECK(gg_input_event(&in, &ev), "the new key was ignored");
+    gg_input_tick(&in);
+    CHECK(gg_input_take(&in) == GG_ACT_N, "Home does not walk north");
+
+    SDL_zero(in);
+    gg_input_bind(&in, &set);
+    ev.key.scancode = SDL_SCANCODE_UP;
+    CHECK(!gg_input_event(&in, &ev), "the old key still does something");
+    gg_input_tick(&in);
+    CHECK(gg_input_take(&in) == GG_ACT_NONE, "Up still walks north");
+
+    // A key that already had a job loses it rather than doing both: two
+    // actions on one key is a game doing two things at once.
+    gg_menu_select(&s.menu, 1);                    // walking south
+    gg_screens_choose(&s, base, &set, true);
+    CHECK(gg_screens_bind(&s, &set, SDL_SCANCODE_HOME), "binding changed nothing");
+    CHECK(set.key[GG_ACT_S] == SDL_SCANCODE_HOME, "south did not take Home");
+    CHECK(set.key[GG_ACT_N] != SDL_SCANCODE_HOME,
+          "Home is bound to two things at once");
+
+    // Escape leaves it alone.
+    gg_menu_select(&s.menu, 2);
+    gg_screens_choose(&s, base, &set, true);
+    const uint16_t was = set.key[GG_ACT_W];
+    CHECK(!gg_screens_bind(&s, &set, SDL_SCANCODE_ESCAPE),
+          "escaping reported a change");
+    CHECK(set.key[GG_ACT_W] == was, "escaping changed the binding anyway");
+
+    // And "put them all back" does.
+    const int rows = s.menu.n - 2;                 // the row above "Back"
+    gg_menu_select(&s.menu, rows);
+    gg_screens_choose(&s, base, &set, true);
+    CHECK(set.key[GG_ACT_N] == SDL_SCANCODE_UP, "putting them back left north on %d",
+          set.key[GG_ACT_N]);
+    CHECK(set.key[GG_ACT_S] == SDL_SCANCODE_DOWN, "south was not put back");
+
+    gg_game_free(&g);
+}
+
+// The three options a player might need in order to play at all, each set from
+// the options page and each surviving being written out and read back.
+static void what_makes_the_game_reachable_survives_being_put_down(void) {
+    // Copied, not held: gg_pref_file hands back a static buffer, and
+    // save_base() below writes over it. The first version of this test wrote
+    // its settings to the saves *directory*.
+    char path[1024];
+    SDL_strlcpy(path, gg_pref_file("test_access.txt"), sizeof path);
+    gg_settings set;
+    gg_settings_defaults(&set);
+
+    CHECK(set.text_scale == 1, "text starts at %d", set.text_scale);
+    CHECK(!set.plain_colours, "the plain palette starts on");
+
+    gg_game g;
+    CHECK(gg_game_new(&g, 4, "Options"), "new game failed");
+    gg_screens s;
+    SDL_zero(s);
+    gg_screens_enter(&s, GG_SCREEN_OPTIONS, save_base(), &set, &g, true);
+
+    // Found by name, so this is a test of the options page and not of where
+    // its rows happen to sit.
+    int text_row = -1, colour_row = -1;
+    for (int i = 0; i < s.menu.n; i++) {
+        if (SDL_strcmp(s.menu.item[i].label, "Text size") == 0) text_row = i;
+        if (SDL_strcmp(s.menu.item[i].label, "Map colours") == 0) colour_row = i;
+    }
+    CHECK(text_row >= 0, "the options page has no text size row");
+    CHECK(colour_row >= 0, "the options page has no map colours row");
+
+    gg_menu_select(&s.menu, text_row);
+    gg_screens_adjust(&s, 1, &set);
+    CHECK(set.text_scale == 2, "the text did not grow");
+    CHECK(SDL_strcmp(s.menu.item[text_row].detail, "large") == 0,
+          "the row says '%s' after growing", s.menu.item[text_row].detail);
+
+    gg_menu_select(&s.menu, colour_row);
+    gg_screens_adjust(&s, 1, &set);
+    CHECK(set.plain_colours, "the plain palette did not come on");
+
+    // Rebind one as well, so the file has to carry all three kinds of thing.
+    set.key[GG_ACT_FIGHT] = SDL_SCANCODE_END;
+    set.alt[GG_ACT_FIGHT] = 0;
+
+    CHECK(gg_settings_save(&set, path), "the settings would not save");
+
+    gg_settings back;
+    CHECK(gg_settings_load(&back, path), "the settings would not load");
+    CHECK(back.text_scale == 2, "the text size came back as %d", back.text_scale);
+    CHECK(back.plain_colours, "the palette came back off");
+    CHECK(back.key[GG_ACT_FIGHT] == SDL_SCANCODE_END,
+          "striking came back on scancode %d", back.key[GG_ACT_FIGHT]);
+    CHECK(back.alt[GG_ACT_FIGHT] == 0, "an unbound key came back bound");
+
+    // Every other binding survived too - a settings file that carries one key
+    // and loses the rest is worse than one that carries none.
+    for (int a = 1; a < GG_ACT_COUNT; a++)
+        CHECK(back.key[a] == set.key[a] && back.alt[a] == set.alt[a],
+              "the key for %s did not survive", gg_action_name((gg_action)a));
+
+    // The font honours the size, which is what makes the panels move with it.
+    gg_font_scale(back.text_scale);
+    const int large = gg_font_height();
+    gg_font_scale(1);
+    CHECK(large == gg_font_height() * 2, "large text is %d against %d",
+          large, gg_font_height());
+
+    gg_game_free(&g);
+    SDL_RemovePath(path);
+}
+
+// ---------------------------------------------------------------------------
 // Audio
 // ---------------------------------------------------------------------------
 // Which tune the world calls for is pure arithmetic over the game state, so it
@@ -6584,6 +6753,9 @@ int main(void) {
 
     RUN(a_recorded_session_replays_to_the_same_world);
     RUN(the_state_hash_notices_every_part_of_the_world);
+
+    RUN(a_key_can_be_moved_and_the_world_hears_the_new_one);
+    RUN(what_makes_the_game_reachable_survives_being_put_down);
 
     RUN(the_tune_follows_where_you_are_and_what_hour_it_is);
     RUN(the_world_says_what_it_did_and_forgets_it);

@@ -12,6 +12,7 @@
 
 #include "core/gg_common.h"
 #include "core/gg_game.h"
+#include "platform/gg_settings.h"
 
 // Travel before a stick counts as a direction, and pull before a trigger
 // counts as a press. Generous: this is a walking game, not a twitch one.
@@ -46,6 +47,12 @@ typedef enum {
 } gg_nav;
 
 typedef struct {
+    // What each key does, copied from the settings rather than pointed at, so
+    // a rebinding is one call and nothing here outlives anything else. Zero
+    // means the action has no key.
+    uint16_t key[GG_ACT_COUNT];
+    uint16_t alt[GG_ACT_COUNT];
+
     // Direction currently held, as a tile delta. Both zero means nothing held.
     int dx, dy;
 
@@ -110,5 +117,11 @@ void gg_input_forget(gg_input *in);
 
 // Short rumble, ignored when there is no pad or the player disabled it.
 void gg_input_rumble(gg_input *in, uint16_t low, uint16_t high, uint32_t ms);
+
+// Takes the key bindings from `set`. Call after loading the settings, and
+// again whenever a binding changes - the options page rebinds and then calls
+// this, which is the whole of "rebindable keys" as far as this module is
+// concerned.
+void gg_input_bind(gg_input *in, const gg_settings *set);
 
 #endif // GG_INPUT_H

@@ -94,11 +94,9 @@ found, not when someone remembers.
       default. *Verification: the save tests, plus a CI smoke test that plays,
       quits and resumes through the real binary.*
 - [x] **Title screen, menus, setup and profile pages.** New game, continue,
-      choose profile, options, pause, quit — six screens in all. Options covers
-      window scale, fullscreen and rumble; **the music and effects rows are
-      shown but inert**, and say "no sound yet" rather than pretending — a
-      volume that adjusts nothing is not a control, so it belongs to the audio
-      item below and is tracked there.
+      choose profile, options, pause, quit — and, since the accessibility item,
+      a page for the keys: seven screens in all. Options covers window scale,
+      fullscreen, rumble, the two volumes, the text size and the map palette.
       *Verification: every screen reachable and leavable by keyboard and by
       gamepad alone, including naming a new journey; and a `--shot` frame per
       screen, taken in CI.*
@@ -265,9 +263,16 @@ that is reachable while content is C, so the editor comes before the content.
       typed on the on-screen alphabet, a walk about the world, every verb, then
       pause, save and leave — and the journey it saved is on disk and resumes.
       A CI smoke test, so it stays true.*
-- [ ] **Accessibility**: rebindable keys, a larger HUD font option, and a
-      colour-blind-safe palette for the debug overview.
-      *Verification: each option exercised from the options page.*
+- [x] **Accessibility**: every key rebindable from a page in the game — walking
+      included, not only the verbs — text at twice the size everywhere, and a
+      debug overview that tells its ground apart by lightness and marks the
+      Avatar with a shape rather than a colour.
+      *Verification: a key moved from the options page and the world answering
+      to the new one and no longer to the old; the text size and the palette
+      set from the page and surviving a save; and every screen and panel in the
+      game photographed at both text sizes, because larger text that runs off
+      the bottom of its own panel is a setting that makes the game less
+      playable, not more.*
 
 ---
 

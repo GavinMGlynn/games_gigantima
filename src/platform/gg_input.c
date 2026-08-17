@@ -87,25 +87,25 @@ void gg_input_rumble(gg_input *in, uint16_t low, uint16_t high, uint32_t ms) {
 // ---------------------------------------------------------------------------
 // Events
 // ---------------------------------------------------------------------------
-static bool key_direction(SDL_Scancode sc, int *dx, int *dy) {
-    switch (sc) {
-    // Arrows, WASD and the numeric keypad. The keypad matters: it is the only
-    // layout that makes the four diagonals reachable as single keys, which a
-    // grid game with eight-way movement genuinely wants.
-    case SDL_SCANCODE_UP:    case SDL_SCANCODE_W: case SDL_SCANCODE_KP_8:
-        *dx = 0;  *dy = -1; return true;
-    case SDL_SCANCODE_DOWN:  case SDL_SCANCODE_S: case SDL_SCANCODE_KP_2:
-        *dx = 0;  *dy = 1;  return true;
-    case SDL_SCANCODE_LEFT:  case SDL_SCANCODE_A: case SDL_SCANCODE_KP_4:
-        *dx = -1; *dy = 0;  return true;
-    case SDL_SCANCODE_RIGHT: case SDL_SCANCODE_D: case SDL_SCANCODE_KP_6:
-        *dx = 1;  *dy = 0;  return true;
-    case SDL_SCANCODE_KP_7: *dx = -1; *dy = -1; return true;
-    case SDL_SCANCODE_KP_9: *dx = 1;  *dy = -1; return true;
-    case SDL_SCANCODE_KP_1: *dx = -1; *dy = 1;  return true;
-    case SDL_SCANCODE_KP_3: *dx = 1;  *dy = 1;  return true;
-    default: return false;
-    }
+void gg_input_bind(gg_input *in, const gg_settings *set) {
+    SDL_memcpy(in->key, set->key, sizeof in->key);
+    SDL_memcpy(in->alt, set->alt, sizeof in->alt);
+}
+
+// Which action a key is bound to, or GG_ACT_NONE.
+//
+// One table for every key, movement and verbs alike, because "rebindable keys"
+// that cannot move the walk keys is a promise with a hole in it - and because
+// the eight directions are actions like any other here.
+static gg_action key_action(const gg_input *in, SDL_Scancode sc) {
+    if (sc == SDL_SCANCODE_UNKNOWN) return GG_ACT_NONE;
+    for (int a = 1; a < GG_ACT_COUNT; a++)
+        if (in->key[a] == sc || in->alt[a] == sc) return (gg_action)a;
+    return GG_ACT_NONE;
+}
+
+static bool key_direction(const gg_input *in, SDL_Scancode sc, int *dx, int *dy) {
+    return gg_action_delta(key_action(in, sc), dx, dy);
 }
 
 bool gg_input_event(gg_input *in, const SDL_Event *ev) {
@@ -178,7 +178,7 @@ bool gg_input_event(gg_input *in, const SDL_Event *ev) {
 
     case SDL_EVENT_KEY_DOWN: {
         int dx, dy;
-        if (key_direction(ev->key.scancode, &dx, &dy)) {
+        if (key_direction(in, ev->key.scancode, &dx, &dy)) {
             if (!ev->key.repeat) {
                 // A fresh press steps at once and restarts the delay; SDL's own
                 // key repeat is ignored because its rate is a desktop text
@@ -192,31 +192,15 @@ bool gg_input_event(gg_input *in, const SDL_Event *ev) {
         }
         if (ev->key.repeat) return false;
 
-        switch (ev->key.scancode) {
-        case SDL_SCANCODE_T:      in->latched = GG_ACT_TALK; return true;
-        case SDL_SCANCODE_L:      in->latched = GG_ACT_LOOK; return true;
-        case SDL_SCANCODE_O:      in->latched = GG_ACT_OPEN; return true;
-        // Ultima's own verbs, less the ones WASD has already claimed: D is
-        // "walk right" here, so dropping is P for "put down" and equipping is
-        // R for "ready", which is what Ultima called it anyway.
-        case SDL_SCANCODE_C:      in->latched = GG_ACT_CAST;  return true;
-        case SDL_SCANCODE_J:      in->latched = GG_ACT_JOURNAL; return true;
-        case SDL_SCANCODE_F:      in->latched = GG_ACT_FIGHT; return true;
-        case SDL_SCANCODE_G:      in->latched = GG_ACT_GET;   return true;
-        case SDL_SCANCODE_I:      in->latched = GG_ACT_PACK;  return true;
-        case SDL_SCANCODE_U:      in->latched = GG_ACT_USE;   return true;
-        case SDL_SCANCODE_R:      in->latched = GG_ACT_EQUIP; return true;
-        case SDL_SCANCODE_P:      in->latched = GG_ACT_DROP;  return true;
-        case SDL_SCANCODE_SPACE:
-        case SDL_SCANCODE_PERIOD:
-        case SDL_SCANCODE_KP_5:   in->latched = GG_ACT_WAIT; return true;
-        default: return false;
-        }
+        const gg_action verb = key_action(in, ev->key.scancode);
+        if (verb == GG_ACT_NONE) return false;
+        in->latched = verb;
+        return true;
     }
 
     case SDL_EVENT_KEY_UP: {
         int dx, dy;
-        if (key_direction(ev->key.scancode, &dx, &dy)) {
+        if (key_direction(in, ev->key.scancode, &dx, &dy)) {
             // Only clear if this is the key still being tracked; releasing an
             // older key must not cancel a newer one still held.
             if (in->kb_dx == dx && in->kb_dy == dy) in->kb_dx = in->kb_dy = 0;

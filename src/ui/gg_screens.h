@@ -19,6 +19,7 @@ typedef enum {
     GG_SCREEN_PROFILES,
     GG_SCREEN_NAME,       // typing a name for a new game
     GG_SCREEN_OPTIONS,
+    GG_SCREEN_KEYS,       // what every key does, and changing one
     GG_SCREEN_PLAY,
     GG_SCREEN_PAUSE,
     GG_SCREEN_COUNT
@@ -61,6 +62,14 @@ typedef struct {
     // destroy somebody's game.
     bool confirming_delete;
 
+    // The keys page. `key_page` is which nine actions it is showing, and
+    // `binding` is the action waiting for a key to be pressed for it, or -1.
+    // While one is waiting the frontend hands every keypress to
+    // gg_screens_bind instead of steering the menu - which is the whole of the
+    // "press the key you want" interaction.
+    int key_page;
+    int binding;
+
     // Where backing out of the options page goes. Options is the one screen
     // reachable from two places, and dropping to the title from a paused game
     // would abandon it.
@@ -82,6 +91,12 @@ void gg_screens_enter(gg_screens *s, gg_screen_id id, const char *base,
 // Moves the cursor. `dx` matters only on the naming screen, whose alphabet is a
 // grid; everywhere else a menu is a column and only `dy` is read.
 void gg_screens_move(gg_screens *s, int dx, int dy);
+
+// A key was pressed while the keys page was waiting for one. Binds it to
+// whichever action was chosen and stops waiting. `SDL_SCANCODE_ESCAPE` cancels
+// instead, so a player who changes their mind is not stuck. Returns true if
+// the settings changed, which is when they need writing out again.
+bool gg_screens_bind(gg_screens *s, gg_settings *set, int scancode);
 
 // Left or right on a row that holds a value: cycles it. Rows that are not
 // values ignore this, so nudging a stick sideways can never leave a screen or
