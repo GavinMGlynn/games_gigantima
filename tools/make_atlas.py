@@ -276,28 +276,194 @@ def build_tiles():
     return out, entries
 
 
+def _mean_rgb(img):
+    px = list(img.convert("RGB").getdata())
+    n = len(px)
+    return tuple(sum(p[i] for p in px) / n for i in range(3))
+
+
+def _bank_weight(piece, interior_mean, threshold=55.0):
+    """How strongly each pixel of a ring piece reads as boundary, 0.0 to 1.0.
+
+    A weight rather than a yes/no, because the three sets differ in kind. The
+    grass and sand banks are hard-edged art, so their weights are already
+    almost all 0 or 1 and a blend against them stays crisp. The
+    shallow-on-deep set is a soft radial gradient, and a binary mask turned its
+    composed corners into hard-edged rectangles of the wrong colour - visibly
+    worse than the missing corner it replaced.
+
+    Distance from the interior tile's mean colour, rather than a hue test: one
+    of the three sets is water on water, so anything looking for "blue" would
+    find boundary everywhere in it.
+    """
+    rgb = piece.convert("RGB").load()
+    alpha = piece.getchannel("A").load()
+    w = [0.0] * (TILE * TILE)
+    ir, ig, ib = interior_mean
+    for y in range(TILE):
+        for x in range(TILE):
+            if alpha[x, y] == 0:
+                continue
+            r, g, b = rgb[x, y]
+            d = ((r - ir) ** 2 + (g - ig) ** 2 + (b - ib) ** 2) ** 0.5
+            w[y * TILE + x] = min(1.0, d / threshold)
+    return w
+
+
+def _inner_corner(interior, outer, w_a, w_b):
+    """Build a concave corner: interior everywhere, boundary only where the two
+    adjoining straight edges both had it.
+
+    The LPC sheets carry no inner corners, so this is where they come from. The
+    overlap of the N band and the W band is exactly the top-left nub an inner
+    NW corner needs, and taking the pixels from the *outer* NW corner means the
+    art in that nub is already drawn for that orientation - it is a crop of
+    real corner art, not a synthesised blob.
+
+    The two weights are combined with min(), which is the soft reading of
+    "both": a pixel is corner only as far as it is boundary in both directions.
+    """
+    out = interior.copy()
+    src = outer.convert("RGBA").load()
+    dst = out.load()
+    for y in range(TILE):
+        for x in range(TILE):
+            t = min(w_a[y * TILE + x], w_b[y * TILE + x])
+            if t <= 0.0:
+                continue
+            sr, sg, sb, sa = src[x, y]
+            dr, dg, db, da = dst[x, y]
+            # Alpha is blended too, not carried over from the base. The edge
+            # sets composite onto an opaque interior where it makes no
+            # difference, but an overlay ring composites onto nothing - keeping
+            # the base's alpha there produced four entirely empty corners.
+            dst[x, y] = (round(dr + (sr - dr) * t),
+                         round(dg + (sg - dg) * t),
+                         round(db + (sb - db) * t),
+                         round(da + (sa - da) * t))
+    return out
+
+
 def build_edges():
-    """One 3x3 block per row, so a set's nine cells are contiguous and the
-    renderer can index them arithmetically."""
-    out = Image.new("RGBA", (3 * TILE, 3 * TILE * len(EDGES)), (0, 0, 0, 0))
+    """One block per row: the nine ring cells, then the four concave corners.
+
+    Laid out 13 wide so a set's cells stay contiguous and the renderer can
+    index them arithmetically.
+    """
+    cells_per_set = 13
+    out = Image.new("RGBA", (cells_per_set * TILE, TILE * len(EDGES)), (0, 0, 0, 0))
     entries = []
     cache = {}
     for i, (name, rel, c, r) in enumerate(EDGES):
         if rel not in cache:
             cache[rel] = sheet(rel)
-        block = cache[rel].crop((c * TILE, r * TILE,
-                                 (c + 3) * TILE, (r + 3) * TILE))
+        src = cache[rel]
+
+        piece = [src.crop(((c + k % 3) * TILE, (r + k // 3) * TILE,
+                          (c + k % 3 + 1) * TILE, (r + k // 3 + 1) * TILE))
+                 for k in range(9)]
 
         # The centre must be the pool's interior, not a hole: the sheet carries
         # hole variants of every block, they look the same in a thumbnail, and
         # picking one leaves the water see-through in play.
-        centre = block.crop((TILE, TILE, TILE * 2, TILE * 2))
-        if centre.getchannel("A").getextrema()[0] != 255:
+        interior = piece[4]
+        if interior.getchannel("A").getextrema()[0] != 255:
             sys.exit(f"edge set {name} at {rel} ({c},{r}) has a transparent "
                      f"centre - that is the hole variant, not the fill")
 
-        y = i * 3 * TILE
-        out.paste(block, (0, y))
+        mean = _mean_rgb(interior)
+        m_n = _bank_weight(piece[1], mean)
+        m_s = _bank_weight(piece[7], mean)
+        m_w = _bank_weight(piece[3], mean)
+        m_e = _bank_weight(piece[5], mean)
+
+        inner = [
+            _inner_corner(interior, piece[0], m_n, m_w),   # 9  inner NW
+            _inner_corner(interior, piece[2], m_n, m_e),   # 10 inner NE
+            _inner_corner(interior, piece[6], m_s, m_w),   # 11 inner SW
+            _inner_corner(interior, piece[8], m_s, m_e),   # 12 inner SE
+        ]
+        for k, img in enumerate(inner):
+            covered = sum(1 for v in _bank_weight(img, mean) if v > 0.5)
+            if covered == 0:
+                sys.exit(f"edge set {name}: composed inner corner {k} is all "
+                         f"interior - the boundary masks did not intersect, so "
+                         f"the threshold is wrong for this set")
+
+        y = i * TILE
+        for k, img in enumerate(piece + inner):
+            out.paste(img, (k * TILE, y))
+        entries.append((name, 0, y))
+    return out, entries
+
+
+# ---------------------------------------------------------------------------
+# Overlay rings - land meeting land.
+#
+# Different in kind from the edge sets above. An edge set *replaces* a cell's
+# tile; an overlay is drawn *over* one, so the dominant terrain can bleed a
+# soft margin onto whatever it abuts without a tile per pair. The sheet carries
+# exactly one such ring - grass, at (0,0) - and that is the one that matters,
+# because grass is the ground everything else is a patch in.
+#
+# The ring is authored as a blob of grass fading outward, so its pieces are
+# oriented the opposite way round from an edge set's: the piece with grass
+# along its top edge sits at the ring's *south* position. Rather than make the
+# renderer know that, the bake rotates the ring 180 degrees (index k -> 8-k) so
+# both kinds index identically: piece k means "the other terrain lies in
+# direction k".
+OVERLAYS = [
+    # name        sheet      col row
+    ("GRASS",     TERRAIN,     0,  0),
+]
+
+
+def _alpha_weight(piece):
+    """An overlay ring's own alpha is its mask - no colour test needed."""
+    a = piece.getchannel("A").load()
+    return [a[x, y] / 255.0 for y in range(TILE) for x in range(TILE)]
+
+
+def build_overlays():
+    cells_per_set = 13
+    out = Image.new("RGBA", (cells_per_set * TILE, TILE * len(OVERLAYS)), (0, 0, 0, 0))
+    entries = []
+    cache = {}
+    for i, (name, rel, c, r) in enumerate(OVERLAYS):
+        if rel not in cache:
+            cache[rel] = sheet(rel)
+        src = cache[rel]
+
+        ring = [src.crop(((c + k % 3) * TILE, (r + k // 3) * TILE,
+                         (c + k % 3 + 1) * TILE, (r + k // 3 + 1) * TILE))
+                for k in range(9)]
+
+        if ring[4].getchannel("A").getextrema()[0] != 255:
+            sys.exit(f"overlay {name} at {rel} ({c},{r}) has a transparent "
+                     f"centre - that is not a filled ring")
+
+        # Rotate into "the other terrain lies in direction k" order.
+        piece = [ring[8 - k] for k in range(9)]
+
+        # Concave corners start from *nothing* rather than from a fill: a cell
+        # touched only on one diagonal should carry a nub of grass and be
+        # otherwise untouched, so whatever is under it shows through.
+        blank = Image.new("RGBA", (TILE, TILE), (0, 0, 0, 0))
+        w_n, w_s = _alpha_weight(piece[1]), _alpha_weight(piece[7])
+        w_w, w_e = _alpha_weight(piece[3]), _alpha_weight(piece[5])
+        inner = [
+            _inner_corner(blank, piece[0], w_n, w_w),
+            _inner_corner(blank, piece[2], w_n, w_e),
+            _inner_corner(blank, piece[6], w_s, w_w),
+            _inner_corner(blank, piece[8], w_s, w_e),
+        ]
+        for k, img in enumerate(inner):
+            if img.getchannel("A").getextrema()[1] == 0:
+                sys.exit(f"overlay {name}: composed inner corner {k} is empty")
+
+        y = i * TILE
+        for k, img in enumerate(piece + inner):
+            out.paste(img, (k * TILE, y))
         entries.append((name, 0, y))
     return out, entries
 
@@ -472,7 +638,7 @@ def emit_sizes(props, path):
         f.write("\n".join(o) + "\n")
 
 
-def emit_atlas(tiles, props, actors, edges, font_meta, path):
+def emit_atlas(tiles, props, actors, edges, overlays, font_meta, path):
     first, last, cw, ch, fcols, adv = font_meta
     o = [banner("gg_atlas.h", "Where every sprite sits inside the four atlas "
                               "textures in assets/."),
@@ -519,12 +685,35 @@ def emit_atlas(tiles, props, actors, edges, font_meta, path):
     o.append("#define GG_EDGE_SW 6")
     o.append("#define GG_EDGE_S  7")
     o.append("#define GG_EDGE_SE 8")
+    o.append("// Concave corners, composed at bake time - the sheets have none.")
+    o.append("#define GG_EDGE_IN_NW 9")
+    o.append("#define GG_EDGE_IN_NE 10")
+    o.append("#define GG_EDGE_IN_SW 11")
+    o.append("#define GG_EDGE_IN_SE 12")
+    o.append("#define GG_EDGE_PIECES 13")
     o.append("")
-    o.append("static const gg_rect GG_EDGE_RECT[GG_EDGE_COUNT][9] = {")
+    o.append("static const gg_rect GG_EDGE_RECT[GG_EDGE_COUNT][GG_EDGE_PIECES] = {")
     for name, x, y in edges:
-        cells = ", ".join(f"{{ {x + (i % 3) * TILE:4d}, {y + (i // 3) * TILE:4d}, "
-                          f"{TILE:3d}, {TILE:3d} }}" for i in range(9))
+        cells = ", ".join(f"{{ {x + i * TILE:4d}, {y:4d}, {TILE:3d}, {TILE:3d} }}"
+                          for i in range(13))
         o.append(f"    [GG_EDGE_{name}] = {{ {cells} }},")
+    o.append("};")
+    o.append("")
+
+    o.append("// --- overlay rings: land meeting land, drawn OVER a base tile ---")
+    o.append("// Same 13-piece indexing as the edge sets: piece k means \"the")
+    o.append("// other terrain lies in direction k\". In atlas_overlays.png.")
+    o.append("typedef enum {")
+    for name, *_ in overlays:
+        o.append(f"    GG_OVERLAY_{name},")
+    o.append("    GG_OVERLAY_COUNT")
+    o.append("} gg_overlay_id;")
+    o.append("")
+    o.append("static const gg_rect GG_OVERLAY_RECT[GG_OVERLAY_COUNT][GG_EDGE_PIECES] = {")
+    for name, x, y in overlays:
+        cells = ", ".join(f"{{ {x + i * TILE:4d}, {y:4d}, {TILE:3d}, {TILE:3d} }}"
+                          for i in range(13))
+        o.append(f"    [GG_OVERLAY_{name}] = {{ {cells} }},")
     o.append("};")
     o.append("")
 
@@ -556,6 +745,7 @@ def emit_credits(path):
     used = sorted({os.path.dirname(rel) for _n, rel, *_ in TILES} |
                   {os.path.dirname(rel) for _n, rel, *_ in PROPS} |
                   {os.path.dirname(rel) for _n, rel, *_ in EDGES} |
+                  {os.path.dirname(rel) for _n, rel, *_ in OVERLAYS} |
                   {"Characters"})
     parts = [
         "# Art credits\n",
@@ -592,6 +782,10 @@ def main():
     edges_img.save(os.path.join(ASSETS, "atlas_edges.png"))
     print(f"  edges   {edges_img.size[0]:4d}x{edges_img.size[1]:<4d} {len(edges):3d} sets")
 
+    ov_img, overlays = build_overlays()
+    ov_img.save(os.path.join(ASSETS, "atlas_overlays.png"))
+    print(f"  overlay {ov_img.size[0]:4d}x{ov_img.size[1]:<4d} {len(overlays):3d} sets")
+
     props_img, props = build_props()
     props_img.save(os.path.join(ASSETS, "atlas_props.png"))
     print(f"  props   {props_img.size[0]:4d}x{props_img.size[1]:<4d} {len(props):3d} entries")
@@ -608,7 +802,7 @@ def main():
     src = os.path.join(ROOT, "src")
     emit_ids(tiles, props, actors, os.path.join(src, "core", "gg_ids.h"))
     emit_sizes(props, os.path.join(src, "core", "gg_ids.c"))
-    emit_atlas(tiles, props, actors, edges, font_meta,
+    emit_atlas(tiles, props, actors, edges, overlays, font_meta,
                os.path.join(src, "gfx", "gg_atlas.h"))
     emit_credits(os.path.join(ASSETS, "CREDITS.md"))
     print("  wrote src/core/gg_ids.{h,c}, src/gfx/gg_atlas.h, assets/CREDITS.md")

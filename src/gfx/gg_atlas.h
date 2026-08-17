@@ -76,11 +76,29 @@ typedef enum {
 #define GG_EDGE_SW 6
 #define GG_EDGE_S  7
 #define GG_EDGE_SE 8
+// Concave corners, composed at bake time - the sheets have none.
+#define GG_EDGE_IN_NW 9
+#define GG_EDGE_IN_NE 10
+#define GG_EDGE_IN_SW 11
+#define GG_EDGE_IN_SE 12
+#define GG_EDGE_PIECES 13
 
-static const gg_rect GG_EDGE_RECT[GG_EDGE_COUNT][9] = {
-    [GG_EDGE_WATER_GRASS] = { {    0,    0,  32,  32 }, {   32,    0,  32,  32 }, {   64,    0,  32,  32 }, {    0,   32,  32,  32 }, {   32,   32,  32,  32 }, {   64,   32,  32,  32 }, {    0,   64,  32,  32 }, {   32,   64,  32,  32 }, {   64,   64,  32,  32 } },
-    [GG_EDGE_WATER_SAND] = { {    0,   96,  32,  32 }, {   32,   96,  32,  32 }, {   64,   96,  32,  32 }, {    0,  128,  32,  32 }, {   32,  128,  32,  32 }, {   64,  128,  32,  32 }, {    0,  160,  32,  32 }, {   32,  160,  32,  32 }, {   64,  160,  32,  32 } },
-    [GG_EDGE_WATER_DEEP] = { {    0,  192,  32,  32 }, {   32,  192,  32,  32 }, {   64,  192,  32,  32 }, {    0,  224,  32,  32 }, {   32,  224,  32,  32 }, {   64,  224,  32,  32 }, {    0,  256,  32,  32 }, {   32,  256,  32,  32 }, {   64,  256,  32,  32 } },
+static const gg_rect GG_EDGE_RECT[GG_EDGE_COUNT][GG_EDGE_PIECES] = {
+    [GG_EDGE_WATER_GRASS] = { {    0,    0,  32,  32 }, {   32,    0,  32,  32 }, {   64,    0,  32,  32 }, {   96,    0,  32,  32 }, {  128,    0,  32,  32 }, {  160,    0,  32,  32 }, {  192,    0,  32,  32 }, {  224,    0,  32,  32 }, {  256,    0,  32,  32 }, {  288,    0,  32,  32 }, {  320,    0,  32,  32 }, {  352,    0,  32,  32 }, {  384,    0,  32,  32 } },
+    [GG_EDGE_WATER_SAND] = { {    0,   32,  32,  32 }, {   32,   32,  32,  32 }, {   64,   32,  32,  32 }, {   96,   32,  32,  32 }, {  128,   32,  32,  32 }, {  160,   32,  32,  32 }, {  192,   32,  32,  32 }, {  224,   32,  32,  32 }, {  256,   32,  32,  32 }, {  288,   32,  32,  32 }, {  320,   32,  32,  32 }, {  352,   32,  32,  32 }, {  384,   32,  32,  32 } },
+    [GG_EDGE_WATER_DEEP] = { {    0,   64,  32,  32 }, {   32,   64,  32,  32 }, {   64,   64,  32,  32 }, {   96,   64,  32,  32 }, {  128,   64,  32,  32 }, {  160,   64,  32,  32 }, {  192,   64,  32,  32 }, {  224,   64,  32,  32 }, {  256,   64,  32,  32 }, {  288,   64,  32,  32 }, {  320,   64,  32,  32 }, {  352,   64,  32,  32 }, {  384,   64,  32,  32 } },
+};
+
+// --- overlay rings: land meeting land, drawn OVER a base tile ---
+// Same 13-piece indexing as the edge sets: piece k means "the
+// other terrain lies in direction k". In atlas_overlays.png.
+typedef enum {
+    GG_OVERLAY_GRASS,
+    GG_OVERLAY_COUNT
+} gg_overlay_id;
+
+static const gg_rect GG_OVERLAY_RECT[GG_OVERLAY_COUNT][GG_EDGE_PIECES] = {
+    [GG_OVERLAY_GRASS] = { {    0,    0,  32,  32 }, {   32,    0,  32,  32 }, {   64,    0,  32,  32 }, {   96,    0,  32,  32 }, {  128,    0,  32,  32 }, {  160,    0,  32,  32 }, {  192,    0,  32,  32 }, {  224,    0,  32,  32 }, {  256,    0,  32,  32 }, {  288,    0,  32,  32 }, {  320,    0,  32,  32 }, {  352,    0,  32,  32 }, {  384,    0,  32,  32 } },
 };
 
 // --- font: fixed cells, proportional advances ---

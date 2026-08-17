@@ -84,6 +84,13 @@ typedef struct {
 // Builds a fresh world from `seed` and places the avatar. Returns false only
 // if the map could not be allocated.
 bool gg_game_new(gg_game *g, uint32_t seed, const char *profile);
+
+// The same, on a map loaded from a file rather than generated. This is the
+// path the level editor's output takes, and the one that makes an authored
+// test scene playable - which is how the shoreline corners were checked
+// against a coastline the generator would never produce.
+bool gg_game_new_from_map(gg_game *g, const char *path, const char *profile);
+
 void gg_game_free(gg_game *g);
 
 // --- the turn loop ---------------------------------------------------------

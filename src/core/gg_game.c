@@ -313,13 +313,8 @@ static void place_townsfolk(gg_game *g) {
     }
 }
 
-bool gg_game_new(gg_game *g, uint32_t seed, const char *profile) {
-    SDL_zerop(g);
-    gg_rng_seed(&g->rng, seed);
-    g->talking_to = -1;
-
-    if (!gg_map_generate(&g->map, 192, 160, seed)) return false;
-
+// Everything a new game needs once its map exists, however the map got there.
+static bool finish_new_game(gg_game *g, const char *profile) {
     SDL_strlcpy(g->profile, profile && *profile ? profile : "Avatar",
                 sizeof g->profile);
 
@@ -351,6 +346,26 @@ bool gg_game_new(gg_game *g, uint32_t seed, const char *profile) {
     gg_log(g, "%s. Day %u, %s.", g->map.name, g->day, gg_game_place(g));
     gg_log(g, "Thou art the Avatar. Seek the vale's troubles.");
     return true;
+}
+
+bool gg_game_new(gg_game *g, uint32_t seed, const char *profile) {
+    SDL_zerop(g);
+    gg_rng_seed(&g->rng, seed);
+    g->talking_to = -1;
+
+    if (!gg_map_generate(&g->map, 192, 160, seed)) return false;
+    return finish_new_game(g, profile);
+}
+
+bool gg_game_new_from_map(gg_game *g, const char *path, const char *profile) {
+    SDL_zerop(g);
+    g->talking_to = -1;
+
+    if (!gg_map_load(&g->map, path)) return false;
+    // The map carries the seed it was generated from, so a loaded world still
+    // has a reproducible RNG for whatever the simulation decides afterwards.
+    gg_rng_seed(&g->rng, g->map.seed);
+    return finish_new_game(g, profile);
 }
 
 void gg_game_free(gg_game *g) {

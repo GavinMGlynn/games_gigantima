@@ -74,19 +74,30 @@ item to tick the easy half is the same violation wearing a different shape.
       `deep_water_is_never_adjacent_to_land`,
       `the_coastline_has_no_isolated_puddles`; and a `--shot` frame of the lake.
       Detail in `PROJECT_STATUS.md`.*
-- [ ] **Concave shoreline corners.** The LPC sheets carry no inner-corner
-      pieces, so a coast that wraps around a promontory falls back to the
-      interior fill and shows a square notch. Smoothing hides it on generated
-      lakes; a hand-authored coastline will not be so lucky. Needs the four
-      pieces drawn, or composited from the existing ring at bake time.
-      *Verification: a map with a deliberate one-tile promontory renders with
-      no square notch.*
-- [ ] **Land-to-land transitions.** Grass still meets sand, dirt and desert
-      with a hard edge; only water is autotiled. The same machinery applies,
-      but it needs an edge set per terrain pair and a precedence order so two
-      abutting transitions do not both claim the same cell.
-      *Verification: a `--shot` frame of the desert boundary with no
-      straight-line edge.*
+- [x] **Concave shoreline corners.** Composed at bake time from the existing
+      ring - the overlap of two adjoining straight edges is exactly the nub an
+      inner corner needs - and blended by a soft weight so the one set whose
+      boundary is a gradient does not get hard-edged rectangles.
+      *Verification: `a_one_tile_island_selects_all_four_concave_corners`,
+      `an_orthogonal_edge_beats_a_concave_corner`, and an authored `.ggmap`
+      scene of promontories, notches and islands rendered with `--map`.*
+- [x] **Land-to-land transitions.** Grass bleeds a soft verge onto dirt, road,
+      sand, desert, farmland and mountain, as a transparent second pass over
+      the base tile. Drawn as a *set* of pieces rather than one, so grass on
+      two opposite sides both show - which one-tile roads and lone patches both
+      need. *Verification: `a_one_tile_road_takes_a_verge_on_both_sides`,
+      `a_lone_patch_takes_a_verge_on_all_four_sides`,
+      `a_diagonal_only_neighbour_uses_the_concave_piece`,
+      `a_straight_verge_suppresses_its_own_corner`,
+      `a_patch_touching_no_grass_needs_no_overlay`,
+      `the_map_edge_grows_no_verge`. Detail in `PROJECT_STATUS.md`.*
+- [ ] **Transitions between two non-grass terrains.** Sand meeting dirt, or
+      desert meeting road, still butt hard. The sheet carries an overlay ring
+      for grass and for nothing else, so this needs either more rings found or
+      drawn, or a precedence order over several. Rare in the world as it
+      stands, which is why it is separate rather than blocking.
+      *Verification: an authored scene with sand abutting dirt, rendered with
+      no straight-line edge.*
 - [ ] **Real buildings.** Walls, roofs, windows, doorframes and interior floors
       from the LPC Structure sheets, replacing the current rectangles of
       `GG_TILE_MOUNTAIN`. *Verification: a town frame in which buildings read

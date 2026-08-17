@@ -240,13 +240,22 @@ static void carve_road(gg_map *m, gg_rng *rng, int x0, int y0, int x1, int y1) {
     int x = x0, y = y0;
     int guard = (m->w + m->h) * 4;              // cannot loop forever
     while ((x != x1 || y != y1) && guard-- > 0) {
-        gg_cell *c = gg_map_at(m, x, y);
-        // Skip water rather than paving it. Filling the cell in was what put a
-        // brown causeway straight across the middle of the lake - a road has
-        // to stop at the shore until there is a bridge to carry it.
-        if (c && !(c->flags & GG_CELL_BLOCKED) && !(c->flags & GG_CELL_WATER)) {
-            c->terrain = GG_TILE_ROAD;
-            c->prop = GG_NO_PROP;
+        // Two tiles wide, stamped as a 2x2 so the road is that wide whichever
+        // way it happens to be running. One tile does not survive contact with
+        // the grass overlay: verges bleed in from both sides at once and swallow
+        // the road almost entirely, which is the right behaviour for the
+        // overlay and the wrong width for a road.
+        for (int oy = 0; oy < 2; oy++) {
+            for (int ox = 0; ox < 2; ox++) {
+                gg_cell *c = gg_map_at(m, x + ox, y + oy);
+                // Skip water rather than paving it. Filling the cell in was
+                // what put a brown causeway across the middle of the lake - a
+                // road stops at the shore until there is a bridge for it.
+                if (!c || (c->flags & GG_CELL_BLOCKED) || (c->flags & GG_CELL_WATER))
+                    continue;
+                c->terrain = GG_TILE_ROAD;
+                c->prop = GG_NO_PROP;
+            }
         }
         // Step toward the target, favouring the longer axis, with an
         // occasional sidestep so the road bends.

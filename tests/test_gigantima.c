@@ -498,6 +498,45 @@ static void a_square_lake_selects_all_nine_edge_pieces(void) {
     gg_map_free(&m);
 }
 
+static void a_one_tile_island_selects_all_four_concave_corners(void) {
+    // The hardest case, and the one the LPC sheets have no art for: a single
+    // tile of land in open water. Each of the four diagonally adjacent cells
+    // has land on exactly one diagonal and no orthogonal neighbour, so each
+    // must resolve to the concave corner facing the island - the cell above
+    // and left of the island sees land to its south-east.
+    gg_map m;
+    CHECK(gg_map_alloc(&m, 7, 7), "alloc failed");
+    for (int i = 0; i < 49; i++) m.cell[i].terrain = GG_TILE_WATER;
+    m.cell[3 * 7 + 3].terrain = GG_TILE_GRASS;
+
+    CHECK(gg_render_water_piece(&m, 2, 2) == GG_EDGE_IN_SE, "up-left of the island");
+    CHECK(gg_render_water_piece(&m, 4, 2) == GG_EDGE_IN_SW, "up-right of the island");
+    CHECK(gg_render_water_piece(&m, 2, 4) == GG_EDGE_IN_NE, "down-left of the island");
+    CHECK(gg_render_water_piece(&m, 4, 4) == GG_EDGE_IN_NW, "down-right of the island");
+
+    // The orthogonal neighbours still take the straight edges, and a cell two
+    // away from everything is still plain interior.
+    CHECK(gg_render_water_piece(&m, 3, 2) == GG_EDGE_S, "directly above the island");
+    CHECK(gg_render_water_piece(&m, 3, 4) == GG_EDGE_N, "directly below the island");
+    CHECK(gg_render_water_piece(&m, 1, 1) == GG_EDGE_C, "far from the island");
+    gg_map_free(&m);
+}
+
+static void an_orthogonal_edge_beats_a_concave_corner(void) {
+    // A cell with land to the north *and* land on its south-east diagonal has
+    // to take the north edge: the straight boundary is the dominant feature,
+    // and drawing the corner instead would leave the north shore unbanked.
+    gg_map m;
+    CHECK(gg_map_alloc(&m, 7, 7), "alloc failed");
+    for (int i = 0; i < 49; i++) m.cell[i].terrain = GG_TILE_WATER;
+    m.cell[2 * 7 + 3].terrain = GG_TILE_GRASS;   // north of (3,3)
+    m.cell[4 * 7 + 4].terrain = GG_TILE_GRASS;   // south-east of (3,3)
+
+    CHECK(gg_render_water_piece(&m, 3, 3) == GG_EDGE_N,
+          "an orthogonal edge must win over a diagonal");
+    gg_map_free(&m);
+}
+
 static void water_at_the_map_edge_draws_no_shoreline_against_nothing(void) {
     // Off-map counts as water, so a lake running off the edge keeps its
     // interior fill there rather than drawing a beach against the void.
@@ -538,6 +577,97 @@ static void deep_water_is_never_adjacent_to_land(void) {
             }
         gg_map_free(&m);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Land meeting land
+// ---------------------------------------------------------------------------
+static gg_map *land_scene(gg_map *m) {
+    // 7x7 of grass with a dirt cross carved through the middle, so the centre
+    // cell has dirt on every side and grass only on the diagonals.
+    SDL_zerop(m);
+    if (!gg_map_alloc(m, 7, 7)) return nullptr;
+    for (int i = 0; i < 49; i++) m->cell[i].terrain = GG_TILE_GRASS;
+    return m;
+}
+
+static void a_one_tile_road_takes_a_verge_on_both_sides(void) {
+    // The case a single-piece selector cannot express, and the reason the
+    // overlay returns a mask: with one piece the road was grassy down its west
+    // side and hard-edged down its east.
+    gg_map m;
+    CHECK(land_scene(&m) != nullptr, "alloc failed");
+    for (int y = 0; y < 7; y++) m.cell[y * 7 + 3].terrain = GG_TILE_ROAD;
+
+    const uint16_t mask = gg_render_overlay_mask(&m, 3, 3);
+    CHECK(mask & (1u << GG_EDGE_W), "no verge on the west side");
+    CHECK(mask & (1u << GG_EDGE_E), "no verge on the east side");
+    CHECK(!(mask & (1u << GG_EDGE_N)), "north is road, not grass");
+    CHECK(!(mask & (1u << GG_EDGE_S)), "south is road, not grass");
+    gg_map_free(&m);
+}
+
+static void a_lone_patch_takes_a_verge_on_all_four_sides(void) {
+    gg_map m;
+    CHECK(land_scene(&m) != nullptr, "alloc failed");
+    m.cell[3 * 7 + 3].terrain = GG_TILE_SAND;
+
+    const uint16_t mask = gg_render_overlay_mask(&m, 3, 3);
+    for (int p = 0; p < 4; p++) {
+        static const int SIDES[4] = { GG_EDGE_N, GG_EDGE_S, GG_EDGE_E, GG_EDGE_W };
+        CHECK(mask & (1u << SIDES[p]), "side %d has no verge", p);
+    }
+    // Straight pieces already cover the corners; drawing the concave ones too
+    // would double the alpha there and leave a visible seam.
+    CHECK(!(mask & (1u << GG_EDGE_IN_NW)), "concave corner drawn needlessly");
+    CHECK(!(mask & (1u << GG_EDGE_IN_SE)), "concave corner drawn needlessly");
+    gg_map_free(&m);
+}
+
+static void a_diagonal_only_neighbour_uses_the_concave_piece(void) {
+    gg_map m;
+    CHECK(land_scene(&m) != nullptr, "alloc failed");
+    // Dirt everywhere except one grass cell on the centre's north-west diagonal.
+    for (int i = 0; i < 49; i++) m.cell[i].terrain = GG_TILE_DIRT;
+    m.cell[2 * 7 + 2].terrain = GG_TILE_GRASS;
+
+    const uint16_t mask = gg_render_overlay_mask(&m, 3, 3);
+    CHECK(mask == (1u << GG_EDGE_IN_NW),
+          "expected only the concave NW piece, got mask 0x%x", mask);
+    gg_map_free(&m);
+}
+
+static void a_straight_verge_suppresses_its_own_corner(void) {
+    gg_map m;
+    CHECK(land_scene(&m) != nullptr, "alloc failed");
+    for (int i = 0; i < 49; i++) m.cell[i].terrain = GG_TILE_DIRT;
+    m.cell[2 * 7 + 2].terrain = GG_TILE_GRASS;   // north-west diagonal
+    m.cell[2 * 7 + 3].terrain = GG_TILE_GRASS;   // due north
+
+    const uint16_t mask = gg_render_overlay_mask(&m, 3, 3);
+    CHECK(mask & (1u << GG_EDGE_N), "the north verge is missing");
+    CHECK(!(mask & (1u << GG_EDGE_IN_NW)),
+          "the north piece already covers that corner; drawing both doubles it");
+    gg_map_free(&m);
+}
+
+static void a_patch_touching_no_grass_needs_no_overlay(void) {
+    gg_map m;
+    CHECK(land_scene(&m) != nullptr, "alloc failed");
+    for (int i = 0; i < 49; i++) m.cell[i].terrain = GG_TILE_DIRT;
+    CHECK(gg_render_overlay_mask(&m, 3, 3) == 0,
+          "a cell surrounded by its own kind should draw nothing");
+    gg_map_free(&m);
+}
+
+static void the_map_edge_grows_no_verge(void) {
+    // Off-map is not grass. Treating it as grass would fringe the whole border.
+    gg_map m;
+    CHECK(land_scene(&m) != nullptr, "alloc failed");
+    for (int i = 0; i < 49; i++) m.cell[i].terrain = GG_TILE_DIRT;
+    CHECK(gg_render_overlay_mask(&m, 0, 0) == 0, "the top-left corner sprouted a verge");
+    CHECK(gg_render_overlay_mask(&m, 6, 6) == 0, "the bottom-right corner sprouted a verge");
+    gg_map_free(&m);
 }
 
 static void the_coastline_has_no_isolated_puddles(void) {
@@ -624,9 +754,18 @@ int main(void) {
     RUN(the_camera_clamps_to_the_map_edges);
 
     RUN(a_square_lake_selects_all_nine_edge_pieces);
+    RUN(a_one_tile_island_selects_all_four_concave_corners);
+    RUN(an_orthogonal_edge_beats_a_concave_corner);
     RUN(water_at_the_map_edge_draws_no_shoreline_against_nothing);
     RUN(deep_water_is_never_adjacent_to_land);
     RUN(the_coastline_has_no_isolated_puddles);
+
+    RUN(a_one_tile_road_takes_a_verge_on_both_sides);
+    RUN(a_lone_patch_takes_a_verge_on_all_four_sides);
+    RUN(a_diagonal_only_neighbour_uses_the_concave_piece);
+    RUN(a_straight_verge_suppresses_its_own_corner);
+    RUN(a_patch_touching_no_grass_needs_no_overlay);
+    RUN(the_map_edge_grows_no_verge);
 
     RUN(every_terrain_and_item_has_a_name);
     RUN(every_prop_has_a_plausible_footprint);

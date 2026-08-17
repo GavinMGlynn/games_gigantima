@@ -52,6 +52,7 @@ typedef struct {
 
     uint32_t    seed;
     const char *profile;
+    const char *map_path;         // --map FILE: play an authored map
 
     // --at X,Y drops the avatar somewhere specific. A development flag, and an
     // earned one: verifying a change to how water is drawn means getting to
@@ -169,7 +170,8 @@ static void draw(gg_app *app) {
 static void usage(void) {
     SDL_Log("usage: gigantima [--profile NAME] [--seed N] [--play] [--debug]\n"
             "                 [--scale N] [--fullscreen] [--no-rumble]\n"
-            "                 [--at X,Y] [--shot FILE.bmp] [--shot-at TURN]");
+            "                 [--map FILE.ggmap] [--at X,Y]\n"
+            "                 [--shot FILE.bmp] [--shot-at TURN]");
 }
 
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
@@ -200,6 +202,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
             app->shot_path = argv[++i];
         } else if (SDL_strcmp(argv[i], "--shot-at") == 0 && i + 1 < argc) {
             app->shot_at = (uint32_t)SDL_atoi(argv[++i]);
+        } else if (SDL_strcmp(argv[i], "--map") == 0 && i + 1 < argc) {
+            app->map_path = argv[++i];
         } else if (SDL_strcmp(argv[i], "--at") == 0 && i + 1 < argc) {
             if (SDL_sscanf(argv[++i], "%d,%d", &app->at_x, &app->at_y) == 2) {
                 app->at_set = true;
@@ -264,8 +268,12 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     const uint32_t seed = seed_set ? app->seed
                                    : (uint32_t)SDL_GetPerformanceCounter();
     app->seed = seed;
-    if (!gg_game_new(&app->game, seed, app->profile)) {
-        SDL_Log("gigantima: could not build a world");
+    const bool built = app->map_path
+        ? gg_game_new_from_map(&app->game, app->map_path, app->profile)
+        : gg_game_new(&app->game, seed, app->profile);
+    if (!built) {
+        SDL_Log("gigantima: could not build a world%s%s",
+                app->map_path ? " from " : "", app->map_path ? app->map_path : "");
         return SDL_APP_FAILURE;
     }
 

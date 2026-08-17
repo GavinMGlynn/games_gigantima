@@ -169,13 +169,33 @@ and **the LPC sheets carry none**, so each one would render as a square notch.
 Equal thresholds were tried first and oscillate, the same cells flipping every
 pass.
 
-**Concave corners are the known gap.** A coast that wraps around a promontory
-falls back to the interior fill and shows a square step. Smoothing makes this
-rare on generated lakes; a hand-authored coastline will hit it. Named in the
-plan.
+**Concave corners are composed at bake time**, because the sheets carry none.
+The overlap of two adjoining straight edges is exactly the nub an inner corner
+needs, and the pixels come from the matching outer corner, so the art in it is
+real corner art rather than a synthesised blob. The blend is by a soft weight,
+not a binary mask: two of the three sets have hard-edged banks where a mask
+would do, but the shallow-to-deep set is a gradient, and a mask turned its
+corners into hard-edged rectangles — visibly worse than the missing corner.
 
-Land-to-land boundaries — grass against sand, dirt, desert — are **not**
-autotiled and still meet with a hard edge. Only water is done.
+**Land meeting land** is a second, transparent pass over the base tile: grass
+bleeds a verge onto dirt, road, sand, desert, farmland and mountain. Rock is
+included because the alternative is a hard staircase where the mountains meet
+the grass, which reads as a tiling artifact rather than as a cliff.
+`GG_TILE_CLIFF` is deliberately excluded — it stands in for masonry as well as
+rock, and a grass fringe up every building is worse than a hard edge on a few
+loose cliffs.
+
+The overlay returns a **set** of pieces rather than one. A single piece cannot
+say "grass on both sides", which is what a one-tile road and a lone patch both
+are; choosing one left roads grassy down the west side and hard-edged down the
+east. Overlays are transparent, so one straight piece per grassy side
+composites into the right shape, and the concave pieces cover only what a
+straight piece cannot reach.
+
+**The remaining gap** is a boundary between two *non-grass* terrains — sand
+meeting dirt, say. The sheet carries an overlay ring for grass and for nothing
+else, so those still butt hard. Rare in the world as it stands. Named in the
+plan.
 
 *Verification: `a_square_lake_selects_all_nine_edge_pieces` (all nine pieces of
 a square lake, each exactly once), `water_at_the_map_edge_draws_no_shoreline_against_nothing`,
@@ -258,7 +278,7 @@ Named plainly, because a reader should not have to infer absence:
 | Title/menus/setup pages | a title screen with a prompt. No menus, no options, no profile pages |
 | Level editor | nothing. The map format exists for it |
 | Buildings | rectangles of wall with a door. No roofs, windows, interiors or furniture |
-| Land-to-land transitions | grass meets sand and desert with a hard edge; only water is autotiled |
+| Transitions between two non-grass terrains | sand meeting dirt still butts hard; only grass has an overlay ring |
 | Indoor lighting | the light quad covers the whole view; `GG_CELL_INDOORS` is set but unused |
 | Pathfinding | greedy stepping only |
 | Party | the avatar is alone |
@@ -276,9 +296,6 @@ Deliberate, documented, with the cost to close:
   Closing it needs a light model — emitters, radius, and a per-tile blend.
 - **Buildings as flat rectangles.** The LPC Structure sheets carry roofs,
   windows and doorframes in 3×3 arrangements this project has not decoded yet.
-- **No concave shoreline corners.** No art exists for them in the LPC sheets;
-  the interior fill stands in, and smoothing keeps generated coasts clear of
-  the cases that would show it.
 - **Roads stop at water** rather than bridging it. Paving the water was what
   put a brown causeway across the middle of the lake; a bridge prop is the
   proper fix.
