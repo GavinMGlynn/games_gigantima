@@ -908,7 +908,21 @@ static void the_avatar_carries_a_light_that_falls_off(void) {
     CHECK(gg_game_new(&g, 7, "Tester"), "new game failed");
     g.minutes = 0;
     const uint8_t day = gg_game_daylight(&g);
+
+    // Out in the wilderness, well away from the town. The avatar starts on the
+    // square, which now has a fire on it, and a second light beside the one
+    // being measured makes the falloff anything but monotonic.
+    gg_actor *pm = gg_player(&g);
+    pm->x = 30; pm->y = 30; pm->step = 0;
     const gg_actor *p = gg_player_const(&g);
+    for (int oy = -GG_LIGHT_MAX_RADIUS; oy <= GG_LIGHT_MAX_RADIUS; oy++)
+        for (int ox = -GG_LIGHT_MAX_RADIUS; ox <= GG_LIGHT_MAX_RADIUS; ox++) {
+            const gg_cell *c = gg_map_at_const(&g.map, p->x + ox, p->y + oy);
+            if (c && GG_HAS_PROP(c))
+                CHECK(GG_PROP_SIZE[GG_PROP_OF(c)].light == 0,
+                      "the test spot has another light in it at %d,%d",
+                      p->x + ox, p->y + oy);
+        }
 
     const uint8_t here = gg_light_at(&g, p->x, p->y, day);
     CHECK(here == GG_LIGHT_FULL, "the avatar's own tile should be fully lit, got %u",
@@ -924,6 +938,54 @@ static void the_avatar_carries_a_light_that_falls_off(void) {
     }
     CHECK(gg_light_at(&g, p->x + GG_LIGHT_CARRY_RADIUS + 3, p->y, day) == 0,
           "the carried light reaches further than its radius");
+    gg_game_free(&g);
+}
+
+static void a_lamp_indoors_does_not_light_the_street(void) {
+    // The occlusion rule, and the reason it exists: without it every house at
+    // night wore a halo, because a room's lamp lit straight through the walls.
+    gg_game g;
+    CHECK(gg_game_new(&g, 7, "Tester"), "new game failed");
+    g.minutes = 0;
+    const uint8_t day = gg_game_daylight(&g);
+
+    // Build the situation rather than hunt for one in the generated town: the
+    // town square has a fire on it, so an outdoor tile near a house can be lit
+    // perfectly legitimately, and hunting found that instead of a leak.
+    const int hx = 30, hy = 30;
+    for (int y = hy - 12; y <= hy + 6; y++)
+        for (int x = hx - 12; x <= hx + 12; x++) {
+            gg_cell *c = gg_map_at(&g.map, x, y);
+            if (!c) continue;
+            c->terrain = GG_TILE_GRASS;
+            c->prop = GG_NO_PROP;
+            c->flags = 0;
+        }
+    CHECK(gg_map_place_prop(&g.map, hx, hy, GG_PROP_HOUSE_BRICK_A),
+          "could not place a test house");
+
+    int rx0, ry0, rx1, ry1;
+    CHECK(gg_prop_interior(GG_PROP_HOUSE_BRICK_A, hx, hy, &rx0, &ry0, &rx1, &ry1),
+          "the test house has no room");
+    const int lx = rx0, ly = ry0;
+    CHECK(gg_map_place_prop(&g.map, lx, ly, GG_PROP_LAMP),
+          "could not put a lamp in the room");
+
+    // Park the avatar far away so its own light is not what is being measured.
+    gg_actor *pm = gg_player(&g);
+    pm->x = 4; pm->y = 4; pm->step = 0;
+
+    CHECK(gg_light_at(&g, lx, ly, day) > 0, "the lamp does not light its own tile");
+
+    // Every outdoor cell within the lamp's reach must be untouched by it.
+    int leaked = 0;
+    for (int oy = -GG_LIGHT_MAX_RADIUS; oy <= GG_LIGHT_MAX_RADIUS; oy++)
+        for (int ox = -GG_LIGHT_MAX_RADIUS; ox <= GG_LIGHT_MAX_RADIUS; ox++) {
+            const gg_cell *c = gg_map_at_const(&g.map, lx + ox, ly + oy);
+            if (!c || (c->flags & (GG_CELL_INDOORS | GG_CELL_DOOR))) continue;
+            if (gg_light_at(&g, lx + ox, ly + oy, day) > 0) leaked++;
+        }
+    CHECK(leaked == 0, "%d outdoor tiles are lit through the wall", leaked);
     gg_game_free(&g);
 }
 
@@ -1355,6 +1417,7 @@ int main(void) {
 
     RUN(a_room_is_lit_at_midnight_and_the_street_is_not);
     RUN(the_avatar_carries_a_light_that_falls_off);
+    RUN(a_lamp_indoors_does_not_light_the_street);
     RUN(noon_lights_the_whole_outdoors);
 
     RUN(the_camera_moves_in_sub_tile_steps_while_walking);

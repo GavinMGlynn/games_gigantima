@@ -49,7 +49,10 @@ static const gg_rect GG_PROP_RECT[GG_PROP_COUNT] = {
     [GG_PROP_BARREL] = {  192,  160,  32,  64 },
     [GG_PROP_CRATE] = {  224,  160,  32,  32 },
     [GG_PROP_TABLE] = {  256,  160,  32,  32 },
-    [GG_PROP_HOUSE_BRICK_A] = {  288,  160, 256, 224 },
+    [GG_PROP_LAMP] = {  288,  160,  32,  64 },
+    [GG_PROP_TORCH_WALL] = {  320,  160,  32,  32 },
+    [GG_PROP_CAMPFIRE] = {  352,  160,  32,  32 },
+    [GG_PROP_HOUSE_BRICK_A] = {  384,  160, 256, 224 },
     [GG_PROP_HOUSE_BRICK_B] = {    0,  384, 192, 192 },
     [GG_PROP_HOUSE_PANELED] = {  192,  384, 160, 160 },
 };

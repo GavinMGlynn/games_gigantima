@@ -128,11 +128,18 @@ TREES = "Terrain/trees_summer.png"
 PLANTS = "Terrain/plants_summer.png"
 HOUSES = "Structure/Structures"
 FURN = "Objects/Furniture"
+SMALL = "Objects/Small Items"
+WALLITEM = "Objects/Wall Items"
 
 NO_DOOR = 255
 
+# Must match GG_LIGHT_MAX_RADIUS: the renderer scans a box this big around
+# each cell looking for emitters, so anything brighter would be clipped.
+GG_LIGHT_MAX_RADIUS = 6
 
-def prop(name, sheet, col, row, w, h, foot=None, door=NO_DOOR, hollow=False):
+
+def prop(name, sheet, col, row, w, h, foot=None, door=NO_DOOR, hollow=False,
+         light=0):
     """One prop.
 
     `foot` is the footprint within the sprite as (x, y, w, h) in tiles - the
@@ -150,10 +157,15 @@ def prop(name, sheet, col, row, w, h, foot=None, door=NO_DOOR, hollow=False):
     `hollow` marks a building: its footprint is walls around a walkable
     interior rather than a solid block, so the player can go in. The roof is
     hidden while they are inside - see gg_render.c.
+
+    `light` is how far this thing lights the world, in tiles. Zero for most
+    things. This is what makes light come from objects rather than from rules:
+    a room is bright because somebody put a lamp in it, not because it is a
+    room.
     """
     if foot is None:
         foot = ((w - 1) // 2, h - 1, 1, 1)
-    return (name, sheet, col, row, w, h, foot, door, hollow)
+    return (name, sheet, col, row, w, h, foot, door, hollow, light)
 
 
 PROPS = [
@@ -190,6 +202,12 @@ PROPS = [
     prop("BARREL",       f"{FURN}/Barrel.png",     0, 0, 1, 2),
     prop("CRATE",        f"{FURN}/Crate.png",      0, 0, 1, 1),
     prop("TABLE",        f"{FURN}/End Table.png",  0, 0, 1, 1),
+
+    # Things that give light. The radius is the whole of it - see gg_render.c
+    # for how an emitter reaches only cells on its own side of a wall.
+    prop("LAMP",         f"{SMALL}/Lighting, Table.png", 0, 0, 1, 2, light=4),
+    prop("TORCH_WALL",   f"{WALLITEM}/Lighting, Wall.png", 2, 0, 1, 1, light=4),
+    prop("CAMPFIRE",     f"{SMALL}/Fire, Camp.png", 1, 1, 1, 1, light=5),
 
     prop("HOUSE_BRICK_A",  f"{HOUSES}/Brick House A.png",   0, 0, 8, 7,
          foot=(1, 0, 6, 6), door=1, hollow=True),
@@ -567,7 +585,7 @@ def build_props():
     packer = Shelf(640)
     entries = []
     cache = {}
-    for name, rel, c, r, wt, ht, foot, door, hollow in PROPS:
+    for name, rel, c, r, wt, ht, foot, door, hollow, light in PROPS:
         if rel not in cache:
             cache[rel] = sheet(rel)
         src = cache[rel]
@@ -588,6 +606,9 @@ def build_props():
                      f"no room inside its own walls")
         if hollow and door == NO_DOOR:
             sys.exit(f"prop {name} is hollow with no door - nothing could get in")
+        if light > GG_LIGHT_MAX_RADIUS:
+            sys.exit(f"prop {name} lights {light} tiles, past the "
+                     f"{GG_LIGHT_MAX_RADIUS} the renderer scans for emitters")
         if hollow and not (1 <= door <= fw - 2):
             # A door in a corner column opens onto the side wall rather than
             # into the room. It looks perfectly fine from outside and is only
@@ -612,7 +633,7 @@ def build_props():
 
         x, y, w, h = packer.add(name, img)
         entries.append((name, x, y, w, h, wt, ht, anchor_x, anchor_y,
-                        fw, fh, door, 1 if hollow else 0))
+                        fw, fh, door, 1 if hollow else 0, light))
     return packer.render(), entries
 
 
@@ -764,6 +785,7 @@ def emit_ids(tiles, props, actors, path):
     o.append("    uint8_t foot_w, foot_h;")
     o.append("    uint8_t door_dx;")
     o.append("    uint8_t hollow;   // a building: walls around a walkable interior")
+    o.append("    uint8_t light;    // how far it lights the world, in tiles; 0 for most")
     o.append("} gg_prop_size;")
     o.append("extern const gg_prop_size GG_PROP_SIZE[GG_PROP_COUNT];")
     o.append("")
@@ -778,9 +800,9 @@ def emit_sizes(props, path):
     o = [banner("gg_ids.c", "Prop geometry, for the simulation's collision."),
          '#include "core/gg_ids.h"', "",
          "const gg_prop_size GG_PROP_SIZE[GG_PROP_COUNT] = {"]
-    for name, x, y, w, h, wt, ht, ax, ay, fw, fh, door, hollow in props:
+    for name, x, y, w, h, wt, ht, ax, ay, fw, fh, door, hollow, light in props:
         o.append(f"    [GG_PROP_{name}] = {{ {wt}, {ht}, {ax}, {ay}, "
-                 f"{fw}, {fh}, {door}, {hollow} }},")
+                 f"{fw}, {fh}, {door}, {hollow}, {light} }},")
     o.append("};")
     with open(path, "w") as f:
         f.write("\n".join(o) + "\n")

@@ -376,6 +376,307 @@ Workbench, Wire Drawing
   DETAILS: Original by BlueCarrot. Recolored by Eliza Wyatt.
 ```
 
+## Objects/Small Items
+
+```
+
+
+Baskets
+-------------------
+  ARTIST(S): BlueCarrot16, Eliza Wyatt (DeathsDarling)
+  SOURCE: https://opengameart.org/content/lpc-tailor
+  LICENSE: OGA-BY 3.0
+  DETAILS: Original by BlueCarrot16. Fabric rolls removed and back filled in by Eliza Wyatt. Recolors by Eliza Wyatt.
+
+Boxes
+-------------------
+  ARTIST(S): Eliza Wyatt (DeathsDarling)
+  LICENSE: OGA-BY 3.0
+  DETAILS: Original by Eliza Wyatt.
+
+Buckets
+-------------------
+  ARTIST(S): Lanea Zimmerman (Sharm), Eliza Wyatt (DeathsDarling)
+  SOURCE: https://opengameart.org/content/liberated-pixel-cup-lpc-base-assets-sprites-map-tiles
+  LICENSE: OGA-BY 3.0
+  DETAILS: Original by Lanea Zimmerman. Recolors by Eliza Wyatt.
+
+Coffee Maker
+-------------------
+  ARTIST(S): Eliza Wyatt (DeathsDarling)
+  LICENSE: OGA-BY 3.0
+  DETAILS: Original by Eliza Wyatt.
+
+Dishes
+-------------------
+  ARTIST(S): Richard Kettering (Jetrel), BlueCarrot16, Eliza Wyatt (DeathsDarling)
+  SOURCE: https://opengameart.org/content/rpg-item-set
+  SOURCE: https://opengameart.org/content/lpc-meals
+  LICENSE: OGA-BY 3.0 (Original art CC0)
+  DETAILS: 
+	Top Row: Original by Richard Kettering. Recolored by BlueCarrot16 and Eliza Wyatt.
+	Second Row: Original by Eliza Wyatt.
+
+Dungeon Elements
+-------------------
+  ARTIST(S): Lanea Zimmerman (Sharm)
+  SOURCE: https://opengameart.org/content/lpc-dungeon-elements
+  LICENSE: OGA-BY 3.0
+  DETAILS: Original by Lanea Zimmerman. Recolored by Eliza Wyatt.
+
+Fire, Camp
+-------------------
+  ARTIST(S): Lanea Zimmerman (Sharm), Eliza Wyatt (DeathsDarling)
+  SOURCE: https://opengameart.org/content/lpc-dungeon-elements
+  LICENSE: OGA-BY 3.0
+  DETAILS: Original by Lanea Zimmerman. Recolors by Eliza Wyatt.
+
+Fire, Fireplace
+-------------------
+  ARTIST(S): Lanea Zimmerman (Sharm), Eliza Wyatt (DeathsDarling)
+  SOURCE: https://opengameart.org/content/lpc-fireplace
+  LICENSE: OGA-BY 3.0
+  DETAILS: Original by Lanea Zimmerman. Adjustments and recolors by Eliza Wyatt.
+
+Fireplace Accessories
+-------------------
+  ARTIST(S): Lanea Zimmerman (Sharm), Eliza Wyatt (DeathsDarling)
+  SOURCE: https://opengameart.org/content/lpc-fireplace
+  LICENSE: OGA-BY 3.0
+  DETAILS: Original by Lanea Zimmerman. Adjustments and recolors by Eliza Wyatt.
+
+Flowers
+-------------------
+  ARTIST(S): Lanea Zimmerman (Sharm), Eliza Wyatt (DeathsDarling)
+  SOURCE: https://opengameart.org/content/lpc-interior-castle-tiles
+  LICENSE: OGA-BY 3.0
+  DETAILS: Single flower, bouquet, large vase by Lanea Zimmerman. Potted shrub base, small vase by Eliza Wyatt. Recolored by Eliza Wyatt.
+
+Games
+-------------------
+  ARTIST(S): Lanea Zimmerman (Sharm)
+  SOURCE: https://opengameart.org/content/lpc-dungeon-elements
+  LICENSE: OGA-BY 3.0
+  DETAILS: Original by Lanea Zimmerman. Recolored by Eliza Wyatt.
+
+Hay & Straw
+-------------------
+  ARTIST(S): Lanea Zimmerman (Sharm)
+  SOURCE: https://opengameart.org/content/liberated-pixel-cup-lpc-base-assets-sprites-map-tiles
+  LICENSE: OGA-BY 3.0
+  DETAILS: Original by Lanea Zimmerman. Edited and recolored by Eliza Wyatt.
+
+Kitchen Clutter
+-------------------
+  ARTIST(S): Lanea Zimmerman (Sharm), Hyptosis, Eliza Wyatt (DeathsDarling)
+  SOURCE: https://opengameart.org/content/lpc-interior-castle-tiles
+  SOURCE: https://opengameart.org/content/mage-city-arcanos
+  LICENSE: OGA-BY 3.0
+  DETAILS:
+	Row 1 & 2: Original by Lanea Zimmerman. Recolored by Eliza Wyatt.
+	Row 3 & 4: Original by Hyptosis. Recolored by Eliza Wyatt.
+	Row 5: Original by Eliza Wyatt.
+
+Laptop
+-------------------
+  ARTIST(S): Eliza Wyatt (DeathsDarling)
+  LICENSE: OGA-BY 3.0
+  DETAILS: Original by Eliza Wyatt.
+
+Lighting, Tabletop
+-------------------
+  ARTIST(S): Lanea Zimmerman (Sharm), Eliza Wyatt (DeathsDarling)
+  SOURCE: https://opengameart.org/content/lpc-modified-base-tiles
+  SOURCE: https://opengameart.org/content/lpc-interior-castle-tiles
+  LICENSE: OGA-BY 3.0
+  DETAILS: 
+	Top Row: Original by Lanea Zimmerman. Adjustments and recolors by Eliza Wyatt.
+	Row 2+: Original by Eliza Wyatt.
+
+Loose Paper
+-------------------
+  ARTIST(S): Eliza Wyatt (DeathsDarling)
+  LICENSE: OGA-BY 3.0
+  DETAILS: Original by Eliza Wyatt.
+
+Lumber
+-------------------
+  ARTIST(S): BlueCarrot16
+  SOURCE: https://opengameart.org/content/lpc-woodshop
+  LICENSE: OGA-BY 3.0
+  DETAILS: Original by BlueCarrot16. Recolors by Eliza Wyatt.
+
+Pillows
+-------------------
+  ARTIST(S): Lanea Zimmerman (Sharm), BlueCarrot16
+  SOURCE: https://opengameart.org/content/lpc-upholstery
+  LICENSE: OGA-BY 3.0
+  DETAILS: Original by Lanea Zimmerman and BlueCarrot16. Recolored by Eliza Wyatt.
+
+Presents
+-------------------
+  ARTIST(S): Eliza Wyatt (DeathsDarling)
+  LICENSE: OGA-BY 3.0
+  DETAILS: Original by Eliza Wyatt.
+
+Rotary Phone
+-------------------
+  ARTIST(S): Eliza Wyatt (DeathsDarling)
+  LICENSE: OGA-BY 3.0
+  DETAILS: Original by Eliza Wyatt.
+
+Sawdust
+-------------------
+  ARTIST(S): BlueCarrot16
+  SOURCE: https://opengameart.org/content/lpc-woodshop
+  LICENSE: OGA-BY 3.0
+  DETAILS: Original by BlueCarrot16. Recolors by Eliza Wyatt.
+
+Skeletons
+-------------------
+  ARTIST(S): Lanea Zimmerman (Sharm)
+  SOURCE: https://opengameart.org/content/lpc-dungeon-elements
+  LICENSE: OGA-BY 3.0
+  DETAILS: Original by Lanea Zimmerman. Recolored by Eliza Wyatt.
+
+Tabletop Pictures
+-------------------
+  ARTIST(S): Lanea Zimmerman (Sharm), Eliza Wyatt (DeathsDarling)
+  SOURCE: https://opengameart.org/content/lpc-interior-castle-tiles
+  LICENSE: OGA-BY 3.0
+  DETAILS: Office portrait frames by Eliza Wyatt. Woman's Small Portrait by Lanea Zimmerman, recolored by Eliza Wyatt.
+
+Tools, Carpentry
+-------------------
+  ARTIST(S): BlueCarrot16
+  SOURCE: https://opengameart.org/content/lpc-woodshop
+  LICENSE: OGA-BY 3.0
+  DETAILS: Original by BlueCarrot16. Recolors by Eliza Wyatt.
+
+Tools, Sewing
+-------------------
+  ARTIST(S): BlueCarrot16, Eliza Wyatt (DeathsDarling)
+  SOURCE: https://opengameart.org/content/lpc-tailor
+  LICENSE: OGA-BY 3.0
+  DETAILS: Original by BlueCarrot16. Recolored by Eliza Wyatt.
+
+Tools, Smithing
+-------------------
+  ARTIST(S): BlueCarrot16
+  SOURCE: https://opengameart.org/content/lpc-blacksmith
+  LICENSE: OGA-BY 3.0
+  DETAILS: Original by BlueCarrot. Recolored by Eliza Wyatt.
+```
+
+## Objects/Wall Items
+
+```
+
+
+Christmas Wall Decor
+----------------------
+  ARTIST(S): Eliza Wyatt (DeathsDarling)
+  LICENSE: OGA-BY 3.0
+  DETAILS: Original by Eliza Wyatt.
+
+
+Curtains
+-------------------
+  ARTIST(S): Lanea Zimmerman (Sharm), BlueCarrot16
+  SOURCE: https://opengameart.org/content/lpc-upholstery
+  LICENSE: OGA-BY 3.0
+  DETAILS: Original by Lanea Zimmerman and BlueCarrot16. Expanded and recolored by Eliza Wyatt.
+
+
+Graffiti & Graffiti Elements
+-------------------
+  ARTIST(S): Craftpix.net 2D Game Assets
+  SOURCE: https://opengameart.org/content/graffiti-constructor
+  LICENSE: OGA-by 3.0
+  DETAILS: Original by Craftpix.net
+
+
+Lighting, Wall
+-------------------
+  ARTIST(S): Lanea Zimmerman (Sharm), Eliza Wyatt (DeathsDarling)
+  SOURCE: https://opengameart.org/content/lpc-modified-base-tiles
+  LICENSE: OGA-BY 3.0
+  DETAILS: 
+	Top Row: Original by Lanea Zimmerman. Adjustments and recolors by Eliza Wyatt.
+	Second Row: Original by Eliza Wyatt.
+
+
+Mailboxes (tiling)
+-------------------
+  ARTIST(S): Eliza Wyatt (DeathsDarling)
+  LICENSE: OGA-BY 3.0
+  DETAILS: Original by Eliza Wyatt.
+
+
+Mirrors
+-------------------
+  ARTIST(S): Eliza Wyatt (DeathsDarling)
+  LICENSE: OGA-BY 3.0
+  DETAILS: Original by Eliza Wyatt.
+
+
+Paintings, Abstract
+-------------------
+  ARTIST(S): Eliza Wyatt (DeathsDarling)
+  LICENSE: OGA-BY 3.0
+  DETAILS: Original by Eliza Wyatt.
+
+Paintings, Landscape
+-------------------
+  ARTIST(S): Lanea Zimmerman (Sharm), Eliza Wyatt (DeathsDarling)
+  SOURCE: https://opengameart.org/content/lpc-interior-castle-tiles
+  LICENSE: OGA-BY 3.0
+  Details:
+ 	Original by Lanea Zimmerman, edited and recolored by Eliza Wyatt:
+	 - Mountain Landscape
+	Original by Eliza Wyatt:
+	 - Tree by River
+	 - Sailboat at Sunset
+	 - Starry Docks
+	 - Beachscape
+	 - Arid Farm Landscape
+	 - Great Wave Off Kanagawa study
+
+Paintings, Portraits
+-------------------
+  ARTIST(S): Lanea Zimmerman (Sharm), Eliza Wyatt (DeathsDarling)
+  SOURCE: https://opengameart.org/content/lpc-interior-castle-tiles
+  LICENSE: OGA-BY 3.0
+  Details:
+ 	Original by Lanea Zimmerman, edited and recolored by Eliza Wyatt:
+	 - King's Portrait
+	 - Woman's Small Portrait
+	Original by Eliza Wyatt:
+	 - Queen's Portrait
+	 - Knight's Portrait
+	 - Man's Small Portrait
+	 - Girl with the Pearl Earring study
+
+Paintings, Still Life
+-------------------
+  ARTIST(S): Eliza Wyatt (DeathsDarling)
+  LICENSE: OGA-BY 3.0
+  DETAILS: Original by Eliza Wyatt.
+
+Posters
+-------------------
+  ARTIST(S): Eliza Wyatt (DeathsDarling)
+  LICENSE: OGA-BY 3.0
+  DETAILS: Original by Eliza Wyatt.
+
+
+Pride Flags
+-------------------
+  ARTIST(S): Eliza Wyatt (DeathsDarling)
+  LICENSE: OGA-BY 3.0
+  DETAILS: Original by Eliza Wyatt.
+```
+
 ## Structure/Floor
 
 ```

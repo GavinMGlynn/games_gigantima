@@ -47,6 +47,9 @@ typedef enum {
     GG_PROP_BARREL,
     GG_PROP_CRATE,
     GG_PROP_TABLE,
+    GG_PROP_LAMP,
+    GG_PROP_TORCH_WALL,
+    GG_PROP_CAMPFIRE,
     GG_PROP_HOUSE_BRICK_A,
     GG_PROP_HOUSE_BRICK_B,
     GG_PROP_HOUSE_PANELED,
@@ -87,6 +90,7 @@ typedef struct {
     uint8_t foot_w, foot_h;
     uint8_t door_dx;
     uint8_t hollow;   // a building: walls around a walkable interior
+    uint8_t light;    // how far it lights the world, in tiles; 0 for most
 } gg_prop_size;
 extern const gg_prop_size GG_PROP_SIZE[GG_PROP_COUNT];
 

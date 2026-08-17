@@ -395,6 +395,17 @@ static void furnish(gg_map *m, gg_rng *rng, gg_prop_id house, int hx, int hy) {
     gg_prop_footprint(house, hx, hy, &fx0, &fy0, &fx1, &fy1);
     const int door_col = fx0 + GG_PROP_SIZE[house].door_dx;
 
+    // A lamp first, and always: a room's light now comes from the lamp in it,
+    // not from being a room, so a room that failed to get one is genuinely
+    // dark. Placed in a corner away from the door, and retried around the
+    // room rather than dropped if the first cell is taken.
+    bool lit = false;
+    for (int y = ry0; y <= ry1 && !lit; y++)
+        for (int x = rx1; x >= rx0 && !lit; x--) {
+            if (x == door_col) continue;
+            lit = gg_map_place_prop(m, x, y, GG_PROP_LAMP);
+        }
+
     const int want = gg_rand_range(rng, 1, 3);
     for (int i = 0; i < want; i++) {
         const int x = gg_rand_range(rng, rx0, rx1);
@@ -552,6 +563,14 @@ bool gg_map_generate(gg_map *m, int w, int h, uint32_t seed) {
                     }
             if (done) break;
         }
+    }
+    // A fire on the square. Placed last, because it sits beside the start
+    // point and the start point is not settled until the spiral above has
+    // finished looking for open ground. It is also the only light outdoors:
+    // without it the town is pitch dark at night beyond the avatar's own lamp.
+    for (int r = 1; r < 6; r++) {
+        if (gg_map_place_prop(m, m->start_x + r, m->start_y + 1, GG_PROP_CAMPFIRE))
+            break;
     }
     return true;
 }

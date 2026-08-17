@@ -28,15 +28,17 @@ void gg_render_screen_to_tile(const gg_game *g, int sx, int sy, int *tx, int *ty
 
 // --- light -----------------------------------------------------------------
 #define GG_LIGHT_FULL          255
-// A room is lit by whoever lives there, day or night. Short of full daylight,
-// so stepping inside at noon still reads as stepping into shade.
-#define GG_LIGHT_INDOOR        215
 // How far the avatar's own light reaches, in tiles. Small: the point is that
 // the player is never in the dark, not that night stops mattering.
 #define GG_LIGHT_CARRY_RADIUS  4
+// The largest radius any emitter may have. The renderer scans a box this big
+// around each cell looking for them, so a brighter one would simply be
+// clipped - tools/make_atlas.py refuses one rather than let that happen.
+#define GG_LIGHT_MAX_RADIUS    6
 
 // How lit the cell at (x, y) is, 0 to GG_LIGHT_FULL, given the sky's `day`
-// level. The brightest of the sky, the room, and the avatar's carried light.
+// level. The brightest of the sky, the avatar's carried light, and every
+// light-emitting prop within reach on this side of a wall.
 //
 // Exposed because it is pure arithmetic over the game state - no texture
 // involved - and because a lighting rule is far easier to check as a number

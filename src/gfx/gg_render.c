@@ -237,25 +237,55 @@ static gg_edge_id edge_set(const gg_map *m, int x, int y) {
 // was exactly as dark as the street at night, which made going inside after
 // dusk pointless.
 // ---------------------------------------------------------------------------
+// A light falls off linearly to nothing just past its radius.
+static uint8_t falloff(int distance, int radius) {
+    if (distance > radius) return 0;
+    const int v = GG_LIGHT_FULL - distance * GG_LIGHT_FULL / (radius + 1);
+    return (uint8_t)gg_clampi(v, 0, GG_LIGHT_FULL);
+}
+
+// Is this cell under a roof? A doorway counts as both sides, so a lamp in a
+// room lights its own doorway and a campfire in the street lights it too.
+static bool indoorish(const gg_cell *c) {
+    return c && (c->flags & (GG_CELL_INDOORS | GG_CELL_DOOR)) != 0;
+}
+
 uint8_t gg_light_at(const gg_game *g, int x, int y, uint8_t day) {
     const gg_cell *c = gg_map_at_const(&g->map, x, y);
+    const bool inside = c && (c->flags & GG_CELL_INDOORS) != 0;
 
-    // A room is lit by its own hearth, and a doorway takes some of it, so an
-    // open door reads as light spilling into the street rather than as a hole.
-    uint8_t lit = 0;
-    if (c && (c->flags & GG_CELL_INDOORS)) lit = GG_LIGHT_INDOOR;
-    else if (c && (c->flags & GG_CELL_DOOR)) lit = GG_LIGHT_INDOOR * 3 / 4;
-    else lit = day;
+    // The sky reaches everything that is not under a roof.
+    uint8_t lit = inside ? 0 : day;
 
-    // The avatar's own light. Radius rather than a flat disc, so it falls off
-    // and the edge of what you can see moves with you.
+    // The avatar carries a light: an object in the world like any other, and
+    // the reason the player is never left standing in the dark.
     const gg_actor *p = gg_player_const(g);
-    const int d = gg_dist_cheb(p->x, p->y, x, y);
-    if (d <= GG_LIGHT_CARRY_RADIUS) {
-        const int fall = GG_LIGHT_FULL -
-                         d * GG_LIGHT_FULL / (GG_LIGHT_CARRY_RADIUS + 1);
-        const uint8_t carried = (uint8_t)gg_clampi(fall, 0, GG_LIGHT_FULL);
-        if (carried > lit) lit = carried;
+    const uint8_t carried = falloff(gg_dist_cheb(p->x, p->y, x, y),
+                                    GG_LIGHT_CARRY_RADIUS);
+    if (carried > lit) lit = carried;
+
+    // Everything else that gives light does so because somebody put it there.
+    // Scanned rather than kept in a list: the radius is small, so the box is
+    // 13x13 at worst, and a list would have to be rebuilt every time the map
+    // changed - which the editor will do constantly.
+    for (int oy = -GG_LIGHT_MAX_RADIUS; oy <= GG_LIGHT_MAX_RADIUS; oy++) {
+        for (int ox = -GG_LIGHT_MAX_RADIUS; ox <= GG_LIGHT_MAX_RADIUS; ox++) {
+            const gg_cell *e = gg_map_at_const(&g->map, x + ox, y + oy);
+            if (!e || !GG_HAS_PROP(e)) continue;
+
+            const uint8_t r = GG_PROP_SIZE[GG_PROP_OF(e)].light;
+            if (r == 0) continue;
+
+            // A wall stops light. Rather than trace a line - which at this
+            // tile size buys little and costs a lot - an emitter reaches only
+            // cells on its own side of one: a lamp indoors does not halo the
+            // street, and a campfire outside does not shine through a wall.
+            if (indoorish(e) != inside && !(c && (c->flags & GG_CELL_DOOR)))
+                continue;
+
+            const uint8_t v = falloff(gg_dist_cheb(0, 0, ox, oy), r);
+            if (v > lit) lit = v;
+        }
     }
     return lit;
 }

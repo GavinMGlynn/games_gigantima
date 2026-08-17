@@ -174,21 +174,29 @@ Lit **per tile**, not by one quad over the whole view. Tile granularity is not
 a compromise: Ultima VI lit by the tile too, and a circle of torchlight
 stepping outward a tile at a time is the look.
 
-A cell takes the brightest of three sources — the sky, from the world clock;
-the room it is in, because somebody lives there and rooms are lit day or
-night; and the avatar's own carried light, which falls off with distance so
-the edge of what you can see moves with you. A doorway takes three quarters of
-the room's light, so an open door reads as light spilling into the street
-rather than as a hole in the wall.
+**Light comes from objects, not from rules.** A prop carries a radius, and a
+cell takes the brightest of the sky, the avatar's carried light, and every
+emitter within reach. A room is bright because somebody put a lamp in it — and
+the lamp is there in the room, visible, in its own pool of light. The town
+square has a campfire for the same reason.
+
+An emitter reaches only cells on **its own side of a wall**. Rather than trace
+a line, which at this tile size buys little and costs a lot, indoor emitters
+light indoor cells and outdoor ones light outdoor cells, with a doorway
+counting as both. Without that every house wore a halo at night, because a
+room's lamp lit straight through the brickwork.
+
+Emitters are scanned from the map rather than kept in a list. The largest
+radius is six, so the box is 13×13 at worst — and a list would have to be
+rebuilt every time the map changed, which the editor will do constantly.
 
 Night is blue rather than black, and bottoms out at three fifths rather than
 opaque: a pure black wash reads as the renderer having broken, and the player
 has to be able to walk home.
 
-**Light comes from rules, not from objects.** A room is lit because it is a
-room and the avatar because it is the avatar; there is no emitter list, so a
-brazier, a campfire or a dropped torch lights nothing. That needs the
-inventory first and is a named plan item.
+Still missing: a torch that **burns down** and is consumed. That is an
+inventory behaviour rather than a lighting one, and it is named under the
+inventory plan item.
 
 *Verification: `a_room_is_lit_at_midnight_and_the_street_is_not`,
 `the_avatar_carries_a_light_that_falls_off`, `noon_lights_the_whole_outdoors`.*
