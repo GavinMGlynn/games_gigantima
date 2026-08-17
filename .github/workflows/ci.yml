@@ -319,10 +319,13 @@ jobs:
       - name: Checkout build submodules
         run: git submodule update --init --depth 1 $CI_SUBMODULES
 
+      # clang-19 by name: the runner's plain `clang` is 18, which the C23 gate
+      # in cmake/Platform.cmake refuses - correctly, and this job's first run
+      # was refused by it.
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang ninja-build \
+          sudo apt-get install -y clang-19 ninja-build \
             libx11-dev libxext-dev libxrandr-dev libxi-dev libxcursor-dev \
             libxfixes-dev libxss-dev libxtst-dev libxkbcommon-dev libdecor-0-dev \
             libwayland-dev wayland-protocols \
@@ -330,7 +333,7 @@ jobs:
             libdbus-1-dev libudev-dev libusb-1.0-0-dev
 
       - name: Configure
-        run: cmake -B build -G Ninja -DCMAKE_C_COMPILER=clang
+        run: cmake -B build -G Ninja -DCMAKE_C_COMPILER=clang-19
                    -DCMAKE_BUILD_TYPE=RelWithDebInfo -DGIGANTIMA_WERROR=ON
       - name: Build
         run: cmake --build build -j
