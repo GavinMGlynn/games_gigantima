@@ -54,6 +54,11 @@ typedef struct {
     gg_action latched;
     gg_nav    nav_latched;
 
+    // Whether each trigger is currently pulled. A trigger is an axis, not a
+    // button: it has to be turned into an edge here, and it must fall well
+    // back before it can fire again or a resting finger fires it every frame.
+    bool trigger_left, trigger_right;
+
     // Start, which is the one button that means something on every screen:
     // "pause" in the world, "that will do" in a menu. Kept apart from the two
     // streams above so that whichever one is being drained can read it.

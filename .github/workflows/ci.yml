@@ -159,6 +159,28 @@ jobs:
             echo "the replay did not end on the world it was recorded from"
             exit 1; }
 
+      # And that a controller is not the poor relation. A **virtual** gamepad
+      # is attached through SDL and the game is played with it and nothing
+      # else: title, new journey, a name typed on the on-screen alphabet, a
+      # walk about the world, every verb the pad carries, then pause, save and
+      # leave. The keyboard is never touched, which is the plan's own
+      # verification for the item and not something a person has to remember to
+      # re-run by hand.
+      - name: Smoke test - a whole journey with a pad and no keyboard
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_RENDER_DRIVER: software
+          SDL_AUDIODRIVER: dummy
+          # Its own preferences directory, so the journeys it names cannot
+          # collide with a previous run's.
+          XDG_DATA_HOME: ${{ runner.temp }}/padprefs
+        run: |
+          ./build/gigantima --pad-loop > pad.log 2>&1
+          cat pad.log
+          grep -q "played a whole journey and saved it" pad.log || {
+            echo "the pad could not get from the title to a saved journey"
+            exit 1; }
+
       # The editor is a second binary on the same core, and it has to keep
       # building and drawing. The map it authors being playable is checked by
       # the unit tests; this is the window.

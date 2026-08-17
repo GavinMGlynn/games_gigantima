@@ -1163,6 +1163,45 @@ The overview is a streaming texture rather than one draw call per tile: 30,000
 `SDL_RenderPoint` calls a frame would halve the frame rate of the window meant
 to be diagnosing it.
 
+### The controller
+
+**Every verb is reachable with a pad.** A: talk, and ask a word in a
+conversation. B: wait, and close whatever is open. X: look. Y: open. LB: cast.
+RB: strike. Back: the pack. Start: pause, and "that will do" on a menu. The
+left stick or the d-pad walks, and holding a direction repeats at the same rate
+the step animation runs at.
+
+**The pack gives three buttons its own meanings while it is open** — A uses, Y
+readies, X sets down, B closes — because the four face buttons are spoken for
+in the world and a pad player still has to be able to eat, equip and drop. That
+is the same trick a console game plays, and it is in the simulation rather than
+in the input layer, so the keyboard's U, R and P go on working unchanged.
+
+**The triggers carry the two that were left over.** Left picks a thing up off
+the ground; right opens the journal. Neither had any button at all, which meant
+a pad could not pick up the caravan's silver and therefore could not finish the
+story. A trigger is an axis rather than a button, so it is turned into an edge
+here, with hysteresis: it fires past two thirds and cannot fire again until it
+has fallen back to a third, or a finger resting on the edge fires it on every
+jitter.
+
+*Verification: `every_verb_can_be_reached_with_a_pad` feeds real SDL gamepad
+events through the input layer and requires each verb to come out, checks that
+a held trigger does not repeat and that a released one fires again, that a
+stick is not mistaken for a button, and drives the pack's three aliases through
+`gg_game_act`.*
+
+*And the whole loop, on the real binary with **no keyboard at all**: `--pad-loop`
+attaches a virtual gamepad through SDL and plays the game with it — the title,
+a new journey, a name typed on the on-screen alphabet, a walk about the world,
+every verb the pad carries, then pause, save and leave for the title. The
+presses are virtual; everything after them is the ordinary path, from
+`SDL_EVENT_GAMEPAD_BUTTON_DOWN` through `gg_input_event` to the screens. It
+checks the journey it saved is really on disk, and it is a CI smoke test. Two
+things it found: a d-pad on a virtual joystick is a hat rather than buttons, and
+a button set and cleared within one frame is a button SDL never had time to
+see.*
+
 ### Packaging
 
 **A package is a folder somebody unpacks and runs.** The executables at the top

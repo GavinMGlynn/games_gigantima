@@ -254,11 +254,17 @@ that is reachable while content is C, so the editor comes before the content.
       *Verification: a package unpacked somewhere else and played from there
       with the source tree out of reach — done for Linux, awaiting a CI run for
       Windows and macOS.*
-- [ ] **Controller-only playability.** The menus and the naming alphabet are
-      already pad-only. What is left is everything the world gains from here —
-      each new verb, panel and prompt reachable with a pad as it lands — and
-      walking the whole loop on real hardware rather than only in tests.
-      *Verification: a full new-game-to-save loop with the keyboard unplugged.*
+- [x] **Controller-only playability.** Every verb the game has is reachable
+      with a pad: the face buttons and shoulders carry the world's, the pack
+      gives three of them its own meanings while it is open, and the two
+      triggers carry the last two — picking a thing up off the ground, and the
+      journal — which had no button at all and made the story unfinishable with
+      a controller.
+      *Verification: the game plays itself through a **virtual** gamepad
+      attached with SDL and no keyboard at all — title, new journey, a name
+      typed on the on-screen alphabet, a walk about the world, every verb, then
+      pause, save and leave — and the journey it saved is on disk and resumes.
+      A CI smoke test, so it stays true.*
 - [ ] **Accessibility**: rebindable keys, a larger HUD font option, and a
       colour-blind-safe palette for the debug overview.
       *Verification: each option exercised from the options page.*

@@ -145,6 +145,37 @@ bool gg_input_event(gg_input *in, const SDL_Event *ev) {
         default: return false;
         }
 
+    // The two triggers. The face buttons and the shoulders were all spoken for
+    // and two verbs were left with no way to reach them at all: picking a thing
+    // up off the ground, and reading the journal. A pad that cannot pick things
+    // up cannot finish the story, which is not a controller anybody would call
+    // supported.
+    case SDL_EVENT_GAMEPAD_AXIS_MOTION: {
+        bool *held = nullptr;
+        gg_action verb = GG_ACT_NONE;
+        if (ev->gaxis.axis == SDL_GAMEPAD_AXIS_LEFT_TRIGGER) {
+            held = &in->trigger_left;
+            verb = GG_ACT_GET;
+        } else if (ev->gaxis.axis == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) {
+            held = &in->trigger_right;
+            verb = GG_ACT_JOURNAL;
+        } else {
+            return false;              // a stick; sampled per tick, not here
+        }
+
+        // Hysteresis, so one pull is one action: it fires on the way past the
+        // threshold and cannot fire again until it has fallen back to half of
+        // it. A single threshold makes a finger resting on the edge fire every
+        // time the axis jitters.
+        if (!*held && ev->gaxis.value > GG_PAD_TRIGGER) {
+            *held = true;
+            in->latched = verb;
+        } else if (*held && ev->gaxis.value < GG_PAD_TRIGGER / 2) {
+            *held = false;
+        }
+        return true;
+    }
+
     case SDL_EVENT_KEY_DOWN: {
         int dx, dy;
         if (key_direction(ev->key.scancode, &dx, &dy)) {

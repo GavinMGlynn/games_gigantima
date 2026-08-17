@@ -102,6 +102,21 @@ typedef struct {
     const char *replay_path;
     gg_recorder rec;
 
+    // --pad-loop plays a whole journey with a *virtual* gamepad and no
+    // keyboard at all. See pad_bot below for what it is for.
+    bool          pad_loop;
+    SDL_Joystick *pad_stick;
+    int           bot_phase;
+    int           bot_held;      // the virtual button currently down, or -1
+    int           bot_hold;      // frames left to hold it
+    int           bot_wait;      // frames to let the world settle
+    int           bot_walked;    // steps taken in the world
+    int           bot_presses;
+    int           bot_name_len;  // letters to type before "that will do"
+    bool          bot_saved;
+    bool          bot_stuck;
+    bool          bot_done;
+
     // --screen NAME opens on a named screen, so --shot can photograph each of
     // them. Without it only the world and the title were reachable from the
     // command line, and "a frame per screen" was not a check anybody could run.
@@ -339,6 +354,210 @@ static bool screen_act(gg_app *app, gg_screen_result r) {
 }
 
 // ---------------------------------------------------------------------------
+// A pad with nobody holding it
+//
+// The plan's verification for controller-only playability is "a full
+// new-game-to-save loop with the keyboard unplugged", and the only honest way
+// to run that here is to unplug the keyboard - so this attaches a **virtual
+// gamepad** through SDL and plays the game with it. No synthetic actions and no
+// shortcuts into the screens: the bot pushes virtual buttons, SDL turns them
+// into ordinary gamepad events, and they arrive at gg_input_event exactly as a
+// real pad's would.
+//
+// It navigates by reading the menu it is looking at rather than by following a
+// list of presses, so a row moving does not silently turn this into a test of
+// something else.
+// ---------------------------------------------------------------------------
+static bool pad_attach(gg_app *app) {
+    SDL_VirtualJoystickDesc desc;
+    SDL_INIT_INTERFACE(&desc);
+    desc.type = SDL_JOYSTICK_TYPE_GAMEPAD;
+    desc.naxes = SDL_GAMEPAD_AXIS_COUNT;
+    desc.nbuttons = SDL_GAMEPAD_BUTTON_COUNT;
+    desc.name = "gigantima virtual pad";
+
+    const SDL_JoystickID id = SDL_AttachVirtualJoystick(&desc);
+    if (!id) {
+        SDL_Log("gigantima: no virtual pad: %s", SDL_GetError());
+        return false;
+    }
+    app->pad_stick = SDL_OpenJoystick(id);
+    if (!app->pad_stick) {
+        SDL_Log("gigantima: the virtual pad would not open: %s", SDL_GetError());
+        return false;
+    }
+    app->bot_held = -1;
+    app->bot_name_len = 3;
+    SDL_Log("gigantima: playing with a virtual pad and no keyboard");
+    return true;
+}
+
+// The row of `menu` whose label starts with `label`, or -1.
+static int menu_row(const gg_menu *m, const char *label) {
+    const size_t n = SDL_strlen(label);
+    for (int i = 0; i < m->n; i++)
+        if (SDL_strncasecmp(m->item[i].label, label, n) == 0) return i;
+    return -1;
+}
+
+// Held for a few frames, not one. A face button arrives as an event and would
+// be seen either way, but the d-pad is *sampled* once a frame - and a virtual
+// button set and cleared inside the same frame is a button SDL never had time
+// to notice. That is what left this pressing "down" four hundred times on the
+// naming screen without the cursor moving once.
+#define GG_BOT_HOLD 3
+
+static void pad_press(gg_app *app, int button) {
+    SDL_SetJoystickVirtualButton(app->pad_stick, button, true);
+    app->bot_held = button;
+    app->bot_hold = GG_BOT_HOLD;
+    app->bot_presses++;
+}
+
+// A direction, pushed on the left stick rather than the d-pad. A virtual
+// joystick's d-pad is a *hat*, so setting virtual buttons 11 to 14 moves
+// nothing at all - which is what left this pressing "down" three hundred times
+// on the naming screen with the cursor exactly where it started. The stick is
+// also what most players actually use.
+static void pad_push(gg_app *app, int dx, int dy) {
+    SDL_SetJoystickVirtualAxis(app->pad_stick, SDL_GAMEPAD_AXIS_LEFTX,
+                               (int16_t)(dx * 24000));
+    SDL_SetJoystickVirtualAxis(app->pad_stick, SDL_GAMEPAD_AXIS_LEFTY,
+                               (int16_t)(dy * 24000));
+    app->bot_held = SDL_GAMEPAD_BUTTON_INVALID;   // an axis, not a button
+    app->bot_hold = GG_BOT_HOLD;
+    app->bot_presses++;
+}
+
+// Walks the cursor toward a row and chooses it once it is there. Returns true
+// when it has been chosen.
+static bool pad_choose_row(gg_app *app, const char *label) {
+    const int want = menu_row(&app->screens.menu, label);
+    if (want < 0) return false;
+    if (app->screens.menu.cursor == want) {
+        pad_press(app, SDL_GAMEPAD_BUTTON_SOUTH);
+        return true;
+    }
+    pad_push(app, 0, app->screens.menu.cursor < want ? 1 : -1);
+    return false;
+}
+
+// One frame of it. Presses are one frame long with a gap after, because a
+// button held across frames is a held button and this is pressing, not holding.
+static void pad_bot(gg_app *app) {
+    if (!app->pad_stick) return;
+
+    // A bound, because a bot that cannot find its way is a test that hangs
+    // rather than one that fails - and a hung job is the worst possible way to
+    // be told something is wrong.
+    if (app->bot_presses > 300) {
+        SDL_Log("gigantima: the pad gave up after %d presses on screen %d",
+                app->bot_presses, (int)app->screens.id);
+        app->bot_stuck = true;
+        return;
+    }
+
+    if (app->bot_hold > 0) {
+        if (--app->bot_hold > 0) return;
+        if (app->bot_held >= 0)
+            SDL_SetJoystickVirtualButton(app->pad_stick, app->bot_held, false);
+        SDL_SetJoystickVirtualAxis(app->pad_stick, SDL_GAMEPAD_AXIS_LEFTX, 0);
+        SDL_SetJoystickVirtualAxis(app->pad_stick, SDL_GAMEPAD_AXIS_LEFTY, 0);
+        app->bot_held = -1;
+        app->bot_wait = GG_BOT_HOLD;     // and let the release be seen
+        return;
+    }
+    if (app->bot_wait > 0) { app->bot_wait--; return; }
+
+    switch (app->screens.id) {
+    case GG_SCREEN_TITLE:
+        // Back at the title with a journey saved behind it: that is the whole
+        // loop, and the bot stops rather than beginning another one. Without
+        // this it went round again, and again - which is how sixteen profiles
+        // called AAAAAAAAAA came to exist.
+        if (app->bot_saved) {
+            // Checked, not assumed: the pause menu said it saved, and this is
+            // whether a file for that journey is actually on disk.
+            const bool real = gg_save_exists(gg_pref_path(), app->game.profile);
+            SDL_Log("gigantima: the pad played a whole journey and %s it - "
+                    "%s, %d presses, keyboard never touched",
+                    real ? "saved" : "FAILED TO SAVE",
+                    app->game.profile, app->bot_presses);
+            app->bot_done = real;
+            app->bot_stuck = !real;
+            return;
+        }
+        pad_choose_row(app, "New journey");
+        return;
+
+    case GG_SCREEN_NAME:
+        // A refusal - the name is taken, or is not a name - is answered by
+        // typing one more letter and trying again. A bot that pressed the same
+        // button at the same message forever would be a hang rather than a
+        // report, and "AAA already has a journey" is what it met on its second
+        // ever run.
+        if (app->screens.notice[0]) {
+            SDL_Log("gigantima: the pad was told '%s'", app->screens.notice);
+            app->bot_name_len++;
+            pad_push(app, 0, -1);        // off the Begin key, back to letters
+            return;
+        }
+        // The alphabet has to be touched before A means "type this letter"
+        // rather than "that will do" - which is what lets a keyboard player
+        // type a name and press Enter without ever seeing it.
+        if (app->screens.key_row < 0)
+            pad_push(app, 0, 1);
+        else if ((int)SDL_strlen(app->screens.typed) < app->bot_name_len)
+            pad_press(app, SDL_GAMEPAD_BUTTON_SOUTH);
+        else
+            pad_press(app, SDL_GAMEPAD_BUTTON_START);
+        return;
+
+    case GG_SCREEN_PLAY: {
+        // A few of everything the world has: walk, look, open the pack and
+        // close it, pick something up, read the journal, strike at nothing.
+        static const int VERBS[] = {
+            SDL_GAMEPAD_BUTTON_WEST,           // look
+            SDL_GAMEPAD_BUTTON_BACK,           // the pack
+            SDL_GAMEPAD_BUTTON_EAST,           // and close it
+            SDL_GAMEPAD_BUTTON_NORTH,          // open a door
+            SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, // strike
+            SDL_GAMEPAD_BUTTON_SOUTH,          // talk
+            SDL_GAMEPAD_BUTTON_EAST,           // leave whatever that opened
+        };
+        if (app->bot_walked < 12) {
+            static const int WAY[4][2] = { { 1, 0 }, { 0, 1 }, { -1, 0 }, { 0, -1 } };
+            pad_push(app, WAY[app->bot_walked % 4][0], WAY[app->bot_walked % 4][1]);
+            app->bot_walked++;
+        } else if (app->bot_phase < (int)GG_COUNTOF(VERBS)) {
+            pad_press(app, VERBS[app->bot_phase++]);
+        } else {
+            pad_press(app, SDL_GAMEPAD_BUTTON_START);   // pause
+        }
+        return;
+    }
+
+    case GG_SCREEN_PAUSE:
+        // Save, and then leave. Both rows are found by name, so this is a test
+        // of the pause menu rather than of where its rows happen to sit.
+        if (!app->bot_saved) {
+            if (pad_choose_row(app, "Save")) app->bot_saved = true;
+        } else {
+            pad_choose_row(app, "Leave for the title");
+        }
+        return;
+
+    case GG_SCREEN_PROFILES:
+    case GG_SCREEN_OPTIONS:
+        pad_choose_row(app, "Back");
+        return;
+
+    default:
+        return;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------
 // Where a map lives. The simulation names the map it wants and this is the only
@@ -571,7 +790,8 @@ static void usage(void) {
             "                 [--new] [--turns N] [--screen NAME] [--map FILE.ggmap]\n"
             "                 [--at X,Y] [--time HH:MM]\n"
             "                 [--shot FILE.bmp] [--shot-at TURN]\n"
-            "                 [--record FILE.ggreplay] [--replay FILE.ggreplay]");
+            "                 [--record FILE.ggreplay] [--replay FILE.ggreplay]\n"
+            "                 [--pad-loop]");
 }
 
 // Plays a recorded session back and says whether it ended on the same world.
@@ -670,6 +890,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
         } else if (SDL_strcmp(argv[i], "--turns") == 0 && i + 1 < argc) {
             app->turn_limit = (uint32_t)SDL_atoi(argv[++i]);
             app->turn_limit_set = true;
+        } else if (SDL_strcmp(argv[i], "--pad-loop") == 0) {
+            app->pad_loop = true;
         } else if (SDL_strcmp(argv[i], "--record") == 0 && i + 1 < argc) {
             app->record_path = argv[++i];
         } else if (SDL_strcmp(argv[i], "--replay") == 0 && i + 1 < argc) {
@@ -820,6 +1042,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     gg_audio_volumes(app->settings.music, app->settings.effects);
     if (app->settings.rumble == false) app->in.no_rumble = true;
     if (no_rumble) app->settings.rumble = false;
+
+    if (app->pad_loop && !pad_attach(app)) return SDL_APP_FAILURE;
 
     // Started here, after the world exists and before anything is given to it,
     // so the recording begins at the same state a replay will build.
@@ -1065,6 +1289,10 @@ static bool pad_menu(gg_app *app) {
 // Returns false when the application should exit.
 static bool step_once(gg_app *app) {
     app->frames++;
+    if (app->pad_loop) {
+        pad_bot(app);
+        if (app->bot_done || app->bot_stuck) return false;   // by the front door
+    }
     gg_input_tick(&app->in);
 
     if (app->screens.id != GG_SCREEN_PLAY) return pad_menu(app);

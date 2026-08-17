@@ -816,6 +816,124 @@ static void a_journey_can_be_named_with_directions_alone(void) {
     wipe_saves("Padded");
 }
 
+// Every verb the game has, reached with a pad and nothing else.
+//
+// The claim being pinned is not "the pad works" but "a controller is not the
+// poor relation": everything a player has to be able to do is reachable from
+// the pad, either as a button of its own or through a panel the pad can open.
+// Two of them were not, until the triggers were given a meaning - a pad could
+// not pick anything up off the ground, which is enough on its own to make the
+// storyline unfinishable.
+static void every_verb_can_be_reached_with_a_pad(void) {
+    gg_input in;
+    SDL_zero(in);
+
+    // What a button press looks like coming out of SDL.
+    #define PRESS(which) do {                                                 \
+        SDL_Event ev;                                                         \
+        SDL_zero(ev);                                                         \
+        ev.type = SDL_EVENT_GAMEPAD_BUTTON_DOWN;                              \
+        ev.gbutton.button = (uint8_t)(which);                                 \
+        CHECK(gg_input_event(&in, &ev), "the pad ignored button %d", (which)); \
+    } while (0)
+
+    #define PULL(which, howfar) do {                                          \
+        SDL_Event ev;                                                         \
+        SDL_zero(ev);                                                         \
+        ev.type = SDL_EVENT_GAMEPAD_AXIS_MOTION;                              \
+        ev.gaxis.axis = (uint8_t)(which);                                     \
+        ev.gaxis.value = (int16_t)(howfar);                                   \
+        CHECK(gg_input_event(&in, &ev), "the pad ignored axis %d", (which));  \
+    } while (0)
+
+    static const struct { int button; gg_action verb; const char *what; } BUTTONS[] = {
+        { SDL_GAMEPAD_BUTTON_SOUTH,          GG_ACT_TALK,  "talking to somebody" },
+        { SDL_GAMEPAD_BUTTON_EAST,           GG_ACT_WAIT,  "waiting, and closing a panel" },
+        { SDL_GAMEPAD_BUTTON_WEST,           GG_ACT_LOOK,  "looking at something" },
+        { SDL_GAMEPAD_BUTTON_NORTH,          GG_ACT_OPEN,  "opening a door" },
+        { SDL_GAMEPAD_BUTTON_LEFT_SHOULDER,  GG_ACT_CAST,  "speaking a spell" },
+        { SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, GG_ACT_FIGHT, "striking" },
+        { SDL_GAMEPAD_BUTTON_BACK,           GG_ACT_PACK,  "opening the pack" },
+    };
+    for (size_t i = 0; i < GG_COUNTOF(BUTTONS); i++) {
+        PRESS(BUTTONS[i].button);
+        const gg_action got = gg_input_take(&in);
+        CHECK(got == BUTTONS[i].verb, "%s came out as %s", BUTTONS[i].what,
+              gg_action_name(got));
+    }
+
+    // The triggers, which are axes and have to become edges.
+    PULL(SDL_GAMEPAD_AXIS_LEFT_TRIGGER, 30000);
+    CHECK(gg_input_take(&in) == GG_ACT_GET,
+          "the left trigger does not pick anything up");
+    PULL(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, 30000);
+    CHECK(gg_input_take(&in) == GG_ACT_JOURNAL,
+          "the right trigger does not open the journal");
+
+    // Held, not pumped: a finger resting past the threshold must not fire
+    // again, and the trigger must fall well back before it can.
+    PULL(SDL_GAMEPAD_AXIS_LEFT_TRIGGER, 32000);
+    CHECK(gg_input_take(&in) == GG_ACT_NONE, "a held trigger fired twice");
+    PULL(SDL_GAMEPAD_AXIS_LEFT_TRIGGER, GG_PAD_TRIGGER - 100);
+    CHECK(gg_input_take(&in) == GG_ACT_NONE,
+          "a trigger re-armed while it was still pulled");
+    PULL(SDL_GAMEPAD_AXIS_LEFT_TRIGGER, 0);
+    PULL(SDL_GAMEPAD_AXIS_LEFT_TRIGGER, 30000);
+    CHECK(gg_input_take(&in) == GG_ACT_GET, "a released trigger would not fire again");
+
+    // A stick is not a trigger: it is sampled per tick, so an axis event for
+    // one is not claimed here at all and must not latch a verb.
+    {
+        SDL_Event ev;
+        SDL_zero(ev);
+        ev.type = SDL_EVENT_GAMEPAD_AXIS_MOTION;
+        ev.gaxis.axis = SDL_GAMEPAD_AXIS_LEFTX;
+        ev.gaxis.value = 32000;
+        CHECK(!gg_input_event(&in, &ev), "a stick was claimed as a button");
+        CHECK(gg_input_take(&in) == GG_ACT_NONE, "the stick latched an action");
+    }
+
+    // Start, which is its own stream because it means something on every
+    // screen.
+    PRESS(SDL_GAMEPAD_BUTTON_START);
+    CHECK(gg_input_take_pause(&in), "Start does not reach the pause menu");
+
+    #undef PULL
+    #undef PRESS
+
+    // And the three the pack carries. They have no button of their own in the
+    // world - the four face buttons are spoken for - so the pack gives its own
+    // meanings to three of them, which is the same trick a console game plays.
+    gg_game g;
+    CHECK(gg_game_new(&g, 12, "Padded"), "new game failed");
+    g.packn = 0;
+    for (int sl = 0; sl < GG_SLOT_COUNT; sl++) g.equipped[sl] = -1;
+    CHECK(gg_pack_add(&g, GG_ITEM_TORCH, 1) == 1, "could not take a torch");
+    CHECK(gg_pack_add(&g, GG_ITEM_BREAD, 1) == 1, "could not take bread");
+
+    gg_game_act(&g, GG_ACT_PACK);
+    CHECK(g.mode == GG_MODE_PACK, "the pack would not open");
+
+    g.pack_cursor = gg_pack_find(&g, GG_ITEM_TORCH);
+    gg_game_act(&g, GG_ACT_OPEN);            // Y readies
+    CHECK(g.equipped[GG_SLOT_LIGHT] >= 0, "Y does not ready a thing in the pack");
+
+    g.pack_cursor = gg_pack_find(&g, GG_ITEM_BREAD);
+    const int loaves = gg_pack_count(&g, GG_ITEM_BREAD);
+    gg_player(&g)->hp = 1;                   // eating a full stomach is refused
+    gg_game_act(&g, GG_ACT_TALK);            // A uses
+    CHECK(gg_pack_count(&g, GG_ITEM_BREAD) < loaves, "A does not use a thing");
+
+    g.pack_cursor = gg_pack_find(&g, GG_ITEM_TORCH);
+    gg_game_act(&g, GG_ACT_LOOK);            // X sets down
+    CHECK(gg_pack_find(&g, GG_ITEM_TORCH) < 0, "X does not set a thing down");
+
+    gg_game_act(&g, GG_ACT_WAIT);            // B closes
+    CHECK(g.mode == GG_MODE_PLAY, "B does not close the pack");
+
+    gg_game_free(&g);
+}
+
 // The two drains share one repeat timer. Calling both in a tick would eat every
 // other step, so the world and the menus must never both be asked.
 static void the_pad_feeds_the_world_and_the_menus_separately(void) {
@@ -6350,6 +6468,7 @@ int main(void) {
     RUN(the_options_page_returns_where_it_came_from);
     RUN(a_value_can_be_nudged_both_ways_without_leaving_the_page);
     RUN(a_journey_can_be_named_with_directions_alone);
+    RUN(every_verb_can_be_reached_with_a_pad);
     RUN(the_pad_feeds_the_world_and_the_menus_separately);
 
     RUN(a_profile_name_cannot_steer_a_path);
