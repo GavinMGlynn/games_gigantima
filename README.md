@@ -10,8 +10,8 @@ An Ultima VI-style seamless-world RPG in C23 and SDL3.
 > buildings to keep daily schedules, a world clock with lit rooms at night, and
 > things you can pick up, carry, eat and set down again, companions who walk
 > with you, brigands who do not, a magic you cast by learning the words for it,
-> and a world with a voice. There is no story and no editor yet, and the sounds
-> are synthesised rather than composed. `docs/PROJECT_STATUS.md` is the single
+> a world with a voice, and an editor to author more of it. There is no story
+> yet, and the sounds are synthesised rather than composed. `docs/PROJECT_STATUS.md` is the single
 > source of truth for what works; `docs/COMPLETION_PLAN.md` is the road to the
 > rest. Nothing here claims more than it has earned.
 
@@ -151,6 +151,21 @@ effect and every tune out of arithmetic, so there is no third-party audio to
 license or attribute — and no illusion that a drone and an arpeggio are a score.
 Music follows the region and the hour and crossfades when either changes.
 
+### The editor
+
+`gigantima_editor` is a second binary on the same core. Seven tools down the
+left — ground, things, litter, people, their day, regions, start — picked with
+`1`..`7`, the brush changed with `[` and `]` or the wheel, left button to paint
+and right to rub out. `C` lists what is wrong with the map: a start inside a
+lake, somebody standing in a wall, a schedule point in a mountain.
+
+```
+gigantima_editor [--open FILE.ggmap] [--size W H] [--tool N] [--shot FILE.bmp]
+```
+
+A map it writes is played with `gigantima --map FILE.ggmap`, and nothing about
+the game had to change for that to be true.
+
 ### Command line
 
 ```
@@ -182,7 +197,8 @@ src/gfx/        atlas textures, the world renderer, the bitmap font
 src/ui/         menus and screens, status band, conversation panel
 src/platform/   asset and save paths, keyboard and gamepad
 src/debug/      the debug window
-src/frontend/   main.c per executable
+src/editor/     the map being edited, and everything that can be done to it
+src/frontend/   main.c per executable - the game and the editor
 tools/          the art baker, the sound baker, and the sheet scanner
 assets/         the atlases and sounds, and the content: dialogue, spells,
                 bestiary

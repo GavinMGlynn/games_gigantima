@@ -19,6 +19,7 @@
 #include "core/gg_magic.h"
 #include "core/gg_bestiary.h"
 #include "audio/gg_audio.h"
+#include "editor/gg_edit.h"
 #include "ui/gg_menu.h"
 #include "ui/gg_screens.h"
 #include "platform/gg_settings.h"
@@ -4476,6 +4477,249 @@ static void every_event_has_a_sound_baked_for_it(void) {
 }
 
 // ---------------------------------------------------------------------------
+// The editor
+// ---------------------------------------------------------------------------
+// The plan's own verification: a map authored in the editor, saved, and played
+// in the game with no code change. Authored through exactly the calls the mouse
+// makes - the editor's window is only a way of calling these.
+static void a_map_authored_in_the_editor_can_be_played(void) {
+    const char *path = gg_pref_file("test_authored.ggmap");
+
+    gg_editor e;
+    SDL_zero(e);
+    CHECK(gg_edit_new(&e, 48, 40), "could not make a map");
+
+    // A road across the middle.
+    gg_edit_tool(&e, GG_TOOL_TERRAIN);
+    while (e.terrain != GG_TILE_ROAD) gg_edit_brush(&e, 1);
+    for (int x = 4; x < 44; x++) gg_edit_apply(&e, x, 20);
+
+    // A lake, which must come out flagged as water or it can be walked on.
+    while (e.terrain != GG_TILE_WATER) gg_edit_brush(&e, 1);
+    for (int y = 4; y < 10; y++)
+        for (int x = 4; x < 12; x++) gg_edit_apply(&e, x, y);
+    const gg_cell *wet = gg_map_at_const(&e.map, 6, 6);
+    CHECK(wet && (wet->flags & GG_CELL_WATER),
+          "painted water that is not flagged as water");
+    CHECK(!gg_map_walkable(&e.map, 6, 6), "the lake can be walked on");
+
+    // A house, through the same placement the generator uses.
+    gg_edit_tool(&e, GG_TOOL_PROP);
+    while (e.prop != GG_PROP_HOUSE_BRICK_A) gg_edit_brush(&e, 1);
+    gg_edit_apply(&e, 24, 30);
+    CHECK(SDL_strstr(e.say, "not fit") == nullptr, "the house would not fit: %s",
+          e.say);
+
+    // Somebody to live in it, with a day.
+    gg_edit_tool(&e, GG_TOOL_ACTOR);
+    while (e.art != GG_ACTOR_MERCHANT) gg_edit_brush(&e, 1);
+    gg_edit_apply(&e, 30, 20);
+    CHECK(e.map.actors == 1, "expected one person, got %d", e.map.actors);
+    CHECK(e.actor == 0, "the placed person was not selected");
+    gg_edit_name_actor(&e, "Gwyneth");
+
+    gg_edit_tool(&e, GG_TOOL_SCHEDULE);
+    gg_edit_apply(&e, 30, 20);
+    gg_edit_apply(&e, 34, 20);
+    gg_edit_apply(&e, 34, 24);
+    gg_edit_apply(&e, 30, 24);
+    CHECK(e.map.actor[0].schedn == 4, "expected four hours, got %u",
+          e.map.actor[0].schedn);
+
+    // Something lying about.
+    gg_edit_tool(&e, GG_TOOL_ITEM);
+    while (e.item != GG_ITEM_GOLD) gg_edit_brush(&e, 1);
+    e.item_count = 9;
+    gg_edit_apply(&e, 20, 20);
+
+    // A town, dragged out.
+    gg_edit_tool(&e, GG_TOOL_REGION);
+    while (e.region_kind != GG_REGION_TOWN) gg_edit_brush(&e, 1);
+    gg_edit_drag_start(&e, 18, 16);
+    gg_edit_drag_end(&e, 38, 34);
+    CHECK(e.map.regions == 1, "expected one region, got %d", e.map.regions);
+    SDL_strlcpy(e.map.region[0].name, "Wyndle", sizeof e.map.region[0].name);
+
+    // And where a new game begins.
+    gg_edit_tool(&e, GG_TOOL_START);
+    gg_edit_apply(&e, 20, 21);
+    SDL_strlcpy(e.map.name, "The Test Vale", sizeof e.map.name);
+
+    // The editor is where a map is found to be broken, not the game.
+    char problems[GG_EDIT_PROBLEMS_MAX][GG_EDIT_SAY_MAX];
+    const int bad = gg_edit_check(&e, problems);
+    for (int i = 0; i < bad && i < GG_EDIT_PROBLEMS_MAX; i++)
+        CHECK(false, "the authored map has a problem: %s", problems[i]);
+    CHECK(bad == 0, "the authored map has %d problems", bad);
+
+    CHECK(gg_edit_save(&e, path), "could not save: %s", e.say);
+    CHECK(!e.dirty, "the map is still dirty after saving");
+    gg_edit_close(&e);
+
+    // Now play it, with no code change - which is the whole claim.
+    gg_game g;
+    CHECK(gg_game_new_from_map(&g, path, "Author"), "the game would not open it");
+
+    CHECK(SDL_strcmp(g.map.name, "The Test Vale") == 0,
+          "the map came back called '%s'", g.map.name);
+    CHECK(g.map.w == 48 && g.map.h == 40, "the map came back %dx%d",
+          g.map.w, g.map.h);
+
+    const gg_actor *p = gg_player_const(&g);
+    CHECK(p->x == 20 && p->y == 21, "the avatar began at %d,%d, not where the "
+          "start was put", p->x, p->y);
+    CHECK(SDL_strcmp(gg_game_place(&g), "Wyndle") == 0,
+          "the avatar is in '%s', not the region that was drawn",
+          gg_game_place(&g));
+
+    // The person authored is in the world, under the name they were given, and
+    // keeping the day they were given.
+    int found = -1;
+    for (int i = 0; i < g.actors; i++)
+        if (SDL_strcmp(g.actor[i].name, "Gwyneth") == 0) found = i;
+    CHECK(found >= 0, "the person authored is not in the world");
+    if (found >= 0) {
+        CHECK(g.actor[found].schedn == 4, "she came back with %u hours",
+              g.actor[found].schedn);
+        CHECK(g.actor[found].art == GG_ACTOR_MERCHANT, "she is wearing the "
+              "wrong sprite");
+    }
+
+    // The generator's own eight are *not* there: a map that says who lives in
+    // it is the whole of who lives in it.
+    for (int i = 0; i < g.actors; i++)
+        CHECK(SDL_strcmp(g.actor[i].name, "Iolo") != 0,
+              "the generator's townsfolk turned up in an authored map");
+
+    // What was left lying about is where it was left.
+    const int loot = gg_ground_at(&g.map, 20, 20);
+    CHECK(loot >= 0, "the gold that was placed is not there");
+    if (loot >= 0)
+        CHECK(g.map.ground[loot].count == 9, "%u coins, expected 9",
+              g.map.ground[loot].count);
+
+    // And it is a world that turns.
+    for (int t = 0; t < 40; t++) gg_game_act(&g, GG_ACT_WAIT);
+    CHECK(g.turn == 40, "the authored world stopped at turn %u", g.turn);
+
+    gg_game_free(&g);
+    SDL_RemovePath(path);
+}
+
+static void the_editor_rubs_out_what_it_draws(void) {
+    gg_editor e;
+    SDL_zero(e);
+    CHECK(gg_edit_new(&e, 32, 32), "could not make a map");
+
+    // A house leaves walls over a whole footprint, so rubbing it out has to
+    // clear all of them - otherwise the map keeps invisible walls where a
+    // building used to be, which is a bug nobody can see.
+    gg_edit_tool(&e, GG_TOOL_PROP);
+    while (e.prop != GG_PROP_HOUSE_BRICK_A) gg_edit_brush(&e, 1);
+    gg_edit_apply(&e, 16, 20);
+
+    int blocked = 0;
+    for (int y = 0; y < 32; y++)
+        for (int x = 0; x < 32; x++)
+            if (!gg_map_walkable(&e.map, x, y)) blocked++;
+    CHECK(blocked > 0, "placing a house blocked nothing");
+
+    // Rubbed out by clicking a wall, not the anchor - which is what a person
+    // would actually click.
+    gg_edit_erase(&e, 15, 18);
+    int still = 0;
+    for (int y = 0; y < 32; y++)
+        for (int x = 0; x < 32; x++)
+            if (!gg_map_walkable(&e.map, x, y)) still++;
+    CHECK(still == 0, "%d tiles are still blocked after rubbing out the house",
+          still);
+
+    // People, items and regions all rub out too.
+    gg_edit_tool(&e, GG_TOOL_ACTOR);
+    gg_edit_apply(&e, 5, 5);
+    gg_edit_apply(&e, 7, 7);
+    CHECK(e.map.actors == 2, "expected two people");
+    gg_edit_erase(&e, 5, 5);
+    CHECK(e.map.actors == 1, "expected one person left");
+    CHECK(gg_edit_actor_at(&e, 7, 7) >= 0, "the wrong person was rubbed out");
+
+    gg_edit_tool(&e, GG_TOOL_ITEM);
+    gg_edit_apply(&e, 9, 9);
+    CHECK(gg_ground_at(&e.map, 9, 9) >= 0, "nothing was left there");
+    gg_edit_erase(&e, 9, 9);
+    CHECK(gg_ground_at(&e.map, 9, 9) < 0, "it is still there");
+
+    gg_edit_tool(&e, GG_TOOL_REGION);
+    gg_edit_drag_start(&e, 2, 2);
+    gg_edit_drag_end(&e, 6, 6);
+    CHECK(e.map.regions == 1, "expected one region");
+    gg_edit_erase(&e, 4, 4);
+    CHECK(e.map.regions == 0, "the region is still there");
+
+    gg_edit_close(&e);
+}
+
+// The editor is where a map should be found to be broken.
+static void the_editor_says_what_is_wrong_with_a_map(void) {
+    gg_editor e;
+    SDL_zero(e);
+    CHECK(gg_edit_new(&e, 32, 32), "could not make a map");
+    SDL_strlcpy(e.map.name, "Somewhere", sizeof e.map.name);
+
+    char problems[GG_EDIT_PROBLEMS_MAX][GG_EDIT_SAY_MAX];
+    CHECK(gg_edit_check(&e, problems) == 0,
+          "a blank map is already broken: %s", problems[0]);
+
+    // A start inside a lake is the one that makes a map unplayable.
+    gg_edit_tool(&e, GG_TOOL_TERRAIN);
+    while (e.terrain != GG_TILE_WATER) gg_edit_brush(&e, 1);
+    gg_edit_apply(&e, e.map.start_x, e.map.start_y);
+    CHECK(gg_edit_check(&e, problems) > 0, "a start under water is not a problem");
+
+    while (e.terrain != GG_TILE_GRASS) gg_edit_brush(&e, 1);
+    gg_edit_apply(&e, e.map.start_x, e.map.start_y);
+    CHECK(gg_edit_check(&e, problems) == 0, "still broken: %s", problems[0]);
+
+    // Somebody sent somewhere solid stands and shoves at it all day, which is
+    // exactly the failure the generator learned to avoid.
+    gg_edit_tool(&e, GG_TOOL_ACTOR);
+    gg_edit_apply(&e, 10, 10);
+    gg_edit_name_actor(&e, "Someone");
+    gg_edit_tool(&e, GG_TOOL_TERRAIN);
+    while (e.terrain != GG_TILE_MOUNTAIN) gg_edit_brush(&e, 1);
+    gg_edit_apply(&e, 20, 20);
+    gg_edit_tool(&e, GG_TOOL_SCHEDULE);
+    gg_edit_apply(&e, 20, 20);
+
+    const int bad = gg_edit_check(&e, problems);
+    CHECK(bad > 0, "a schedule point inside a mountain is not a problem");
+    bool mentioned = false;
+    for (int i = 0; i < bad && i < GG_EDIT_PROBLEMS_MAX; i++)
+        if (SDL_strstr(problems[i], "solid")) mentioned = true;
+    CHECK(mentioned, "the problem was not the one about being sent somewhere solid");
+
+    gg_edit_close(&e);
+}
+
+static void a_failed_load_leaves_what_was_open_alone(void) {
+    gg_editor e;
+    SDL_zero(e);
+    CHECK(gg_edit_new(&e, 24, 24), "could not make a map");
+    SDL_strlcpy(e.map.name, "Kept", sizeof e.map.name);
+    gg_edit_tool(&e, GG_TOOL_ACTOR);
+    gg_edit_apply(&e, 5, 5);
+
+    CHECK(!gg_edit_load(&e, gg_pref_file("test_no_such_map.ggmap")),
+          "loading a map that is not there reported success");
+    CHECK(e.open, "a failed load closed the map that was open");
+    CHECK(SDL_strcmp(e.map.name, "Kept") == 0,
+          "a failed load replaced the map with '%s'", e.map.name);
+    CHECK(e.map.actors == 1, "a failed load lost the person who was placed");
+
+    gg_edit_close(&e);
+}
+
+// ---------------------------------------------------------------------------
 // Content tables
 // ---------------------------------------------------------------------------
 static void every_terrain_and_item_has_a_name(void) {
@@ -4673,6 +4917,11 @@ int main(void) {
     RUN(the_tune_follows_where_you_are_and_what_hour_it_is);
     RUN(the_world_says_what_it_did_and_forgets_it);
     RUN(every_event_has_a_sound_baked_for_it);
+
+    RUN(a_map_authored_in_the_editor_can_be_played);
+    RUN(the_editor_rubs_out_what_it_draws);
+    RUN(the_editor_says_what_is_wrong_with_a_map);
+    RUN(a_failed_load_leaves_what_was_open_alone);
 
     RUN(every_terrain_and_item_has_a_name);
     RUN(every_prop_has_a_plausible_footprint);

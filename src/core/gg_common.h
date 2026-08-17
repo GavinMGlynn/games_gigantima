@@ -129,4 +129,20 @@ static inline int gg_dist_cheb(int ax, int ay, int bx, int by) {
     return dx > dy ? dx : dy;
 }
 
+// --- who lives in the world -------------------------------------------------
+// These sit here rather than in gg_actor.h because the *map* records people and
+// their days, and gg_world.h is below gg_actor.h - putting them there made the
+// two headers include each other, which is a compile error wearing a design
+// mistake's clothes.
+#define GG_ACTOR_NAME_MAX 24
+#define GG_SCHEDULE_MAX   6
+
+// One entry of a daily routine: from `hour`, be at (x, y). Ultima VI's NPCs
+// were memorable because they were somewhere for a reason at every hour, so
+// this is core rather than decoration.
+typedef struct {
+    uint8_t hour;
+    int16_t x, y;
+} gg_sched_entry;
+
 #endif // GG_COMMON_H

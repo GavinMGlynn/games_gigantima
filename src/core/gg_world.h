@@ -56,6 +56,23 @@ typedef struct {
     uint8_t count;     // how many are in the pile; never zero
 } gg_ground_item;
 
+// Somebody who lives here, as the map records them. Less than a gg_actor - no
+// interpolation, no animation, no combat state - because a map holds who is in
+// the world and not what they are doing this instant.
+//
+// This is what the editor writes when it places a person, and it is the shape
+// the generator's own townsfolk will move into when they stop being a table in
+// gg_game.c.
+#define GG_MAP_ACTORS_MAX 64
+
+typedef struct {
+    int16_t x, y;
+    uint8_t art;                       // gg_actor_id
+    char    name[GG_ACTOR_NAME_MAX];
+    gg_sched_entry sched[GG_SCHEDULE_MAX];
+    uint8_t schedn;
+} gg_map_actor;
+
 typedef struct {
     int  w, h;
     gg_cell *cell;                     // w*h, row-major
@@ -67,6 +84,9 @@ typedef struct {
 
     gg_ground_item ground[GG_GROUND_MAX];
     int            grounds;
+
+    gg_map_actor   actor[GG_MAP_ACTORS_MAX];
+    int            actors;
 } gg_map;
 
 // --- things on the ground --------------------------------------------------
@@ -165,10 +185,11 @@ bool gg_map_generate(gg_map *m, int w, int h, uint32_t seed);
 // neither has map content compiled in. See docs/COMPLETION_PLAN.md for why
 // this exists before there is much content to put in it.
 #define GG_MAP_MAGIC   "GGMAP\0\0\0"
-// Version 2 added the list of things lying on the ground. There is no
-// migration from 1: no map file older than this exists outside a test, and a
-// reader that guesses at a missing section is worse than one that says no.
-#define GG_MAP_VERSION 2
+// Version 2 added the things lying on the ground; version 3 added the people.
+// There is no migration between any of them: no map file older than the current
+// one exists outside a test, and a reader that guesses at a missing section is
+// worse than one that says no.
+#define GG_MAP_VERSION 3
 
 bool gg_map_save(const gg_map *m, const char *path);
 bool gg_map_load(gg_map *m, const char *path);

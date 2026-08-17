@@ -1,0 +1,577 @@
+// main.c - the level editor's window.
+//
+// Everything this does to a map is a call into src/editor/gg_edit.c. This file
+// is a window, a mouse and a palette, and nothing else - which is why the
+// item's verification is a test that authors a map through the same calls and
+// plays it, rather than a screenshot of a window with a map in it.
+//
+// The same shape as the game's frontend: SDL callbacks, one window, no
+// simulation inside the drawing.
+#define SDL_MAIN_USE_CALLBACKS 1
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_main.h>
+
+#include "core/gg_common.h"
+#include "core/gg_world.h"
+#include "editor/gg_edit.h"
+#include "gfx/gg_atlas.h"
+#include "gfx/gg_font.h"
+#include "gfx/gg_render.h"
+#include "platform/gg_paths.h"
+
+#define WIN_W      1280
+#define WIN_H       800
+#define PALETTE_W   220
+#define STATUS_H     72
+#define VIEW_X     PALETTE_W
+#define VIEW_W     (WIN_W - PALETTE_W)
+#define VIEW_H     (WIN_H - STATUS_H)
+
+// A whole tile is 32px; the editor draws at half that so a useful amount of map
+// is on screen at once. Not a free parameter in the game - see CLAUDE.md - but
+// here it is a zoom, and the map is still stored at one tile per cell.
+#define ZOOM_MIN 1
+#define ZOOM_MAX 4
+
+static const SDL_Color INK   = { 226, 216, 190, 255 };
+static const SDL_Color DIM   = { 138, 132, 116, 255 };
+static const SDL_Color AMBER = { 217, 145,  63, 255 };
+static const SDL_Color WARN  = { 200,  96,  72, 255 };
+static const SDL_Color MOSS  = { 124, 184,  84, 255 };
+
+typedef struct {
+    SDL_Window   *win;
+    SDL_Renderer *ren;
+    gg_editor     ed;
+
+    int  zoom;          // 1..4, quarter-tiles to tiles
+    int  cam_x, cam_y;  // top-left tile of the view
+    int  hover_x, hover_y;
+    bool painting, erasing;
+    bool grid;
+    bool show_problems;
+
+    char file[GG_EDIT_PATH_MAX];
+    uint64_t frames;
+
+    // --shot FILE draws one frame with no window shown and exits, the same
+    // affordance the game has and for the same reason: a window nobody can
+    // photograph is a window nobody can check.
+    const char *shot_path;
+} gg_app;
+
+// The pixel size of one tile at the current zoom.
+static int tile_px(const gg_app *a) { return 8 * a->zoom; }
+
+// ---------------------------------------------------------------------------
+// Where the mouse is
+// ---------------------------------------------------------------------------
+static bool mouse_to_tile(const gg_app *a, float mx, float my, int *tx, int *ty) {
+    if (mx < VIEW_X || my >= VIEW_H) return false;
+    const int t = tile_px(a);
+    *tx = a->cam_x + (int)((mx - VIEW_X) / (float)t);
+    *ty = a->cam_y + (int)(my / (float)t);
+    return gg_map_in_bounds(&a->ed.map, *tx, *ty);
+}
+
+static void clamp_camera(gg_app *a) {
+    const int t = tile_px(a);
+    const int across = VIEW_W / t, down = VIEW_H / t;
+    const int max_x = a->ed.map.w - across, max_y = a->ed.map.h - down;
+    a->cam_x = gg_clampi(a->cam_x, 0, max_x > 0 ? max_x : 0);
+    a->cam_y = gg_clampi(a->cam_y, 0, max_y > 0 ? max_y : 0);
+}
+
+// ---------------------------------------------------------------------------
+// Drawing
+// ---------------------------------------------------------------------------
+static void draw_map(gg_app *a) {
+    const gg_map *m = &a->ed.map;
+    const int t = tile_px(a);
+    const int across = VIEW_W / t + 1, down = VIEW_H / t + 1;
+
+    SDL_Texture *tiles = gg_render_tiles();
+    SDL_Texture *props = gg_render_props();
+    SDL_Texture *items = gg_render_items();
+    SDL_Texture *actors = gg_render_actors();
+
+    // Ground first, then everything standing on it, in the map's own order -
+    // the editor is a plan view, so there is no depth sorting to do.
+    for (int dy = 0; dy < down; dy++) {
+        for (int dx = 0; dx < across; dx++) {
+            const int wx = a->cam_x + dx, wy = a->cam_y + dy;
+            const gg_cell *c = gg_map_at_const(m, wx, wy);
+            if (!c) continue;
+            const gg_rect *r = &GG_TILE_RECT[c->terrain];
+            const SDL_FRect src = { (float)r->x, (float)r->y, (float)r->w, (float)r->h };
+            const SDL_FRect dst = { (float)(VIEW_X + dx * t), (float)(dy * t),
+                                    (float)t, (float)t };
+            SDL_RenderTexture(a->ren, tiles, &src, &dst);
+        }
+    }
+
+    for (int dy = 0; dy < down; dy++) {
+        for (int dx = 0; dx < across; dx++) {
+            const int wx = a->cam_x + dx, wy = a->cam_y + dy;
+            const gg_cell *c = gg_map_at_const(m, wx, wy);
+            if (!c || !GG_HAS_PROP(c)) continue;
+
+            const gg_prop_id p = GG_PROP_OF(c);
+            const gg_rect *r = &GG_PROP_RECT[p];
+            const gg_prop_size *s = &GG_PROP_SIZE[p];
+            const SDL_FRect src = { (float)r->x, (float)r->y, (float)r->w, (float)r->h };
+            const SDL_FRect dst = {
+                (float)(VIEW_X + (dx - s->anchor_x) * t),
+                (float)((dy - s->anchor_y) * t),
+                (float)(s->tiles_w * t), (float)(s->tiles_h * t),
+            };
+            SDL_RenderTexture(a->ren, props, &src, &dst);
+        }
+    }
+
+    for (int i = 0; i < m->grounds; i++) {
+        const gg_ground_item *g = &m->ground[i];
+        const int dx = g->x - a->cam_x, dy = g->y - a->cam_y;
+        if (dx < 0 || dy < 0 || dx >= across || dy >= down) continue;
+        const gg_rect *r = &GG_ITEM_RECT[g->kind];
+        const SDL_FRect src = { (float)r->x, (float)r->y, (float)r->w, (float)r->h };
+        const SDL_FRect dst = { (float)(VIEW_X + dx * t),
+                                (float)(dy * t - (r->h / GG_TILE - 1) * t),
+                                (float)t, (float)(r->h * t / GG_TILE) };
+        SDL_RenderTexture(a->ren, items, &src, &dst);
+    }
+
+    for (int i = 0; i < m->actors; i++) {
+        const gg_map_actor *p = &m->actor[i];
+        const int dx = p->x - a->cam_x, dy = p->y - a->cam_y;
+        if (dx < 0 || dy < 0 || dx >= across || dy >= down) continue;
+
+        const gg_rect *r = &GG_ACTOR_RECT[p->art < GG_ACTOR_COUNT ? p->art : 0];
+        const SDL_FRect src = { (float)r->x, (float)(r->y + GG_FACE_DOWN * GG_ACTOR_FRAME),
+                                (float)GG_ACTOR_FRAME, (float)GG_ACTOR_FRAME };
+        const SDL_FRect dst = { (float)(VIEW_X + dx * t - t / 2),
+                                (float)(dy * t - t), (float)(t * 2), (float)(t * 2) };
+        SDL_RenderTexture(a->ren, actors, &src, &dst);
+
+        // The chosen person, and the day they keep, drawn over everything -
+        // a schedule is invisible otherwise, and invisible is unauthorable.
+        if (i == a->ed.actor) {
+            SDL_SetRenderDrawBlendMode(a->ren, SDL_BLENDMODE_BLEND);
+            SDL_SetRenderDrawColor(a->ren, 217, 145, 63, 220);
+            const SDL_FRect box = { (float)(VIEW_X + dx * t), (float)(dy * t),
+                                    (float)t, (float)t };
+            SDL_RenderRect(a->ren, &box);
+
+            SDL_SetRenderDrawColor(a->ren, 124, 184, 84, 200);
+            for (int k = 0; k < p->schedn; k++) {
+                const int sx = p->sched[k].x - a->cam_x;
+                const int sy = p->sched[k].y - a->cam_y;
+                const SDL_FRect at = { (float)(VIEW_X + sx * t + t / 4),
+                                       (float)(sy * t + t / 4),
+                                       (float)(t / 2), (float)(t / 2) };
+                SDL_RenderFillRect(a->ren, &at);
+                // A line from where they are to where they go, so the shape of
+                // a day reads at a glance.
+                SDL_RenderLine(a->ren, (float)(VIEW_X + dx * t + t / 2),
+                               (float)(dy * t + t / 2),
+                               (float)(VIEW_X + sx * t + t / 2),
+                               (float)(sy * t + t / 2));
+            }
+        }
+    }
+
+    // Regions, as outlines with their names in the corner.
+    SDL_SetRenderDrawBlendMode(a->ren, SDL_BLENDMODE_BLEND);
+    for (int i = 0; i < m->regions; i++) {
+        const gg_region *r = &m->region[i];
+        const SDL_FRect box = {
+            (float)(VIEW_X + (r->x - a->cam_x) * t), (float)((r->y - a->cam_y) * t),
+            (float)(r->w * t), (float)(r->h * t),
+        };
+        SDL_SetRenderDrawColor(a->ren, 120, 170, 230, 60);
+        SDL_RenderFillRect(a->ren, &box);
+        SDL_SetRenderDrawColor(a->ren, 150, 200, 255, 200);
+        SDL_RenderRect(a->ren, &box);
+        gg_font_draw(a->ren, (int)box.x + 4, (int)box.y + 2, INK, r->name);
+    }
+
+    if (a->grid && t >= 12) {
+        SDL_SetRenderDrawColor(a->ren, 255, 255, 255, 28);
+        for (int dx = 0; dx <= across; dx++)
+            SDL_RenderLine(a->ren, (float)(VIEW_X + dx * t), 0,
+                           (float)(VIEW_X + dx * t), (float)VIEW_H);
+        for (int dy = 0; dy <= down; dy++)
+            SDL_RenderLine(a->ren, (float)VIEW_X, (float)(dy * t),
+                           (float)WIN_W, (float)(dy * t));
+    }
+
+    // Where a new game begins.
+    {
+        const int dx = m->start_x - a->cam_x, dy = m->start_y - a->cam_y;
+        SDL_SetRenderDrawColor(a->ren, 124, 184, 84, 230);
+        const SDL_FRect box = { (float)(VIEW_X + dx * t), (float)(dy * t),
+                                (float)t, (float)t };
+        SDL_RenderRect(a->ren, &box);
+        gg_font_draw(a->ren, (int)box.x + 2, (int)box.y - 12, MOSS, "start");
+    }
+
+    // The tile under the mouse.
+    if (gg_map_in_bounds(m, a->hover_x, a->hover_y)) {
+        const int dx = a->hover_x - a->cam_x, dy = a->hover_y - a->cam_y;
+        SDL_SetRenderDrawColor(a->ren, 255, 255, 255, 150);
+        const SDL_FRect box = { (float)(VIEW_X + dx * t), (float)(dy * t),
+                                (float)t, (float)t };
+        SDL_RenderRect(a->ren, &box);
+    }
+
+    // A region being dragged out, while it is being dragged.
+    if (a->ed.drag) {
+        const int x0 = a->ed.drag_x < a->hover_x ? a->ed.drag_x : a->hover_x;
+        const int y0 = a->ed.drag_y < a->hover_y ? a->ed.drag_y : a->hover_y;
+        const int x1 = a->ed.drag_x > a->hover_x ? a->ed.drag_x : a->hover_x;
+        const int y1 = a->ed.drag_y > a->hover_y ? a->ed.drag_y : a->hover_y;
+        const SDL_FRect box = {
+            (float)(VIEW_X + (x0 - a->cam_x) * t), (float)((y0 - a->cam_y) * t),
+            (float)((x1 - x0 + 1) * t), (float)((y1 - y0 + 1) * t),
+        };
+        SDL_SetRenderDrawColor(a->ren, 150, 200, 255, 90);
+        SDL_RenderFillRect(a->ren, &box);
+    }
+}
+
+static void draw_palette(gg_app *a) {
+    const int line = gg_font_height();
+    SDL_SetRenderDrawBlendMode(a->ren, SDL_BLENDMODE_BLEND);
+    SDL_SetRenderDrawColor(a->ren, 22, 18, 14, 255);
+    const SDL_FRect panel = { 0, 0, (float)PALETTE_W, (float)WIN_H };
+    SDL_RenderFillRect(a->ren, &panel);
+    SDL_SetRenderDrawColor(a->ren, 95, 72, 46, 255);
+    SDL_RenderLine(a->ren, (float)PALETTE_W, 0, (float)PALETTE_W, (float)WIN_H);
+
+    int y = 10;
+    gg_font_draw(a->ren, 12, y, AMBER, "GIGANTIMA EDITOR");
+    y += line + 8;
+
+    for (int i = 0; i < GG_TOOL_COUNT; i++) {
+        const bool here = (i == (int)a->ed.tool);
+        if (here) {
+            SDL_SetRenderDrawColor(a->ren, 217, 145, 63, 45);
+            const SDL_FRect bar = { 4, (float)(y - 3), (float)(PALETTE_W - 8),
+                                    (float)(line + 6) };
+            SDL_RenderFillRect(a->ren, &bar);
+        }
+        gg_font_printf(a->ren, 12, y, here ? AMBER : INK, "%d  %s", i + 1,
+                       gg_tool_name((gg_tool)i));
+        y += line + 6;
+    }
+
+    y += 8;
+    gg_font_draw(a->ren, 12, y, DIM, "brush");
+    y += line;
+    gg_font_printf(a->ren, 12, y, INK, "%s", gg_edit_brush_name(&a->ed));
+    y += line + 4;
+    gg_font_draw(a->ren, 12, y, DIM, "[ ] to change");
+    y += line + 12;
+
+    if (a->ed.actor >= 0 && a->ed.actor < a->ed.map.actors) {
+        const gg_map_actor *p = &a->ed.map.actor[a->ed.actor];
+        gg_font_draw(a->ren, 12, y, DIM, "chosen");
+        y += line;
+        gg_font_printf(a->ren, 12, y, MOSS, "%s", p->name);
+        y += line;
+        gg_font_printf(a->ren, 12, y, DIM, "%u hours set", p->schedn);
+        y += line + 12;
+    }
+
+    gg_font_draw(a->ren, 12, y, DIM, "S save   O open");
+    y += line;
+    gg_font_draw(a->ren, 12, y, DIM, "N new    G grid");
+    y += line;
+    gg_font_draw(a->ren, 12, y, DIM, "+ - zoom  C check");
+    y += line;
+    gg_font_draw(a->ren, 12, y, DIM, "arrows to scroll");
+}
+
+static void draw_status(gg_app *a) {
+    const int line = gg_font_height();
+    const int top = VIEW_H;
+    SDL_SetRenderDrawColor(a->ren, 22, 18, 14, 255);
+    const SDL_FRect band = { (float)VIEW_X, (float)top,
+                             (float)VIEW_W, (float)STATUS_H };
+    SDL_RenderFillRect(a->ren, &band);
+    SDL_SetRenderDrawColor(a->ren, 95, 72, 46, 255);
+    SDL_RenderLine(a->ren, (float)VIEW_X, (float)top, (float)WIN_W, (float)top);
+
+    int y = top + 8;
+    gg_font_printf(a->ren, VIEW_X + 12, y, a->ed.dirty ? WARN : INK, "%s%s",
+                   a->file[0] ? a->file : "(unsaved)", a->ed.dirty ? " *" : "");
+    gg_font_printf(a->ren, VIEW_X + 420, y, DIM, "%dx%d   %d people   %d regions",
+                   a->ed.map.w, a->ed.map.h, a->ed.map.actors, a->ed.map.regions);
+    y += line + 2;
+
+    gg_font_printf(a->ren, VIEW_X + 12, y, DIM, "at %d,%d   zoom %dx",
+                   a->hover_x, a->hover_y, a->zoom);
+    y += line + 2;
+    gg_font_printf(a->ren, VIEW_X + 12, y, MOSS, "%s", a->ed.say);
+
+    if (a->show_problems) {
+        char problems[GG_EDIT_PROBLEMS_MAX][GG_EDIT_SAY_MAX];
+        const int n = gg_edit_check(&a->ed, problems);
+        int py = 12;
+        if (n == 0) {
+            gg_font_draw(a->ren, VIEW_X + 12, py, MOSS,
+                         "nothing wrong with it - press C to put this away");
+        } else {
+            gg_font_printf(a->ren, VIEW_X + 12, py, WARN, "%d problems:", n);
+            py += line;
+            for (int i = 0; i < n && i < GG_EDIT_PROBLEMS_MAX; i++) {
+                gg_font_printf(a->ren, VIEW_X + 24, py, WARN, "%s", problems[i]);
+                py += line;
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SDL
+// ---------------------------------------------------------------------------
+SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
+    gg_app *app = SDL_calloc(1, sizeof *app);
+    if (!app) return SDL_APP_FAILURE;
+    *appstate = app;
+
+    app->zoom = 2;
+    app->grid = true;
+
+    const char *open_path = nullptr;
+    int w = 128, h = 112, tool = -1;
+    for (int i = 1; i < argc; i++) {
+        if (SDL_strcmp(argv[i], "--open") == 0 && i + 1 < argc)
+            open_path = argv[++i];
+        else if (SDL_strcmp(argv[i], "--size") == 0 && i + 2 < argc) {
+            w = SDL_atoi(argv[++i]);
+            h = SDL_atoi(argv[++i]);
+        } else if (SDL_strcmp(argv[i], "--shot") == 0 && i + 1 < argc) {
+            app->shot_path = argv[++i];
+        } else if (SDL_strcmp(argv[i], "--tool") == 0 && i + 1 < argc) {
+            tool = gg_clampi(SDL_atoi(argv[++i]), 0, GG_TOOL_COUNT - 1);
+        } else if (SDL_strcmp(argv[i], "--help") == 0) {
+            SDL_Log("gigantima_editor [--open FILE.ggmap] [--size W H] "
+                    "[--tool N] [--shot FILE.bmp]");
+            return SDL_APP_SUCCESS;
+        }
+    }
+
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
+        SDL_Log("gigantima: SDL_Init failed: %s", SDL_GetError());
+        return SDL_APP_FAILURE;
+    }
+    if (!SDL_CreateWindowAndRenderer("Gigantima - editor", WIN_W, WIN_H,
+                                     SDL_WINDOW_RESIZABLE,
+                                     &app->win, &app->ren)) {
+        SDL_Log("gigantima: could not open a window: %s", SDL_GetError());
+        return SDL_APP_FAILURE;
+    }
+    SDL_SetRenderVSync(app->ren, 1);
+    SDL_SetRenderLogicalPresentation(app->ren, WIN_W, WIN_H,
+                                     SDL_LOGICAL_PRESENTATION_LETTERBOX);
+
+    if (!gg_assets_found()) {
+        SDL_Log("gigantima: cannot find the assets");
+        return SDL_APP_FAILURE;
+    }
+    if (!gg_font_init(app->ren) || !gg_render_init(app->ren)) {
+        SDL_Log("gigantima: could not load the art");
+        return SDL_APP_FAILURE;
+    }
+
+    if (open_path) {
+        if (!gg_edit_load(&app->ed, open_path)) return SDL_APP_FAILURE;
+        SDL_strlcpy(app->file, open_path, sizeof app->file);
+    } else if (!gg_edit_new(&app->ed, w, h)) {
+        return SDL_APP_FAILURE;
+    }
+    if (tool >= 0) gg_edit_tool(&app->ed, (gg_tool)tool);
+    return SDL_APP_CONTINUE;
+}
+
+SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
+    gg_app *app = appstate;
+
+    switch (event->type) {
+    case SDL_EVENT_QUIT:
+        return SDL_APP_SUCCESS;
+
+    case SDL_EVENT_MOUSE_MOTION: {
+        int tx, ty;
+        if (mouse_to_tile(app, event->motion.x, event->motion.y, &tx, &ty)) {
+            app->hover_x = tx;
+            app->hover_y = ty;
+            // Painting is a drag, so a held button keeps applying as the mouse
+            // moves - a tile-at-a-time editor is unusable for a field of grass.
+            if (app->painting) gg_edit_apply(&app->ed, tx, ty);
+            if (app->erasing) gg_edit_erase(&app->ed, tx, ty);
+        }
+        return SDL_APP_CONTINUE;
+    }
+
+    case SDL_EVENT_MOUSE_BUTTON_DOWN: {
+        int tx, ty;
+        if (!mouse_to_tile(app, event->button.x, event->button.y, &tx, &ty))
+            return SDL_APP_CONTINUE;
+        if (event->button.button == SDL_BUTTON_LEFT) {
+            if (app->ed.tool == GG_TOOL_REGION) {
+                gg_edit_drag_start(&app->ed, tx, ty);
+            } else {
+                app->painting = true;
+                gg_edit_apply(&app->ed, tx, ty);
+            }
+        } else if (event->button.button == SDL_BUTTON_RIGHT) {
+            app->erasing = true;
+            gg_edit_erase(&app->ed, tx, ty);
+        }
+        return SDL_APP_CONTINUE;
+    }
+
+    case SDL_EVENT_MOUSE_BUTTON_UP: {
+        if (event->button.button == SDL_BUTTON_LEFT) {
+            if (app->ed.drag) gg_edit_drag_end(&app->ed, app->hover_x, app->hover_y);
+            app->painting = false;
+        }
+        if (event->button.button == SDL_BUTTON_RIGHT) app->erasing = false;
+        return SDL_APP_CONTINUE;
+    }
+
+    case SDL_EVENT_MOUSE_WHEEL:
+        gg_edit_brush(&app->ed, event->wheel.y > 0 ? 1 : -1);
+        return SDL_APP_CONTINUE;
+
+    case SDL_EVENT_KEY_DOWN:
+        if (event->key.repeat && event->key.scancode != SDL_SCANCODE_LEFT &&
+            event->key.scancode != SDL_SCANCODE_RIGHT &&
+            event->key.scancode != SDL_SCANCODE_UP &&
+            event->key.scancode != SDL_SCANCODE_DOWN)
+            return SDL_APP_CONTINUE;
+
+        switch (event->key.scancode) {
+        case SDL_SCANCODE_1: case SDL_SCANCODE_2: case SDL_SCANCODE_3:
+        case SDL_SCANCODE_4: case SDL_SCANCODE_5: case SDL_SCANCODE_6:
+        case SDL_SCANCODE_7: {
+            // Scancodes are unsigned, so the subtraction is done in int
+            // rather than left to widen on its own.
+            const int which = (int)event->key.scancode - (int)SDL_SCANCODE_1;
+            if (which >= 0 && which < GG_TOOL_COUNT)
+                gg_edit_tool(&app->ed, (gg_tool)which);
+            break;
+        }
+        case SDL_SCANCODE_LEFTBRACKET:  gg_edit_brush(&app->ed, -1); break;
+        case SDL_SCANCODE_RIGHTBRACKET: gg_edit_brush(&app->ed, 1); break;
+
+        case SDL_SCANCODE_LEFT:  app->cam_x -= 2; clamp_camera(app); break;
+        case SDL_SCANCODE_RIGHT: app->cam_x += 2; clamp_camera(app); break;
+        case SDL_SCANCODE_UP:    app->cam_y -= 2; clamp_camera(app); break;
+        case SDL_SCANCODE_DOWN:  app->cam_y += 2; clamp_camera(app); break;
+
+        case SDL_SCANCODE_EQUALS:
+            app->zoom = gg_clampi(app->zoom + 1, ZOOM_MIN, ZOOM_MAX);
+            clamp_camera(app);
+            break;
+        case SDL_SCANCODE_MINUS:
+            app->zoom = gg_clampi(app->zoom - 1, ZOOM_MIN, ZOOM_MAX);
+            clamp_camera(app);
+            break;
+
+        case SDL_SCANCODE_G: app->grid = !app->grid; break;
+        case SDL_SCANCODE_C: app->show_problems = !app->show_problems; break;
+
+        case SDL_SCANCODE_S: {
+            // Saved beside the profiles, which is a directory that exists and
+            // is writable on every platform this runs on.
+            const char *where = app->file[0] ? app->file
+                                             : gg_pref_file("authored.ggmap");
+            if (gg_edit_save(&app->ed, where))
+                SDL_strlcpy(app->file, app->ed.path, sizeof app->file);
+            break;
+        }
+        case SDL_SCANCODE_O:
+            if (gg_edit_load(&app->ed, app->file[0] ? app->file
+                                                    : gg_pref_file("authored.ggmap")))
+                SDL_strlcpy(app->file, app->ed.path, sizeof app->file);
+            break;
+        case SDL_SCANCODE_N:
+            gg_edit_new(&app->ed, app->ed.map.w, app->ed.map.h);
+            app->file[0] = '\0';
+            break;
+
+        case SDL_SCANCODE_ESCAPE:
+            return SDL_APP_SUCCESS;
+        default:
+            break;
+        }
+        return SDL_APP_CONTINUE;
+
+    default:
+        return SDL_APP_CONTINUE;
+    }
+}
+
+// Reads back the current target. Must run before SDL_RenderPresent.
+static bool save_shot(SDL_Renderer *ren, const char *path) {
+    SDL_Surface *surf = SDL_RenderReadPixels(ren, nullptr);
+    if (!surf) {
+        SDL_Log("gigantima: RenderReadPixels failed: %s", SDL_GetError());
+        return false;
+    }
+    const bool ok = SDL_SaveBMP(surf, path);
+    if (!ok) SDL_Log("gigantima: SaveBMP failed: %s", SDL_GetError());
+    SDL_DestroySurface(surf);
+    return ok;
+}
+
+SDL_AppResult SDL_AppIterate(void *appstate) {
+    gg_app *app = appstate;
+    app->frames++;
+
+    SDL_SetRenderDrawColor(app->ren, 12, 14, 11, 255);
+    SDL_RenderClear(app->ren);
+
+    if (app->ed.open) {
+        // Centred on the start, so a capture shows the part of the map
+        // somebody actually authored rather than its top-left corner.
+        if (app->shot_path && app->frames == 1) {
+            const int t = tile_px(app);
+            app->cam_x = app->ed.map.start_x - (VIEW_W / t) / 2;
+            app->cam_y = app->ed.map.start_y - (VIEW_H / t) / 2;
+            clamp_camera(app);
+            app->hover_x = app->ed.map.start_x;
+            app->hover_y = app->ed.map.start_y;
+            if (app->ed.map.actors > 0) app->ed.actor = 0;
+        }
+        draw_map(app);
+        draw_status(app);
+    }
+    draw_palette(app);
+
+    if (app->shot_path) {
+        const bool ok = save_shot(app->ren, app->shot_path);
+        SDL_Log("gigantima: wrote %s", app->shot_path);
+        return ok ? SDL_APP_SUCCESS : SDL_APP_FAILURE;
+    }
+
+    SDL_RenderPresent(app->ren);
+    return SDL_APP_CONTINUE;
+}
+
+void SDL_AppQuit(void *appstate, SDL_AppResult result) {
+    (void)result;
+    gg_app *app = appstate;
+    if (!app) return;
+
+    gg_edit_close(&app->ed);
+    gg_render_quit();
+    if (app->ren) gg_font_quit_renderer(app->ren);
+    gg_font_quit();
+    if (app->ren) SDL_DestroyRenderer(app->ren);
+    if (app->win) SDL_DestroyWindow(app->win);
+    SDL_free(app);
+}

@@ -46,7 +46,10 @@ bool gg_render_init(SDL_Renderer *ren) {
     return g_tiles && g_edges && g_overlays && g_props && g_items && g_actors;
 }
 
-SDL_Texture *gg_render_items(void) { return g_items; }
+SDL_Texture *gg_render_items(void)  { return g_items; }
+SDL_Texture *gg_render_tiles(void)  { return g_tiles; }
+SDL_Texture *gg_render_props(void)  { return g_props; }
+SDL_Texture *gg_render_actors(void) { return g_actors; }
 
 void gg_render_quit(void) {
     SDL_DestroyTexture(g_tiles);

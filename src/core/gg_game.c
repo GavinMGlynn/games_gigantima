@@ -1182,7 +1182,34 @@ static bool finish_new_game(gg_game *g, const char *profile) {
     g->player = 0;
     g->actors = 1;
 
-    place_townsfolk(g);
+    // Anybody the map itself records comes first, and if it records any then
+    // the generator's own table stays out of it - a map authored in the editor
+    // is the whole of who lives there, not a suggestion on top of eight people
+    // it never asked for.
+    if (g->map.actors > 0) {
+        for (int i = 0; i < g->map.actors && g->actors < GG_ACTORS_MAX; i++) {
+            const gg_map_actor *m = &g->map.actor[i];
+            gg_actor *a = &g->actor[g->actors++];
+            SDL_zerop(a);
+            a->active = true;
+            a->art = m->art < GG_ACTOR_COUNT ? m->art : 0;
+            a->def = GG_ACTOR_NO_DEF;
+            a->facing = GG_FACE_DOWN;
+            a->x = m->x;
+            a->y = m->y;
+            a->from_x = a->x;
+            a->from_y = a->y;
+            a->hp = a->hp_max = 18;
+            a->level = 1;
+            a->party = GG_NOT_IN_PARTY;
+            SDL_strlcpy(a->name, m->name, sizeof a->name);
+            a->schedn = m->schedn;
+            for (int k = 0; k < m->schedn && k < GG_SCHEDULE_MAX; k++)
+                a->sched[k] = m->sched[k];
+        }
+    } else {
+        place_townsfolk(g);
+    }
 
     // Trouble in the wilderness, well away from the town gate. How many of
     // what comes out of the bestiary - nothing here knows a brigand from a

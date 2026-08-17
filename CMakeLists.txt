@@ -144,6 +144,7 @@ add_library(gigantima_core STATIC
     src/gfx/gg_font.c
     src/gfx/gg_render.c
     src/audio/gg_audio.c
+    src/editor/gg_edit.c
     src/ui/gg_ui.c
     src/ui/gg_menu.c
     src/ui/gg_screens.c

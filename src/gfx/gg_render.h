@@ -14,10 +14,14 @@ void gg_render_quit(void);
 // choose what they want.
 void gg_render_world(const gg_game *g, SDL_Renderer *ren);
 
-// The item atlas, for the pack panel: the UI shows each thing's own picture
-// rather than its name, and this is the one texture it needs that the world
-// renderer already owns.
+// The atlases, for anything that has to draw the world without being the world
+// renderer. The pack panel wants the items; the editor wants all of them,
+// because it draws a map rather than a game and needs a grid, region outlines
+// and a selection over the top of it.
 SDL_Texture *gg_render_items(void);
+SDL_Texture *gg_render_tiles(void);
+SDL_Texture *gg_render_props(void);
+SDL_Texture *gg_render_actors(void);
 
 // Top-left of the view **in world pixels**, not tiles.
 //

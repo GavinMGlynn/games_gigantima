@@ -174,11 +174,15 @@ found, not when someone remembers.
 The ambition is deep storylines and a large number of varied levels. None of
 that is reachable while content is C, so the editor comes before the content.
 
-- [ ] **Level editor** (`gigantima_editor`), a second frontend on the same core:
-      paint terrain and props, place actors, edit schedules, define regions, set
-      the start point, save and load `.ggmap`.
-      *Verification: a map authored in the editor, saved, and played in the game
-      with no code change.*
+- [x] **Level editor** (`gigantima_editor`), a second frontend on the same core:
+      paint terrain and props, leave things lying about, place people and draw
+      their days, drag out regions, set the start, save and load `.ggmap`. It
+      also says what is wrong with a map, because the editor is where that
+      should be found rather than in the game.
+      *Verification: a map authored through the editor's own operations, saved,
+      and played in the game with no code change — the person authored is in the
+      world under her name and keeping her day, the region names the place, and
+      the generator's own townsfolk are not there.*
 - [ ] **Actors, schedules and dialogue move out of C into map data.** Today the
       eight townsfolk are a table in `gg_game.c`.
       *Verification: `gg_game.c` contains no character names.*

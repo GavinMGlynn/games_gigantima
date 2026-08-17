@@ -87,6 +87,17 @@ jobs:
             test -s "screen-$s.bmp" || { echo "$s drew nothing"; exit 1; }
           done
 
+      # The editor is a second binary on the same core, and it has to keep
+      # building and drawing. The map it authors being playable is checked by
+      # the unit tests; this is the window.
+      - name: Smoke test - the editor draws
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_RENDER_DRIVER: software
+        run: |
+          ./build/gigantima_editor --size 64 64 --shot editor.bmp
+          test -s editor.bmp || { echo "the editor drew nothing"; exit 1; }
+
       # The world has to make a noise, and the volume rows have to change what
       # it is. Captured through SDL's disk audio driver rather than a device:
       # the only way to check sound on a machine with no speakers, which is
@@ -138,6 +149,7 @@ jobs:
           path: |
             smoke.bmp
             screen-*.bmp
+            editor.bmp
 
   rocky:
     name: Linux x86_64 (GCC 14, RHEL family)

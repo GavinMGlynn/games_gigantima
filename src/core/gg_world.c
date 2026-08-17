@@ -737,6 +737,21 @@ bool gg_map_write(const gg_map *m, SDL_IOStream *io) {
         ok = gg_io_w32(io, (uint32_t)it->x) && gg_io_w32(io, (uint32_t)it->y) &&
              gg_io_w32(io, it->kind) && gg_io_w32(io, it->count);
     }
+
+    // And the people, last, for the same reason.
+    ok = ok && gg_io_w32(io, (uint32_t)m->actors);
+    for (int i = 0; ok && i < m->actors; i++) {
+        const gg_map_actor *a = &m->actor[i];
+        ok = gg_io_w32(io, (uint32_t)(uint16_t)a->x) &&
+             gg_io_w32(io, (uint32_t)(uint16_t)a->y) &&
+             gg_io_w32(io, a->art);
+        ok = ok && SDL_WriteIO(io, a->name, GG_ACTOR_NAME_MAX) == GG_ACTOR_NAME_MAX;
+        ok = ok && gg_io_w32(io, a->schedn);
+        for (int k = 0; ok && k < a->schedn; k++)
+            ok = gg_io_w32(io, a->sched[k].hour) &&
+                 gg_io_w32(io, (uint32_t)(uint16_t)a->sched[k].x) &&
+                 gg_io_w32(io, (uint32_t)(uint16_t)a->sched[k].y);
+    }
     return ok;
 }
 
@@ -821,6 +836,33 @@ bool gg_map_read(gg_map *m, SDL_IOStream *io) {
         }
     }
     m->grounds = ok ? (int)grounds : 0;
+
+    uint32_t actors = 0;
+    ok = ok && gg_io_r32(io, &actors) && actors <= GG_MAP_ACTORS_MAX;
+    for (uint32_t i = 0; ok && i < actors; i++) {
+        gg_map_actor *a = &m->actor[i];
+        uint32_t ax = 0, ay = 0, art = 0, n = 0;
+        ok = gg_io_r32(io, &ax) && gg_io_r32(io, &ay) && gg_io_r32(io, &art);
+        ok = ok && SDL_ReadIO(io, a->name, GG_ACTOR_NAME_MAX) == GG_ACTOR_NAME_MAX;
+        a->name[GG_ACTOR_NAME_MAX - 1] = '\0';
+        ok = ok && gg_io_r32(io, &n) && n <= GG_SCHEDULE_MAX;
+        if (!ok) break;
+
+        a->x = (int16_t)(int32_t)ax;
+        a->y = (int16_t)(int32_t)ay;
+        // Clamped rather than trusted: an art id past the table would index off
+        // it in the renderer, and this file may not be ours.
+        a->art = (uint8_t)(art < GG_ACTOR_COUNT ? art : 0);
+        a->schedn = (uint8_t)n;
+        for (uint32_t k = 0; ok && k < n; k++) {
+            uint32_t hour = 0, px = 0, py = 0;
+            ok = gg_io_r32(io, &hour) && gg_io_r32(io, &px) && gg_io_r32(io, &py);
+            a->sched[k].hour = (uint8_t)(hour % 24);
+            a->sched[k].x = (int16_t)(int32_t)px;
+            a->sched[k].y = (int16_t)(int32_t)py;
+        }
+    }
+    m->actors = ok ? (int)actors : 0;
 
     if (!ok) {
         SDL_Log("gigantima: the map is truncated");

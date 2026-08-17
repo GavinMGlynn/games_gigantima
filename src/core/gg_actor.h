@@ -6,8 +6,6 @@
 #include "core/gg_common.h"
 #include "core/gg_world.h"
 
-#define GG_ACTOR_NAME_MAX 24
-#define GG_SCHEDULE_MAX   6
 #define GG_ACTORS_MAX     256
 #define GG_ACTOR_NO_DEF   255
 
@@ -17,13 +15,8 @@
 #define GG_PARTY_MAX      4
 #define GG_NOT_IN_PARTY   0
 
-// One entry of a daily routine: from `hour`, be at (x, y). Ultima VI's NPCs
-// were memorable because they were somewhere for a reason at every hour, so
-// this is core rather than decoration.
-typedef struct {
-    uint8_t hour;
-    int16_t x, y;
-} gg_sched_entry;
+// GG_ACTOR_NAME_MAX, GG_SCHEDULE_MAX and gg_sched_entry are in gg_common.h -
+// see the note there on why.
 
 typedef struct {
     bool    active;

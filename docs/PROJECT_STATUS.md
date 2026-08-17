@@ -83,21 +83,61 @@ editor.
 `off_map_tiles_are_never_walkable`, `water_and_mountain_are_impassable`,
 `a_prop_blocks_its_tile_but_ground_cover_does_not`.*
 
+### The editor
+
+A second binary on the same core, `gigantima_editor`. Seven tools — ground,
+things, litter, people, their day, regions, start — with the left button
+painting and the right button rubbing out whatever the current tool places, so
+one tool is both brush and rubber and there is no erase mode to be stuck in.
+
+**The document is separate from the window.** `src/editor/gg_edit.c` holds the
+map and every operation on it, with no renderer and no event in it;
+`src/frontend/editor/main.c` is a window, a mouse and a palette. That split is
+what makes the item's own verification possible: a test authors a whole map by
+making the same calls a person makes with a mouse, saves it, and plays it — which
+is not a thing that can be checked by taking a picture of a window.
+
+Two things it does that a naive editor would not:
+
+- **Rubbing out a building clears its whole footprint.** A prop blocks more
+  cells than the one it stands on, so removing only the anchor leaves invisible
+  walls where a house used to be — a bug nobody can see. Clicking any wall finds
+  the prop whose footprint covers it and removes the lot.
+- **It says what is wrong.** A start inside a lake, somebody standing in a wall,
+  a schedule point in a mountain — the last of which has an NPC shove at rock
+  all day, which is exactly the failure the generator learned to walk its own
+  points out of. `C` shows the list.
+
+Placement goes through the same `gg_map_place_prop` the generator uses, so a
+building's walls and doorway are laid out identically however it got there, and
+painting water sets the water flag from the terrain table rather than by hand.
+
+**Map format version 3 carries people**, so a map records who lives in it and
+what their day is. A map that names anybody is the whole of who lives there —
+the generator's eight townsfolk stay out of an authored map rather than turning
+up alongside. Moving those eight *out of C* is the next item; the format that
+will hold them is here.
+
+*Verification: `a_map_authored_in_the_editor_can_be_played` (the plan's own),
+`the_editor_rubs_out_what_it_draws`, `the_editor_says_what_is_wrong_with_a_map`,
+`a_failed_load_leaves_what_was_open_alone`. Plus `--shot` frames of the editor
+with a map open and of the game playing that same map, the editor's now taken in
+CI.*
+
 ### Map file format
 
-Version 2, little-endian, fixed-width. Round-trips byte for byte — the cells and
-the things lying on the ground alike. A file that is not a map, is truncated, is
+Version 3, little-endian, fixed-width. Round-trips byte for byte — the cells,
+the things lying on the ground, and the people with their days. A file that is not a map, is truncated, is
 a different version, or claims implausible dimensions is rejected with a named
 message and without leaking the partial allocation. Terrain and prop ids are
 clamped on load, and an item id past the table or a pile lying off the map is
 refused outright, so a corrupt file cannot index off the end of anything.
 
-Version 2 added the ground items and does **not** read version 1. Nothing
-outside a test ever wrote one, and a reader that guesses at a missing section is
-worse than one that says no.
+Version 2 added the ground items, version 3 the people, and no version reads
+another. Nothing outside a test ever wrote an older one, and a reader that
+guesses at a missing section is worse than one that says no.
 
-**Nothing writes one yet except the tests.** The editor that is the point of
-having a format does not exist.
+The editor writes them, which is what the format was for.
 
 *Verification: `a_saved_map_reloads_byte_for_byte`,
 `loading_a_file_that_is_not_a_map_fails_cleanly`.*
@@ -889,7 +929,7 @@ Named plainly, because a reader should not have to infer absence:
 | Trade | nothing. Items carry a value in copper, and no one buys or sells |
 | Conversation beyond words | topics and a vocabulary, but nobody reacts to anything — no quests, no trade, no one who does something because you asked |
 | Composed audio | the sounds are synthesised tones and noise, and the tunes a drone and an arpeggio. The mechanism is finished; the music is placeholder |
-| Level editor | nothing. The map format exists for it |
+| Editor conveniences | no undo, no fill, no copy, no file dialog - it saves beside the profiles under one name |
 | Party roles | up to four follow, and have health and a level, but nothing distinguishes one companion from another - no classes, no skills, no orders to give |
 | Screens not yet needed | no journal, character sheet or map page — there is nothing yet for them to show |
 
