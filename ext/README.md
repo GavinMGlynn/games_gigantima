@@ -44,6 +44,14 @@ fails with an actionable message if `ext/sdl` is missing, and
 `tools/make_atlas.py` fails with the `git submodule` command to run if
 `ext/lpc-revised` is.
 
+The other half of that bargain is **`.github/workflows/atlas.yml`**, which is
+the one job that does check the art out: it re-bakes and diffs, so "the
+committed atlas is what the baker produces from the pinned art" is something a
+job says rather than something a comment claims. It runs weekly and on any
+change to the baker, the font it rasterises or the pins — not on every push,
+because 766 MB is not a per-push cost. Run it yourself with
+`python3 tools/check_atlas.py`.
+
 ## The art boundary
 
 `ext/lpc-revised` is a different kind of dependency from the other three, and

@@ -229,10 +229,15 @@ that is reachable while content is C, so the editor comes before the content.
 
 ## Phase 4 — Fit and finish
 
-- [ ] **Atlas regeneration checked in CI** — that the committed atlas is what
-      the baker produces from the pinned art. Needs the art submodule in a
-      scheduled job rather than on every push. *Verification: a job that re-bakes
-      and diffs.*
+- [x] **Atlas regeneration checked in CI** — that the committed atlas is what
+      the baker produces from the pinned art, including the credits file the
+      licence requires. A separate weekly job, because it is the one thing that
+      needs the 766 MB art submodule; it also runs on any change to the baker or
+      the pins.
+      *Verification: `tools/check_atlas.py` re-bakes and diffs — pictures by
+      pixel, generated sources byte for byte — and reports all eleven files
+      reproducible. Checked by altering one pixel of one atlas and one word of
+      one table, both of which it caught.*
 - [ ] **Deterministic replay**: record the action stream, play it back, assert an
       identical end state. The simulation is already integer-only and seeded, so
       this is cheap and makes every bug report reproducible.

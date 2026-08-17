@@ -1129,6 +1129,23 @@ Attribution is generated, not transcribed: `assets/CREDITS.md` reproduces the
 from the art it describes. That is a licence condition of OGA-BY, not
 documentation.
 
+**And the whole of it is checked, rather than claimed.** The outputs are
+committed so a clone builds without the 766 MB art submodule, which means
+"these files are what the baker produces from the pinned art" is a promise
+nobody can see. `tools/check_atlas.py` re-bakes and diffs it: seven pictures
+compared **by pixel** — a PNG carries its encoder's choices, and a different
+Pillow writes different bytes for the same image — and four generated files
+compared byte for byte, including the credits. `.github/workflows/atlas.yml`
+runs it weekly, on demand, and on any change to the baker, the font it
+rasterises or the submodule pins; not on every push, because 766 MB is not a
+per-push cost. On failure the job uploads what it baked, so the difference can
+be looked at rather than inferred from a pixel count.
+
+*Verification: the check reports all eleven files reproducible from the pinned
+art. It was checked by breaking what it pins: one pixel of `atlas_items.png`
+changed (`1 of 32768 pixels differ`) and one string in `gg_ids.c`, both caught,
+exit code 1.*
+
 The outputs are committed, so a clone builds and plays without the 766 MB art
 submodule. **CI does not verify that the committed atlas matches what the baker
 would produce** — that would need the art submodule in CI. Named in the plan.

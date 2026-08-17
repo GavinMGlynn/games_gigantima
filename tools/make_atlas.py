@@ -516,9 +516,12 @@ def build_tiles():
 
 
 def _mean_rgb(img):
-    px = list(img.convert("RGB").getdata())
-    n = len(px)
-    return tuple(sum(p[i] for p in px) / n for i in range(3))
+    # Through tobytes() rather than getdata(): the latter is deprecated and
+    # goes away in Pillow 14, and its replacement does not exist in the Pillow
+    # anyone currently has. Bytes are in every version there has ever been.
+    raw = img.convert("RGB").tobytes()
+    n = len(raw) // 3
+    return tuple(sum(raw[i::3]) / n for i in range(3))
 
 
 def _bank_weight(piece, interior_mean, threshold=55.0):

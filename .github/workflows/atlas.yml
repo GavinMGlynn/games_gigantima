@@ -1,0 +1,75 @@
+# Is the committed art what the baker produces?
+#
+# The atlases and the generated sources are committed so that a clone builds and
+# plays without `ext/lpc-revised`, which is 766 MB. The cost of that convenience
+# is a promise nobody can see: that those files really are what
+# `tools/make_atlas.py` writes from the art at its pinned commit. This is the
+# job that keeps it honest.
+#
+# **A separate workflow, not a job in ci.yml**, because it is the one thing that
+# needs the art submodule and paying 766 MB on every push to check something
+# that changes a few times a year is not a trade worth making. It runs weekly,
+# on demand, and on any change to the baker, the font it rasterises or the
+# submodule pin - which are the three things that can make the answer change.
+name: Atlas
+
+on:
+  schedule:
+    # Mondays, early. Nothing here is urgent; what matters is that a drift is
+    # found by a job rather than by somebody wondering why a sprite moved.
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'tools/make_atlas.py'
+      - 'tools/check_atlas.py'
+      - 'assets/fonts/**'
+      - '.gitmodules'
+      - '.github/workflows/atlas.yml'
+  pull_request:
+    paths:
+      - 'tools/make_atlas.py'
+      - 'tools/check_atlas.py'
+      - 'assets/fonts/**'
+      - '.gitmodules'
+
+jobs:
+  rebake:
+    name: Re-bake and diff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Only the art. `--depth 1` because the baker reads the working tree and
+      # has no interest in its history, and this is the expensive checkout in
+      # the whole project.
+      - name: Check out the art
+        run: git submodule update --init --depth 1 ext/lpc-revised
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Pillow
+        run: python3 -m pip install --upgrade Pillow
+
+      # Compares pictures by pixel and generated sources byte for byte, and
+      # says which files differ and by how much. See tools/check_atlas.py for
+      # why the pictures are not compared as bytes.
+      - name: Re-bake and diff
+        run: python3 tools/check_atlas.py
+
+      # What it baked, when it disagreed - so the difference can be looked at
+      # rather than guessed at from a pixel count.
+      - name: Upload what was baked
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: freshly-baked-atlas
+          path: |
+            assets/atlas_*.png
+            assets/CREDITS.md
+            src/core/gg_ids.h
+            src/core/gg_ids.c
+            src/gfx/gg_atlas.h
