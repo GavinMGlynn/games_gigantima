@@ -112,6 +112,29 @@ jobs:
           if (!(Get-ChildItem build/gigantima-*-windows-*.zip)) { throw "no zip" }
           if (!(Get-ChildItem build/gigantima-*.exe)) { throw "no installer" }
 
+      # And the installer is *run*, silently, and the game played out of where
+      # it put itself. "An installer was produced" and "an installer installs a
+      # game that runs" are different claims, and only the second one is the
+      # item.
+      - name: Install it, and play what it installed
+        shell: pwsh
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_RENDER_DRIVER: software
+          SDL_AUDIODRIVER: dummy
+        run: |
+          $exe = Get-ChildItem build/gigantima-*.exe | Select-Object -First 1
+          Start-Process -FilePath $exe.FullName -ArgumentList "/S","/D=C:\Gigantima" -Wait
+          if (!(Test-Path "C:\Gigantima\gigantima.exe")) { throw "the installer put no game down" }
+          if (!(Test-Path "C:\Gigantima\assets\atlas_tiles.png")) { throw "the installer put no art down" }
+          if (!(Test-Path "C:\Gigantima\Uninstall.exe")) { throw "no way to uninstall it" }
+          Set-Location C:\
+          & "C:\Gigantima\gigantima.exe" --profile Installed --new --play --turns 40 2>&1 |
+            Tee-Object -FilePath C:\installed.log
+          if (!(Select-String -Path C:\installed.log -Pattern "played to turn 40" -Quiet)) {
+            throw "the installed game did not play"
+          }
+
       - name: Play the package from somewhere else
         shell: pwsh
         env:
