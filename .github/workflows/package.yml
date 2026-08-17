@@ -87,16 +87,30 @@ jobs:
         shell: bash
         run: git submodule update --init --depth 1 $CI_SUBMODULES
 
+      # The runner image has NSIS but does not put it on the PATH, so this
+      # makes sure of it - an installer is half of what this job is for, and
+      # "the zip was produced and the installer silently was not" is the
+      # failure it had the first time it ran.
+      - name: Make sure NSIS is there
+        run: |
+          if (!(Test-Path "C:\Program Files (x86)\NSIS\makensis.exe")) {
+            choco install nsis --no-progress -y
+          }
+          & "C:\Program Files (x86)\NSIS\makensis.exe" /VERSION
+
       - name: Build
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=Release -DGIGANTIMA_TESTS=OFF
           cmake --build build --config Release --parallel
 
-      # NSIS ships with the runner image; the ZIP is generated either way, so
-      # an installer that cannot be built is a missing file rather than a
-      # failed job. See CMakeLists.txt.
       - name: Package
         run: cd build; cpack -C Release
+
+      # Both of them, or the job has not done what it says.
+      - name: There is a zip and an installer
+        run: |
+          if (!(Get-ChildItem build/gigantima-*-windows-*.zip)) { throw "no zip" }
+          if (!(Get-ChildItem build/gigantima-*.exe)) { throw "no installer" }
 
       - name: Play the package from somewhere else
         shell: pwsh

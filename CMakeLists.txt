@@ -282,18 +282,32 @@ set(CPACK_PACKAGE_FILE_NAME "gigantima-${PROJECT_VERSION}-${GG_PLATFORM}")
 if(WIN32)
     # ZIP always, so there is an artifact even where NSIS is not installed, and
     # an installer beside it where it is.
+    #
+    # HINTS as well as the PATH: the Windows runner *has* NSIS and does not put
+    # it on the PATH, so the first version of this quietly produced a zip and
+    # no installer at all - which is exactly the kind of "worked, sort of" a
+    # find_program with no hints buys you.
     set(CPACK_GENERATOR "ZIP")
-    find_program(GG_MAKENSIS makensis)
+    find_program(GG_MAKENSIS
+        NAMES makensis
+        HINTS "$ENV{ProgramFiles\(x86\)}/NSIS" "$ENV{ProgramFiles}/NSIS"
+              "C:/Program Files (x86)/NSIS" "C:/Program Files/NSIS")
     if(GG_MAKENSIS)
+        message(STATUS "gigantima: NSIS at ${GG_MAKENSIS}; an installer will be built")
         list(APPEND CPACK_GENERATOR "NSIS")
-        set(CPACK_NSIS_PACKAGE_NAME    "Gigantima")
-        set(CPACK_NSIS_DISPLAY_NAME    "Gigantima")
-        set(CPACK_NSIS_MODIFY_PATH     OFF)
+        set(CPACK_NSIS_PACKAGE_NAME "Gigantima")
+        set(CPACK_NSIS_DISPLAY_NAME "Gigantima")
+        set(CPACK_NSIS_MODIFY_PATH  OFF)
         set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
-        set(CPACK_NSIS_CREATE_ICONS_EXTRA
-            "CreateShortCut \\"$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\Gigantima.lnk\\" \\"$INSTDIR\\\\gigantima.exe\\"")
-        set(CPACK_NSIS_DELETE_ICONS_EXTRA
-            "Delete \\"$SMPROGRAMS\\\\$START_MENU\\\\Gigantima.lnk\\"")
+        # Start-menu entries through CPack's own list rather than through
+        # hand-written NSIS script fragments: those need four levels of
+        # backslash escaping and break in ways the generator does not explain.
+        set(CPACK_PACKAGE_EXECUTABLES "gigantima;Gigantima"
+                                      "gigantima_editor;Gigantima Editor")
+        set(CPACK_CREATE_DESKTOP_LINKS "gigantima")
+    else()
+        message(STATUS "gigantima: no makensis; the Windows package will be a "
+                       "zip and not an installer")
     endif()
 elseif(APPLE)
     set(CPACK_GENERATOR "TGZ;DragNDrop")
