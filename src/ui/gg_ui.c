@@ -197,6 +197,71 @@ void gg_ui_pack(const gg_game *g, SDL_Renderer *ren, SDL_Texture *items) {
                  "U or A use   R or Y ready   P or X set down   G take   I or B close");
 }
 
+void gg_ui_journal(const gg_game *g, SDL_Renderer *ren) {
+    const int line = gg_font_height();
+    const int row = line + 4;
+    const int rows = 9;             // as many entries as fit without crowding
+
+    // Room for the entries *and* the headings between them. Counting only the
+    // entries overflowed the panel the first time this was drawn, because a
+    // heading is a line too.
+    const int height = (line + 8) + (rows + 3) * row + (line + 20);
+    const SDL_FRect box = { 70, (float)((GG_VIEW_H - height) / 2),
+                            (float)(GG_SCREEN_W - 140), (float)height };
+    panel(ren, box, 240);
+
+    const int x = (int)box.x + 16;
+    const int floor_y = (int)(box.y + box.h) - line - 16;
+    int y = (int)box.y + 12;
+
+    const int n = gg_journal_lines(g);
+    gg_font_draw(ren, x, y, AMBER, "What has happened");
+    gg_font_printf(ren, x + 330, y, DIM, "%d entries", n);
+    y += line + 8;
+
+    if (n == 0) {
+        gg_font_draw(ren, x, y, DIM,
+                     "Nothing yet. Ask somebody what troubles the vale.");
+    }
+
+    // Scrolled so the cursor is on screen, oldest first - a journal reads
+    // forwards.
+    int top = gg_clampi(g->journal_cursor - rows / 2, 0, n - rows);
+    if (top < 0) top = 0;
+
+    const char *last_quest = nullptr;
+    for (int i = top; i < n; i++) {
+        const char *quest = nullptr, *text = nullptr;
+        bool done = false;
+        if (!gg_journal_line(g, i, &quest, &text, &done)) break;
+
+        // Bounded by the panel rather than by a count, so a heading can never
+        // push the last entry through the bottom of the box.
+        const bool heading = (quest != last_quest);
+        if (y + (heading ? 2 : 1) * row > floor_y) break;
+
+        if (heading) {
+            gg_font_printf(ren, x, y, done ? DIM : AMBER, "%s%s", quest,
+                           done ? " - finished" : "");
+            last_quest = quest;
+            y += row;
+        }
+
+        if (i == g->journal_cursor) {
+            SDL_SetRenderDrawColor(ren, 217, 145, 63, 40);
+            const SDL_FRect bar = { box.x + 8, (float)(y - 2),
+                                    box.w - 16, (float)row };
+            SDL_RenderFillRect(ren, &bar);
+        }
+        gg_font_printf(ren, x + 16, y, i == g->journal_cursor ? INK : DIM,
+                       "%s", text);
+        y += row;
+    }
+
+    gg_font_draw(ren, x, (int)(box.y + box.h) - line - 12, DIM,
+                 "arrows to read   J or any key to close");
+}
+
 void gg_ui_spells(const gg_game *g, SDL_Renderer *ren) {
     const int line = gg_font_height();
     const int row_h = 34;

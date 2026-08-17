@@ -1,0 +1,88 @@
+# The story, as a state machine.
+#
+# A quest is a list of stages. Stage k is entered when its condition holds, and
+# entering it writes its journal line and may raise a flag. Only the next stage
+# is ever tested, so a quest cannot skip ahead.
+#
+#   quest ID              the name a data file calls it by
+#     name TEXT           what the journal calls it
+#     stage               one step; they are entered in order
+#       when COND         what has to be true to enter it
+#       journal TEXT      what the journal says once it is
+#       sets FLAG         a flag raised on entering, for other quests to see
+#
+# The conditions are things the world already knows how to answer:
+#
+#   when knows WORD       the player has learned a word - from anybody
+#   when has ITEM N       the player is carrying N of a thing
+#   when flag NAME        some other stage raised it
+#   when slain N          N have fallen to the party
+#   when party N          N walk with the Avatar
+#
+# A `when` with nothing after it follows the stage before it on the same turn,
+# which is how a stage that only writes a line is written. The *first* stage of
+# a quest may not do that - it would begin the moment a game did, which is a
+# quest nobody was given.
+
+quest CARAVAN
+  name The Missing Caravan
+  stage
+    when knows caravan
+    journal The market stall is bare: a caravan out of the north is three weeks late.
+    sets heard_of_caravan
+  stage
+    when knows road
+    journal The gate was watched for a fortnight and nothing came down the road.
+  stage
+    when knows stones
+    journal The north road runs past standing stones older than the vale itself.
+  stage
+    when knows light
+    journal A cold light has been seen among the stones, since the week it failed.
+    sets knows_the_light
+  stage
+    when knows north
+    journal Nobody has come down that road since. Somebody must go and look.
+    sets caravan_understood
+
+quest COMPANY
+  name Not Alone
+  stage
+    when party 1
+    journal Somebody walks with thee. The north road is not one to walk alone.
+    sets have_company
+  stage
+    when party 2
+    journal Two walk with thee. Whatever waits among the stones may reconsider.
+    sets well_companied
+
+quest BRIGANDS
+  name The Hills Are Not Safe
+  stage
+    when slain 1
+    journal There are brigands in the hills, and they did not come from nowhere.
+  stage
+    when slain 4
+    journal Four of them now, and thickest of all along the north road.
+    sets hills_thinned
+  stage
+    when flag caravan_understood
+    journal It fits: the road was stopped, and these are who stopped it.
+    sets story_understood
+
+quest MAGE
+  name Words of Power
+  stage
+    when knows runes
+    journal The mage will teach the words themselves, if asked of the RUNES.
+  stage
+    when knows mani
+    journal MANI is life. Alone it closes a wound.
+  stage
+    when knows lor
+    journal IN LOR makes light - two words, and the dark is not what it was.
+    sets can_make_light
+  stage
+    when knows an
+    journal AN undoes. It is the first word a careful mage learns.
+    sets a_mage_now

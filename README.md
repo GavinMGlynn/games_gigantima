@@ -11,7 +11,8 @@ An Ultima VI-style seamless-world RPG in C23 and SDL3.
 > things you can pick up, carry, eat and set down again, companions who walk
 > with you, brigands who do not, a magic you cast by learning the words for it,
 > a world with a voice, and an editor to author more of it. There is no story
-> yet, and the sounds are synthesised rather than composed. `docs/PROJECT_STATUS.md` is the single
+> worth the name yet - the machine for one works, but what runs on it is a
+> demonstration - and the sounds are synthesised rather than composed. `docs/PROJECT_STATUS.md` is the single
 > source of truth for what works; `docs/COMPLETION_PLAN.md` is the road to the
 > rest. Nothing here claims more than it has earned.
 
@@ -82,6 +83,7 @@ by being the thing CI actually runs.
 | `L` | look at what you stand on |
 | `O` | open |
 | `C` | open the book of spells |
+| `J` | the journal - what has happened so far |
 | `F` | strike what thou facest, or throw a readied stone |
 | `G` | take what is underfoot |
 | `I` | what thou carriest |
@@ -182,7 +184,7 @@ window, writes a single frame and exits, which is how CI checks that the game
 can still find and draw its own art — it photographs whatever the other flags
 select, so `--shot` alone gets the title screen and `--debug --shot` gets the
 debug view; `--screen NAME` opens a named page — `title`, `profiles`, `name`,
-`options`, `play`, `pause`, `pack`, `talk`, `party`, `fight` or `spells` — so each one can be photographed in turn.
+`options`, `play`, `pause`, `pack`, `talk`, `party`, `fight`, `spells` or `journal` — so each one can be photographed in turn.
 `--at X,Y` and `--time HH:MM` put the avatar somewhere specific at a specific
 hour, because verifying a change to how water is drawn means getting to water,
 and checking that a lit room differs from the street at night means getting to
@@ -202,7 +204,7 @@ src/editor/     the map being edited, and everything that can be done to it
 src/frontend/   main.c per executable - the game and the editor
 tools/          the art baker, the sound baker, and the sheet scanner
 assets/         the atlases and sounds, and the content: dialogue, spells,
-                bestiary
+                bestiary, quests
 ext/            pinned submodules — see ext/README.md
 docs/           the completion plan and the project status
 ```

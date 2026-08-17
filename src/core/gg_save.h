@@ -18,12 +18,13 @@
 // file: the pack, then the words learned, then each actor's stats and who walks
 // with you, then what each of them fights with and what they leave behind, and
 // then any light the Avatar has conjured and how long it has left, and now
-// which row of the bestiary each creature came from in place of the loot that
-// used to be stamped on it.
+// then which row of the bestiary each creature came from in place of the loot
+// that used to be stamped on it, and now how far along each quest is, every
+// flag raised, and how many have fallen.
 // There is no migration between any of them - guessing at a section that was
 // never written would resume somebody into a world that is not the one they
 // left, and every version so far has existed for days rather than years.
-#define GG_SAVE_VERSION 6
+#define GG_SAVE_VERSION 7
 
 #define GG_PROFILE_NAME_MAX 32
 #define GG_PROFILES_MAX     64

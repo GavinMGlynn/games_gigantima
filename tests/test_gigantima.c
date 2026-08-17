@@ -18,6 +18,7 @@
 #include "core/gg_combat.h"
 #include "core/gg_magic.h"
 #include "core/gg_bestiary.h"
+#include "core/gg_quest.h"
 #include "audio/gg_audio.h"
 #include "editor/gg_edit.h"
 #include "ui/gg_menu.h"
@@ -4836,6 +4837,327 @@ static void somebody_who_lives_here_needs_a_day(void) {
 }
 
 // ---------------------------------------------------------------------------
+// The story
+// ---------------------------------------------------------------------------
+static const char *write_quests(const char *text) {
+    const char *path = gg_pref_file("test_quests.txt");
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    CHECK(io != nullptr, "could not write a quest file");
+    if (io) {
+        const size_t n = SDL_strlen(text);
+        CHECK(SDL_WriteIO(io, text, n) == n, "short write on the quest file");
+        SDL_CloseIO(io);
+    }
+    return path;
+}
+
+static void restore_quests(void) {
+    CHECK(gg_quests_load(gg_asset_path("quests.txt")),
+          "could not put the shipped quests back");
+}
+
+// The plan's own verification: a two-stage quest completed, its journal
+// updated, and the state surviving a save/load.
+static void a_two_stage_quest_is_completed_and_remembered(void) {
+    const char *who = "Questor";
+    wipe_saves(who);
+
+    const char *path = write_quests(
+        "quest ERRAND\n"
+        "  name A Small Errand\n"
+        "  stage\n"
+        "    when knows errand\n"
+        "    journal Somebody has asked thee to fetch a loaf.\n"
+        "    sets errand_begun\n"
+        "  stage\n"
+        "    when has BREAD 2\n"
+        "    journal Thou hast the bread, and the errand is done.\n"
+        "    sets errand_done\n");
+    CHECK(gg_quests_load(path), "the quest file did not load");
+    CHECK(gg_quests_count() == 1, "expected one quest, got %d", gg_quests_count());
+
+    gg_game g;
+    CHECK(gg_game_new(&g, 81, who), "new game failed");
+    const int which = gg_quest_find("ERRAND");
+    CHECK(which >= 0, "the errand is not in the book");
+
+    // Not begun: the word has not been learned, so nothing is in the journal
+    // however plainly the quest is written.
+    g.packn = 0;
+    gg_quests_tick(&g);
+    CHECK(g.quest[which] == 0, "the quest began before it was given");
+    CHECK(gg_journal_lines(&g) == 0, "the journal has %d entries already",
+          gg_journal_lines(&g));
+    CHECK(!gg_flag(&g, "errand_begun"), "a flag went up before its stage");
+
+    // Stage one, by learning the word.
+    gg_learn(&g, "errand");
+    gg_quests_tick(&g);
+    CHECK(g.quest[which] == 1, "the quest is at stage %u, expected 1",
+          g.quest[which]);
+    CHECK(gg_journal_lines(&g) == 1, "the journal has %d entries, expected 1",
+          gg_journal_lines(&g));
+    CHECK(gg_flag(&g, "errand_begun"), "entering a stage did not raise its flag");
+
+    const char *quest_name = nullptr, *text = nullptr;
+    bool done = false;
+    CHECK(gg_journal_line(&g, 0, &quest_name, &text, &done),
+          "the journal has no first line");
+    CHECK(quest_name && SDL_strcmp(quest_name, "A Small Errand") == 0,
+          "the entry is filed under '%s'", quest_name ? quest_name : "(none)");
+    CHECK(text && SDL_strstr(text, "fetch a loaf"),
+          "the entry does not say what the file says");
+    CHECK(!done, "a quest with a stage left is already finished");
+
+    // One loaf is not two: a condition is a condition.
+    CHECK(gg_pack_add(&g, GG_ITEM_BREAD, 1) == 1, "could not take bread");
+    gg_quests_tick(&g);
+    CHECK(g.quest[which] == 1, "one loaf finished an errand that wants two");
+
+    // Two, and it completes.
+    CHECK(gg_pack_add(&g, GG_ITEM_BREAD, 1) == 1, "could not take more bread");
+    gg_quests_tick(&g);
+    CHECK(g.quest[which] == 2, "the quest is at stage %u, expected 2",
+          g.quest[which]);
+    CHECK(gg_journal_lines(&g) == 2, "the journal has %d entries, expected 2",
+          gg_journal_lines(&g));
+    CHECK(gg_flag(&g, "errand_done"), "the last stage did not raise its flag");
+
+    CHECK(gg_journal_line(&g, 1, nullptr, &text, &done),
+          "the journal has no second line");
+    CHECK(text && SDL_strstr(text, "errand is done"), "the wrong second entry");
+    CHECK(done, "a quest with no stages left is not marked finished");
+
+    // It cannot run past its end however the world changes.
+    gg_pack_add(&g, GG_ITEM_BREAD, 5);
+    gg_quests_tick(&g);
+    CHECK(g.quest[which] == 2, "the quest ran past its last stage to %u",
+          g.quest[which]);
+
+    // And all of it survives a save.
+    CHECK(gg_save_write(&g, save_base(), who), "save failed");
+    gg_game b;
+    SDL_zero(b);
+    CHECK(gg_save_read(&b, save_base(), who), "load failed");
+
+    CHECK(b.quest[which] == 2, "the resumed game is at stage %u", b.quest[which]);
+    CHECK(gg_journal_lines(&b) == 2, "the resumed journal has %d entries",
+          gg_journal_lines(&b));
+    CHECK(gg_flag(&b, "errand_begun") && gg_flag(&b, "errand_done"),
+          "the resumed game forgot its flags");
+    const char *btext = nullptr;
+    CHECK(gg_journal_line(&b, 1, nullptr, &btext, nullptr) && btext &&
+          SDL_strstr(btext, "errand is done"),
+          "the resumed journal reads differently");
+
+    gg_game_free(&b);
+    gg_game_free(&g);
+    restore_quests();
+    SDL_RemovePath(path);
+    wipe_saves(who);
+}
+
+// Stages are entered in order and one at a time, whatever the world looks like.
+static void a_quest_cannot_skip_a_stage(void) {
+    const char *path = write_quests(
+        "quest LADDER\n"
+        "  name Up A Ladder\n"
+        "  stage\n"
+        "    when knows one\n"
+        "    journal First.\n"
+        "  stage\n"
+        "    when knows two\n"
+        "    journal Second.\n"
+        "  stage\n"
+        "    when\n"
+        "    journal Third, which follows at once.\n");
+    CHECK(gg_quests_load(path), "the quest file did not load");
+
+    gg_game g;
+    CHECK(gg_game_new(&g, 82, "Climber"), "new game failed");
+    const int which = gg_quest_find("LADDER");
+
+    // The second word alone does nothing: the first stage has not been entered.
+    gg_learn(&g, "two");
+    gg_quests_tick(&g);
+    CHECK(g.quest[which] == 0, "a quest began at its second stage");
+
+    // With both, it walks up as far as it can in one tick - and the third
+    // stage, whose condition is nothing at all, follows on the same turn.
+    gg_learn(&g, "one");
+    gg_quests_tick(&g);
+    CHECK(g.quest[which] == 3, "the quest climbed to %u, expected all three",
+          g.quest[which]);
+    CHECK(gg_journal_lines(&g) == 3, "the journal has %d entries, expected 3",
+          gg_journal_lines(&g));
+
+    gg_game_free(&g);
+    restore_quests();
+    SDL_RemovePath(path);
+}
+
+// Quests interlock through flags without knowing about each other.
+static void one_quest_can_open_another(void) {
+    const char *path = write_quests(
+        "quest FIRST\n"
+        "  name The First Thing\n"
+        "  stage\n"
+        "    when knows go\n"
+        "    journal It has begun.\n"
+        "    sets the_first_thing_happened\n"
+        "quest SECOND\n"
+        "  name The Second Thing\n"
+        "  stage\n"
+        "    when flag the_first_thing_happened\n"
+        "    journal And so this follows.\n");
+    CHECK(gg_quests_load(path), "the quest file did not load");
+
+    gg_game g;
+    CHECK(gg_game_new(&g, 83, "Linker"), "new game failed");
+    const int first = gg_quest_find("FIRST"), second = gg_quest_find("SECOND");
+    CHECK(first >= 0 && second >= 0, "the pair are not both in the book");
+
+    gg_quests_tick(&g);
+    CHECK(g.quest[second] == 0, "the second began without the first");
+
+    gg_learn(&g, "go");
+    gg_quests_tick(&g);
+    CHECK(g.quest[first] == 1, "the first did not begin");
+    // The second may need one more tick, depending on the order they are
+    // walked in - which is fine, and is what a turn is for.
+    gg_quests_tick(&g);
+    CHECK(g.quest[second] == 1, "the flag did not open the second quest");
+
+    gg_game_free(&g);
+    restore_quests();
+    SDL_RemovePath(path);
+}
+
+// A quest condition that counts kills, which is the one number the story
+// needed that the world was not already keeping.
+static void killing_things_moves_a_quest_on(void) {
+    const char *path = write_quests(
+        "quest CULL\n"
+        "  name A Thinning\n"
+        "  stage\n"
+        "    when slain 2\n"
+        "    journal Two of them have fallen.\n");
+    CHECK(gg_quests_load(path), "the quest file did not load");
+
+    gg_game g;
+    int cx = 0, cy = 0;
+    CHECK(set_up_encounter(&g, 84, &cx, &cy), "setup failed");
+    const int which = gg_quest_find("CULL");
+    g.slain = 0;
+
+    for (int k = 0; k < 2; k++) {
+        const int foe = gg_spawn_named(&g, "BRIGAND", cx + 1 + k, cy);
+        CHECK(foe >= 0, "no brigand");
+        for (int i = 0; i < 80 && g.actor[foe].active; i++) {
+            g.actor[foe].hp = 1;
+            gg_strike(&g, g.player, foe);
+        }
+        CHECK(!g.actor[foe].active, "the brigand would not fall");
+    }
+    CHECK(g.slain == 2, "the world counted %u fallen, expected 2", g.slain);
+
+    gg_quests_tick(&g);
+    CHECK(g.quest[which] == 1, "two kills did not move the quest on");
+
+    gg_game_free(&g);
+    restore_quests();
+    SDL_RemovePath(path);
+}
+
+static void a_quest_file_that_does_not_parse_loads_nothing(void) {
+    static const char *const BAD[] = {
+        "name A Thing\n",                                  // before any quest
+        "quest X\n  stage\n    when knows a\n    journal Y.\n",  // no name
+        "quest X\n  name A\n",                             // no stages
+        "quest X\n  name A\n  stage\n    when knows a\n",  // stage says nothing
+        "quest X\n  name A\n  stage\n    journal Y.\n",    // begins at once
+        "quest X\n  name A\n  stage\n    when wibble\n    journal Y.\n",
+        "quest X\n  name A\n  stage\n    when has NOTHING 1\n    journal Y.\n",
+        "quest X\n  name A\n  stage\n    when slain\n    journal Y.\n",
+        "quest X\n  name A\n  wibble 3\n",                 // unknown word
+    };
+    for (size_t i = 0; i < GG_COUNTOF(BAD); i++) {
+        const char *path = write_quests(BAD[i]);
+        CHECK(!gg_quests_load(path), "bad quest file %zu loaded anyway", i);
+        CHECK(gg_quests_count() == 0,
+              "bad quest file %zu left %d quests behind", i, gg_quests_count());
+        SDL_RemovePath(path);
+    }
+    CHECK(!gg_quests_load(gg_pref_file("test_no_such_quests.txt")),
+          "a missing quest file reported success");
+    restore_quests();
+}
+
+// The shipped story has to be one the vale can actually tell.
+static void the_vale_has_a_story_that_can_be_reached(void) {
+    CHECK(gg_dialogue_load(gg_asset_path("dialogue.txt")), "no dialogue");
+    CHECK(gg_quests_load(gg_asset_path("quests.txt")), "no quests");
+    CHECK(gg_quests_count() > 0, "the vale has no story at all");
+
+    // Every word a quest waits on has to be one somebody teaches, or the quest
+    // waits for ever.
+    char taught[GG_KNOWN_MAX][GG_WORD_MAX];
+    int n = 0;
+    SDL_strlcpy(taught[n++], GG_WORD_NAME, GG_WORD_MAX);
+    SDL_strlcpy(taught[n++], GG_WORD_JOB, GG_WORD_MAX);
+    for (int i = 0; i < gg_dialogue_speakers(); i++) {
+        const gg_speaker *s = gg_dialogue_speaker(i);
+        for (int t = 0; t < s->topics; t++) {
+            if (!s->topic[t].teach[0]) continue;
+            bool have = false;
+            for (int k = 0; k < n; k++)
+                if (SDL_strcasecmp(taught[k], s->topic[t].teach) == 0) have = true;
+            if (!have && n < GG_KNOWN_MAX)
+                SDL_strlcpy(taught[n++], s->topic[t].teach, GG_WORD_MAX);
+        }
+    }
+
+    // And every flag a quest waits on has to be one some stage raises.
+    char raised[GG_FLAGS_MAX][GG_FLAG_MAX];
+    int r = 0;
+    for (int i = 0; i < gg_quests_count(); i++) {
+        const gg_quest *q = gg_quest_at(i);
+        for (int k = 0; k < q->stages; k++)
+            if (q->stage[k].sets[0] && r < GG_FLAGS_MAX)
+                SDL_strlcpy(raised[r++], q->stage[k].sets, GG_FLAG_MAX);
+    }
+
+    for (int i = 0; i < gg_quests_count(); i++) {
+        const gg_quest *q = gg_quest_at(i);
+        CHECK(q->name[0] != '\0', "quest %d has no name", i);
+        CHECK(q->stages > 0, "'%s' has no stages", q->name);
+        for (int k = 0; k < q->stages; k++) {
+            const gg_stage *s = &q->stage[k];
+            CHECK(s->journal[0] != '\0', "stage %d of '%s' says nothing",
+                  k + 1, q->name);
+
+            if (s->what == GG_WHEN_KNOWS) {
+                bool ok = false;
+                for (int t = 0; t < n; t++)
+                    if (SDL_strcasecmp(taught[t], s->word) == 0) ok = true;
+                CHECK(ok, "'%s' waits on the word %s, which nobody teaches",
+                      q->name, s->word);
+            }
+            if (s->what == GG_WHEN_FLAG) {
+                bool ok = false;
+                for (int t = 0; t < r; t++)
+                    if (SDL_strcasecmp(raised[t], s->word) == 0) ok = true;
+                CHECK(ok, "'%s' waits on the flag %s, which no stage raises",
+                      q->name, s->word);
+            }
+        }
+    }
+
+    restore_quests();
+    restore_dialogue();
+}
+
+// ---------------------------------------------------------------------------
 // Content tables
 // ---------------------------------------------------------------------------
 static void every_terrain_and_item_has_a_name(void) {
@@ -4893,6 +5215,8 @@ int main(void) {
         SDL_Log("gigantima: tests could not load the bestiary");
     if (!gg_dialogue_load(gg_asset_path("dialogue.txt")))
         SDL_Log("gigantima: tests could not load the dialogue");
+    if (!gg_quests_load(gg_asset_path("quests.txt")))
+        SDL_Log("gigantima: tests could not load the quests");
 
     RUN(the_rng_is_reproducible_from_its_seed);
     RUN(a_zero_seed_does_not_stick_at_zero);
@@ -5043,6 +5367,13 @@ int main(void) {
 
     RUN(who_lives_in_the_town_comes_out_of_the_book);
     RUN(somebody_who_lives_here_needs_a_day);
+
+    RUN(a_two_stage_quest_is_completed_and_remembered);
+    RUN(a_quest_cannot_skip_a_stage);
+    RUN(one_quest_can_open_another);
+    RUN(killing_things_moves_a_quest_on);
+    RUN(a_quest_file_that_does_not_parse_loads_nothing);
+    RUN(the_vale_has_a_story_that_can_be_reached);
 
     RUN(every_terrain_and_item_has_a_name);
     RUN(every_prop_has_a_plausible_footprint);

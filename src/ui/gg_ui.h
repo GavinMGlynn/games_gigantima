@@ -20,6 +20,11 @@ void gg_ui_converse(const gg_game *g, SDL_Renderer *ren);
 // and the display has no business introducing any.
 void gg_ui_weight(char *out, size_t n, int hundredths);
 
+// What has happened so far, drawn over the world while mode is
+// GG_MODE_JOURNAL. Built from the quests and how far along each is, so it is a
+// record of the story rather than a second copy of it.
+void gg_ui_journal(const gg_game *g, SDL_Renderer *ren);
+
 // The spells whose runes are known, drawn over the world while mode is
 // GG_MODE_SPELL. Shows the phrase, the price and whether it can be paid, so a
 // player can see why a spell is out of reach without leaving the book.

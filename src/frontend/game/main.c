@@ -24,6 +24,7 @@
 #include "core/gg_combat.h"
 #include "core/gg_magic.h"
 #include "core/gg_bestiary.h"
+#include "core/gg_quest.h"
 #include "audio/gg_audio.h"
 #include "ui/gg_screens.h"
 #include "platform/gg_settings.h"
@@ -205,6 +206,8 @@ static void draw(gg_app *app) {
             gg_ui_pack(&app->game, app->ren, gg_render_items());
         else if (app->game.mode == GG_MODE_SPELL)
             gg_ui_spells(&app->game, app->ren);
+        else if (app->game.mode == GG_MODE_JOURNAL)
+            gg_ui_journal(&app->game, app->ren);
     }
 
     if (app->screens.id != GG_SCREEN_PLAY)
@@ -495,6 +498,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
         SDL_Log("gigantima: no spells loaded; nothing will answer to a word");
     if (!gg_bestiary_load(gg_asset_path("bestiary.txt")))
         SDL_Log("gigantima: no bestiary loaded; the hills will be empty");
+    if (!gg_quests_load(gg_asset_path("quests.txt")))
+        SDL_Log("gigantima: no quests loaded; nothing will be asked of anybody");
 
     // A silent game is a playable one, so a device that will not open is a log
     // line and not a failure - the same call the gamepad gets.
@@ -528,6 +533,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
             { "party",    GG_SCREEN_PLAY },
             { "fight",    GG_SCREEN_PLAY },
             { "spells",   GG_SCREEN_PLAY },
+            { "journal",  GG_SCREEN_PLAY },
         };
         bool known = false;
         for (size_t k = 0; k < GG_COUNTOF(NAMED); k++)
@@ -642,7 +648,9 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
             // that there is a session to lose, and neither is having to press
             // a different key to close each thing.
             if (app->game.mode == GG_MODE_CONVERSE ||
-                app->game.mode == GG_MODE_PACK) {
+                app->game.mode == GG_MODE_PACK ||
+                app->game.mode == GG_MODE_SPELL ||
+                app->game.mode == GG_MODE_JOURNAL) {
                 gg_game_act(&app->game, GG_ACT_WAIT);
                 return SDL_APP_CONTINUE;
             }
@@ -787,6 +795,28 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
         // actions would close it again.
         if (app->screen_name && SDL_strcmp(app->screen_name, "pack") == 0)
             app->game.mode = GG_MODE_PACK;
+
+        // Learns what the vale has to teach and kills something, so the
+        // journal has a story in it to photograph. Everything after the
+        // learning is the ordinary machine: the stages advance because their
+        // conditions hold, not because anything was told to advance them.
+        if (app->screen_name && SDL_strcmp(app->screen_name, "journal") == 0) {
+            static const char *const HEARD[] = {
+                "caravan", "road", "stones", "light", "north",
+                "runes", "mani", "in", "lor", "vas", "flam", "nox", "an",
+            };
+            for (size_t k = 0; k < GG_COUNTOF(HEARD); k++)
+                gg_learn(&app->game, HEARD[k]);
+            app->game.slain = 5;
+            for (int i = 0; i < app->game.actors; i++)
+                if (i != app->game.player && app->game.actor[i].active &&
+                    !app->game.actor[i].hostile) {
+                    gg_party_join(&app->game, i);
+                    break;
+                }
+            gg_quests_tick(&app->game);
+            app->game.mode = GG_MODE_JOURNAL;
+        }
 
         // Learns every rune and takes a few reagents, so the book can be
         // photographed with something in it. What it then shows is the
@@ -955,6 +985,7 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result) {
     gg_dialogue_clear();
     gg_magic_clear();
     gg_bestiary_clear();
+    gg_quests_clear();
     gg_audio_quit();
     gg_input_quit(&app->in);
     gg_game_free(&app->game);

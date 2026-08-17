@@ -1,6 +1,7 @@
 // gg_save.c - writing and reading a saved game, and the profiles around them.
 #include "core/gg_save.h"
 #include "core/gg_bestiary.h"
+#include "core/gg_quest.h"
 
 #define SAVE_FILE    "world.ggsave"
 #define PROFILE_FILE "profile.ggprof"
@@ -249,6 +250,22 @@ bool gg_save_write(const gg_game *g, const char *base, const char *name) {
     ok = ok && gg_io_w32(io, (uint32_t)g->light_turns) &&
                gg_io_w32(io, (uint32_t)g->light_power);
 
+    // The story: how far along each quest is, every flag raised, and the tally
+    // a quest condition counts. Quests are written by name rather than by
+    // index, because the book is a text file somebody may have edited between
+    // saves and an index into it is a promise it never made.
+    ok = ok && gg_io_w32(io, g->slain);
+    ok = ok && gg_io_w32(io, (uint32_t)gg_quests_count());
+    for (int i = 0; ok && i < gg_quests_count() && i < GG_QUESTS_MAX; i++) {
+        char id[GG_QUEST_NAME_MAX] = { 0 };
+        SDL_strlcpy(id, gg_quest_at(i)->id, sizeof id);
+        ok = SDL_WriteIO(io, id, sizeof id) == sizeof id &&
+             gg_io_w32(io, g->quest[i]);
+    }
+    ok = ok && gg_io_w32(io, (uint32_t)g->flags);
+    for (int i = 0; ok && i < g->flags; i++)
+        ok = SDL_WriteIO(io, g->flag[i], GG_FLAG_MAX) == GG_FLAG_MAX;
+
     // Where the Avatar has just been. Without it a resumed party has no
     // footprints to follow and bunches up on the first step.
     ok = ok && gg_io_w32(io, (uint32_t)g->trailn);
@@ -330,6 +347,32 @@ bool gg_save_read(gg_game *g, const char *base, const char *name) {
     // clipped, and this file may not be ours.
     tmp.light_turns = ok ? (int)light_turns : 0;
     tmp.light_power = ok ? gg_clampi((int)light_power, 0, GG_LIGHT_MAX_RADIUS) : 0;
+
+    ok = ok && gg_io_r32(io, &tmp.slain);
+    uint32_t quests = 0;
+    ok = ok && gg_io_r32(io, &quests) && quests <= GG_QUESTS_MAX;
+    for (uint32_t i = 0; ok && i < quests; i++) {
+        char id[GG_QUEST_NAME_MAX] = { 0 };
+        uint32_t at = 0;
+        ok = SDL_ReadIO(io, id, sizeof id) == sizeof id && gg_io_r32(io, &at);
+        id[sizeof id - 1] = '\0';
+        // Matched by name, so a quest added to or moved within the book does
+        // not silently give somebody another quest's progress. One that has
+        // gone from the book takes its progress with it.
+        const int which = ok ? gg_quest_find(id) : -1;
+        if (which >= 0 && which < GG_QUESTS_MAX) {
+            const gg_quest *q = gg_quest_at(which);
+            tmp.quest[which] = (uint8_t)(at <= (uint32_t)q->stages
+                                         ? at : (uint32_t)q->stages);
+        }
+    }
+    uint32_t flags = 0;
+    ok = ok && gg_io_r32(io, &flags) && flags <= GG_FLAGS_MAX;
+    for (uint32_t i = 0; ok && i < flags; i++) {
+        ok = SDL_ReadIO(io, tmp.flag[i], GG_FLAG_MAX) == GG_FLAG_MAX;
+        tmp.flag[i][GG_FLAG_MAX - 1] = '\0';
+    }
+    tmp.flags = ok ? (int)flags : 0;
 
     uint32_t trailn = 0;
     ok = ok && gg_io_r32(io, &trailn) && trailn <= GG_TRAIL_MAX;

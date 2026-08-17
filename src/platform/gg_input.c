@@ -169,6 +169,7 @@ bool gg_input_event(gg_input *in, const SDL_Event *ev) {
         // "walk right" here, so dropping is P for "put down" and equipping is
         // R for "ready", which is what Ultima called it anyway.
         case SDL_SCANCODE_C:      in->latched = GG_ACT_CAST;  return true;
+        case SDL_SCANCODE_J:      in->latched = GG_ACT_JOURNAL; return true;
         case SDL_SCANCODE_F:      in->latched = GG_ACT_FIGHT; return true;
         case SDL_SCANCODE_G:      in->latched = GG_ACT_GET;   return true;
         case SDL_SCANCODE_I:      in->latched = GG_ACT_PACK;  return true;

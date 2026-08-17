@@ -106,6 +106,7 @@ static void die(gg_game *g, int who) {
     }
 
     gg_emit(g, GG_EV_DIE);
+    if (a->hostile) g->slain++;
     gg_log(g, "%s falls.", a->name);
 
     // Its loot table, rolled through the game's RNG so what falls is part of

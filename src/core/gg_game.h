@@ -13,6 +13,7 @@
 #include "core/gg_path.h"
 #include "core/gg_dialogue.h"
 #include "core/gg_magic.h"
+#include "core/gg_quest.h"
 
 typedef enum {
     GG_MODE_TITLE,       // title screen, before a world exists
@@ -20,6 +21,7 @@ typedef enum {
     GG_MODE_CONVERSE,    // talking to somebody
     GG_MODE_PACK,        // looking through what you carry
     GG_MODE_SPELL,       // choosing a spell to speak
+    GG_MODE_JOURNAL,     // reading what has happened so far
     GG_MODE_GAMEOVER,
 } gg_mode;
 
@@ -43,6 +45,7 @@ typedef enum {
     GG_ACT_GET,
     GG_ACT_FIGHT,
     GG_ACT_CAST,
+    GG_ACT_JOURNAL,
     GG_ACT_PACK,
     GG_ACT_USE,
     GG_ACT_EQUIP,
@@ -185,6 +188,24 @@ typedef struct {
     // from a held torch so that letting a spell lapse cannot put out a torch.
     int light_turns, light_power;
 
+    // --- the story ---------------------------------------------------------
+    // How far along each quest is: 0 for not begun, otherwise the number of
+    // stages entered. The whole of a quest's state is this one number, which
+    // is what makes it a state machine rather than a pile of bookkeeping.
+    uint8_t quest[GG_QUESTS_MAX];
+
+    // Flags raised by stages, so quests can interlock without any of them
+    // knowing about the others.
+    char flag[GG_FLAGS_MAX][GG_FLAG_MAX];
+    int  flags;
+
+    // How many have fallen to the party. A quest condition, and the only new
+    // number the story needed.
+    uint32_t slain;
+
+    // Which entry the journal is open at.
+    int journal_cursor;
+
     // Rolling message log, newest last.
     char log[GG_LOG_LINES][GG_LOG_WIDTH];
     int  logn;
@@ -295,6 +316,25 @@ void gg_conversation_refresh(gg_game *g);
 
 // Asks the word under the cursor. Does nothing outside a conversation.
 void gg_conversation_ask(gg_game *g);
+
+// --- the story -------------------------------------------------------------
+// Has this flag been raised? Case-insensitive, like every other word.
+bool gg_flag(const gg_game *g, const char *name);
+
+// Raises one. Returns false if it was already up or there is no room.
+bool gg_raise_flag(gg_game *g, const char *name);
+
+// Advances every quest as far as its conditions allow, writing journal lines
+// and raising flags as stages are entered. Called once a turn; safe to call
+// more often, because a stage is only ever entered once.
+void gg_quests_tick(gg_game *g);
+
+// How many journal lines there are, and the i'th of them. Built from the
+// quests and how far along each is, rather than stored - the state is the
+// stage number, and everything else is read out of the book.
+int gg_journal_lines(const gg_game *g);
+bool gg_journal_line(const gg_game *g, int i, const char **quest_name,
+                     const char **text, bool *done);
 
 // --- magic -----------------------------------------------------------------
 // Does the player know every rune this spell is made of? That is the whole of

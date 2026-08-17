@@ -3,6 +3,7 @@
 #include "core/gg_combat.h"
 #include "core/gg_magic.h"
 #include "core/gg_bestiary.h"
+#include "core/gg_quest.h"
 
 #include <stdarg.h>
 
@@ -188,6 +189,90 @@ void gg_conversation_ask(gg_game *g) {
             gg_log(g, "Thou canst lead no more than %d.", GG_PARTY_MAX);
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// The story
+//
+// A quest is a number: how many of its stages have been entered. Everything
+// else - what it is called, what each stage says, what has to be true to enter
+// one - is read out of the book. Only the next stage is ever tested, so a quest
+// cannot skip ahead however the world changes.
+// ---------------------------------------------------------------------------
+bool gg_flag(const gg_game *g, const char *name) {
+    if (!name || !*name) return false;
+    for (int i = 0; i < g->flags; i++)
+        if (SDL_strcasecmp(g->flag[i], name) == 0) return true;
+    return false;
+}
+
+bool gg_raise_flag(gg_game *g, const char *name) {
+    if (!name || !*name) return false;
+    if (gg_flag(g, name)) return false;
+    if (g->flags >= GG_FLAGS_MAX) return false;
+    SDL_strlcpy(g->flag[g->flags++], name, GG_FLAG_MAX);
+    return true;
+}
+
+// Whether the world is as this stage requires.
+static bool stage_ready(const gg_game *g, const gg_stage *s) {
+    switch (s->what) {
+    case GG_WHEN_ALWAYS: return true;
+    case GG_WHEN_KNOWS:  return gg_knows(g, s->word);
+    case GG_WHEN_FLAG:   return gg_flag(g, s->word);
+    case GG_WHEN_HAS:    return gg_pack_count(g, (gg_item_id)s->item) >= s->count;
+    case GG_WHEN_SLAIN:  return (int)g->slain >= s->count;
+    case GG_WHEN_PARTY:  return gg_party_size(g) >= s->count;
+    default:             return false;
+    }
+}
+
+void gg_quests_tick(gg_game *g) {
+    for (int i = 0; i < gg_quests_count() && i < GG_QUESTS_MAX; i++) {
+        const gg_quest *q = gg_quest_at(i);
+        if (!q) continue;
+
+        // As many stages as the world currently allows, but one at a time and
+        // in order - a stage that is already true when the one before it is
+        // entered follows on the same turn, which is what `when` with nothing
+        // after it is for.
+        for (int guard = 0; guard < GG_STAGES_MAX; guard++) {
+            const int at = g->quest[i];
+            if (at >= q->stages) break;
+            if (!stage_ready(g, &q->stage[at])) break;
+
+            g->quest[i] = (uint8_t)(at + 1);
+            if (q->stage[at].sets[0]) gg_raise_flag(g, q->stage[at].sets);
+            gg_emit(g, GG_EV_LEARN);
+            gg_log(g, "%s: %s", q->name, q->stage[at].journal);
+        }
+    }
+}
+
+int gg_journal_lines(const gg_game *g) {
+    int n = 0;
+    for (int i = 0; i < gg_quests_count() && i < GG_QUESTS_MAX; i++)
+        n += g->quest[i];
+    return n;
+}
+
+bool gg_journal_line(const gg_game *g, int i, const char **quest_name,
+                     const char **text, bool *done) {
+    if (i < 0) return false;
+    int at = 0;
+    for (int k = 0; k < gg_quests_count() && k < GG_QUESTS_MAX; k++) {
+        const gg_quest *q = gg_quest_at(k);
+        if (!q) continue;
+        for (int s = 0; s < g->quest[k] && s < q->stages; s++) {
+            if (at++ != i) continue;
+            if (quest_name) *quest_name = q->name;
+            if (text) *text = q->stage[s].journal;
+            // Finished when this was its last stage and nothing follows.
+            if (done) *done = (g->quest[k] >= q->stages && s == q->stages - 1);
+            return true;
+        }
+    }
+    return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -579,6 +664,11 @@ static void world_turn(gg_game *g, int minutes) {
     // Then whatever wants to kill you, in initiative order.
     gg_combat_turn(g);
 
+    // And whether any of that moved the story on. Once a turn is enough: a
+    // stage is only ever entered once, and nothing in the world changes
+    // between turns.
+    gg_quests_tick(g);
+
     const int hour = gg_game_hour(g);
     for (int i = 0; i < g->actors; i++) {
         gg_actor *a = &g->actor[i];
@@ -929,6 +1019,21 @@ void gg_game_act(gg_game *g, gg_action a) {
         return;
     }
 
+    // The journal is open. Nothing in it can be acted on - it is a record, not
+    // a menu - so the directions scroll and anything else closes it.
+    if (g->mode == GG_MODE_JOURNAL) {
+        int dx, dy;
+        if (gg_action_delta(a, &dx, &dy)) {
+            const int n = gg_journal_lines(g);
+            if (dy && n > 0)
+                g->journal_cursor = gg_clampi(g->journal_cursor + (dy > 0 ? 1 : -1),
+                                              0, n - 1);
+            return;
+        }
+        g->mode = GG_MODE_PLAY;
+        return;
+    }
+
     // The book is open: the directions run down it and choosing speaks. Only
     // spells whose runes are known are in it at all, so the list is the answer
     // to "what can I do", not a catalogue of what somebody else can.
@@ -996,6 +1101,11 @@ void gg_game_act(gg_game *g, gg_action a) {
     case GG_ACT_OPEN: do_open(g); break;
     case GG_ACT_GET:  do_get(g); break;
     case GG_ACT_FIGHT: do_fight(g); break;
+
+    case GG_ACT_JOURNAL:
+        g->mode = GG_MODE_JOURNAL;
+        g->journal_cursor = 0;
+        break;
 
     case GG_ACT_CAST: {
         const int first = gg_spell_next(g, g->spell_cursor, 1);

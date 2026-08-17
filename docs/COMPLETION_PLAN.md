@@ -191,9 +191,15 @@ that is reachable while content is C, so the editor comes before the content.
       *Verification: `gg_game.c` contains no character names — and a person
       added to the book turns up in the world, one taken out does not, and one
       with a sprite but no day is refused.*
-- [ ] **Quest and story state machine**, with flags, stages and journal entries,
-      all in data. *Verification: a two-stage quest completed, its journal
-      updated, and the state surviving a save/load.*
+- [x] **Quest and story state machine.** A quest is a list of stages; stage k
+      is entered when its condition holds, writing a journal line and possibly
+      raising a flag. The conditions are things the world already knows — a word
+      learned, something carried, a flag another stage raised, how many have
+      fallen, how many walk with you — so the story needed almost no state of
+      its own. All in `assets/quests.txt`.
+      *Verification: a two-stage quest completed, its journal updated, and the
+      state surviving a save/load — plus that a quest cannot skip a stage, and
+      that one quest's flag opens another.*
 - [ ] **World of many maps** with linked transitions, while keeping each map
       seamless internally. *Verification: walking between two authored maps
       preserves party, clock and inventory.*

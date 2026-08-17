@@ -21,9 +21,9 @@ what the brigands in the hills make of all that. Hold a torch and it lights the
 room, and the world has a voice - footfalls, blows, and a tune that follows the
 region and the hour. Every page works from a gamepad alone, naming included.
 
-**There is no story and no editor.** Those are the two that keep this an engine:
-nothing here is *about* anything yet, and none of it can be authored without a
-compiler.
+**There is no story worth the name.** The machine for one works and four small
+quests run on it, but they are a demonstration rather than a plot. That is the
+one thing still keeping this an engine.
 
 ---
 
@@ -582,6 +582,49 @@ by breaking the rule they pin — fixing notice at the global constant, never
 fleeing, and ignoring a creature's own reach — and the first of those was not
 caught until a test was added for it, which is why that one exists.*
 
+### The story
+
+A quest is a list of stages. **Stage k is entered when stage k's condition
+holds**, and entering it writes its journal line and may raise a flag. Only the
+next stage is ever tested, so a quest cannot skip ahead however the world
+changes, and the whole of a quest's state is one number: how far along it is.
+
+**The conditions are things the world already knows how to answer** — a word
+you have learned, something you are carrying, a flag another stage raised, how
+many have fallen to the party, how many walk with you. Nothing here reached into
+the simulation to invent new state, because a condition that needs its own
+bookkeeping is a condition that can go out of step with the world. The one
+number the story did need is a tally of the slain.
+
+**Flags are how quests interlock without knowing about each other.** The
+caravan's last stage raises `caravan_understood`; the brigand quest's last stage
+waits on that flag and says "It fits: the road was stopped, and these are who
+stopped it." Neither quest mentions the other.
+
+The **journal is built, not stored**: the state is the stage number, and every
+line is read back out of the book. That means editing a journal line changes
+what a saved game says, which is right — the text is content and the progress is
+state.
+
+Quests are saved **by name, not by index**, because the book is a text file
+somebody may have edited between saves and an index into it is a promise it
+never made. A quest that has gone from the book takes its progress with it
+rather than handing it to whatever moved into its slot.
+
+A first stage with no condition is **refused**: it would begin the moment a game
+did, which is a quest nobody was given. A bare `when` is allowed on any later
+stage and means "at once", which is how a stage that only writes a line is
+written.
+
+*Verification: `a_two_stage_quest_is_completed_and_remembered` (the plan's own,
+including that one loaf does not satisfy a condition wanting two, and that a
+finished quest cannot run past its end), `a_quest_cannot_skip_a_stage`,
+`one_quest_can_open_another`, `killing_things_moves_a_quest_on`,
+`a_quest_file_that_does_not_parse_loads_nothing` (nine malformed books and a
+missing one), and `the_vale_has_a_story_that_can_be_reached` — which refuses a
+quest waiting on a word nobody teaches or a flag no stage raises. Plus a
+`--shot` frame of the journal, taken in CI.*
+
 ### Magic
 
 Ultima's magic is a **language**, and this is built as one. A spell is a phrase
@@ -948,7 +991,7 @@ Named plainly, because a reader should not have to infer absence:
 
 | | |
 | --- | --- |
-| Story, quests, journal | nothing at all |
+| The story itself | the machine works and four small quests use it, but they are a demonstration rather than a plot - see the main-storyline item |
 | Combat depth | blows, initiative, reach, loot and fleeing exist; there are no skills, no criticals and three kinds of foe |
 | Magic beyond three effects | light, heal and harm. No summoning, no travel, no enchantment, no mana - reagents are the whole cost |
 | Arms | a hammer, a throwing stone and a shield. No swords: this art set has none that stand on their own |
