@@ -97,8 +97,7 @@ void gg_screens_ready(gg_screens *s);
 // page cycles a value rather than opening a sub-menu, which for five options
 // is fewer keystrokes and one less screen to get lost in.
 gg_screen_result gg_screens_choose(gg_screens *s, const char *base,
-                                   gg_settings *set, const gg_game *g,
-                                   bool have_game);
+                                   gg_settings *set, bool have_game);
 
 // Backing out of the screen - Escape, or B on a pad.
 gg_screen_result gg_screens_back(gg_screens *s);

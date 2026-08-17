@@ -259,8 +259,7 @@ void gg_screens_adjust(gg_screens *s, int dir, gg_settings *set) {
 }
 
 gg_screen_result gg_screens_choose(gg_screens *s, const char *base,
-                                   gg_settings *set, const gg_game *g,
-                                   bool have_game) {
+                                   gg_settings *set, bool have_game) {
     const int row = gg_menu_chosen(&s->menu);
 
     switch (s->id) {

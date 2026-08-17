@@ -16,10 +16,16 @@ function(gg_configure target)
             target_compile_options(${target} PRIVATE /WX)
         endif()
     else()
+        # -Wunused-parameter is deliberately NOT suppressed. It used to be, and
+        # the asymmetry cost a red Windows build: MSVC's /W4 includes C4100 and
+        # /WX makes it fatal, so a dead parameter compiled clean on every
+        # developer machine and failed only in CI, on the one platform nobody
+        # builds locally. The warning sets have to agree, or the strictest one
+        # is really a remote lint nobody can run.
         target_compile_options(${target} PRIVATE
             -Wall -Wextra -Wshadow -Wconversion -Wsign-conversion
             -Wpointer-arith -Wstrict-prototypes -Wmissing-prototypes
-            -Wno-unused-parameter)
+            -Wunused-parameter)
         if(GIGANTIMA_WERROR)
             target_compile_options(${target} PRIVATE -Werror)
         endif()

@@ -324,7 +324,7 @@ static void the_title_screen_offers_continue_only_when_there_is_one(void) {
     CHECK(s.menu.cursor == 0,
           "Continue should be pre-selected: it is what a returning player wants");
 
-    const gg_screen_result r = gg_screens_choose(&s, base, &set, &g, true);
+    const gg_screen_result r = gg_screens_choose(&s, base, &set, true);
     CHECK(r.action == GG_ACTION_CONTINUE, "choosing Continue did not continue");
     CHECK(SDL_strcmp(r.name, "Screens") == 0,
           "Continue named '%s' rather than the saved profile", r.name);
@@ -348,20 +348,20 @@ static void naming_a_journey_refuses_a_bad_or_taken_name(void) {
     gg_screens_enter(&s, GG_SCREEN_NAME, base, &set, &g, true);
 
     // Empty.
-    gg_screen_result r = gg_screens_choose(&s, base, &set, &g, true);
+    gg_screen_result r = gg_screens_choose(&s, base, &set, true);
     CHECK(r.action == GG_ACTION_NONE, "an empty name was accepted");
     CHECK(s.notice[0] != '\0', "an empty name was refused without saying why");
 
     // Already taken - the one that would otherwise quietly overwrite a game.
     for (const char *c = "Taken"; *c; c++) gg_screens_type(&s, *c);
-    r = gg_screens_choose(&s, base, &set, &g, true);
+    r = gg_screens_choose(&s, base, &set, true);
     CHECK(r.action == GG_ACTION_NONE, "a name already in use was accepted");
     CHECK(s.notice[0] != '\0', "a taken name was refused without saying why");
 
     // Backspace back to something free.
     for (int i = 0; i < 5; i++) gg_screens_type(&s, '\b');
     for (const char *c = "Fresh"; *c; c++) gg_screens_type(&s, *c);
-    r = gg_screens_choose(&s, base, &set, &g, true);
+    r = gg_screens_choose(&s, base, &set, true);
     CHECK(r.action == GG_ACTION_NEW_GAME, "a free name was not accepted");
     CHECK(SDL_strcmp(r.name, "Fresh") == 0, "the name came through as '%s'", r.name);
 
@@ -386,26 +386,26 @@ static void forgetting_a_journey_takes_two_steps(void) {
 
     // Choosing a profile normally continues it.
     gg_menu_select(&s.menu, 0);
-    gg_screen_result r = gg_screens_choose(&s, base, &set, &g, true);
+    gg_screen_result r = gg_screens_choose(&s, base, &set, true);
     CHECK(r.action == GG_ACTION_CONTINUE, "choosing a journey did not continue it");
 
     // Arming "forget", then choosing, deletes. One keypress must never be
     // enough to destroy somebody's game.
     gg_screens_enter(&s, GG_SCREEN_PROFILES, base, &set, &g, true);
     gg_menu_select(&s.menu, s.profile_count + 1);       // "Forget a journey"
-    r = gg_screens_choose(&s, base, &set, &g, true);
+    r = gg_screens_choose(&s, base, &set, true);
     CHECK(r.action == GG_ACTION_NONE, "arming the delete deleted something");
     CHECK(s.confirming_delete, "the delete was not armed");
     CHECK(s.notice[0] != '\0', "the armed state is not shown to the player");
 
     gg_menu_select(&s.menu, 0);
-    r = gg_screens_choose(&s, base, &set, &g, true);
+    r = gg_screens_choose(&s, base, &set, true);
     CHECK(r.action == GG_ACTION_DELETE, "the armed delete did not fire");
 
     // And backing out disarms it rather than leaving a loaded gun.
     gg_screens_enter(&s, GG_SCREEN_PROFILES, base, &set, &g, true);
     gg_menu_select(&s.menu, s.profile_count + 1);
-    gg_screens_choose(&s, base, &set, &g, true);
+    gg_screens_choose(&s, base, &set, true);
     gg_screens_back(&s);
     CHECK(!s.confirming_delete, "backing out left the delete armed");
 
@@ -441,7 +441,7 @@ static void every_screen_can_be_left(void) {
     SDL_zero(s);
     gg_screens_enter(&s, GG_SCREEN_PAUSE, base, &set, &g, true);
     gg_menu_select(&s.menu, 0);
-    const gg_screen_result r = gg_screens_choose(&s, base, &set, &g, true);
+    const gg_screen_result r = gg_screens_choose(&s, base, &set, true);
     CHECK(r.action == GG_ACTION_GO && r.next == GG_SCREEN_PLAY,
           "the first row of the pause menu does not resume");
 
@@ -464,14 +464,14 @@ static void the_options_page_cycles_its_values(void) {
     // end a player has to back out of.
     gg_menu_select(&s.menu, 0);
     const int start = set.scale;
-    for (int i = 0; i < 4; i++) gg_screens_choose(&s, base, &set, &g, true);
+    for (int i = 0; i < 4; i++) gg_screens_choose(&s, base, &set, true);
     CHECK(set.scale == start, "cycling window size four times did not return: %d",
           set.scale);
     CHECK(set.scale >= 1 && set.scale <= 4, "window size left its range: %d", set.scale);
 
     gg_menu_select(&s.menu, 1);
     const bool fs = set.fullscreen;
-    gg_screens_choose(&s, base, &set, &g, true);
+    gg_screens_choose(&s, base, &set, true);
     CHECK(set.fullscreen != fs, "fullscreen did not toggle");
 
     // The disabled sound rows must not be reachable, or a player lands on a
@@ -525,7 +525,7 @@ static void every_screen_is_reachable_by_directions_alone(void) {
         CHECK(menu_reach(&s, WAYS[i].row),
               "the title's '%s' row cannot be reached with directions", WAYS[i].row);
 
-        const gg_screen_result r = gg_screens_choose(&s, base, &set, &g, true);
+        const gg_screen_result r = gg_screens_choose(&s, base, &set, true);
         CHECK(r.action == GG_ACTION_GO && r.next == WAYS[i].lands,
               "'%s' led to %d rather than %d", WAYS[i].row, (int)r.next,
               (int)WAYS[i].lands);
@@ -536,7 +536,7 @@ static void every_screen_is_reachable_by_directions_alone(void) {
     // GO - the frontend has a save to load first.
     gg_screens_enter(&s, GG_SCREEN_TITLE, base, &set, &g, true);
     CHECK(menu_reach(&s, "Continue"), "'Continue' cannot be reached with directions");
-    const gg_screen_result cont = gg_screens_choose(&s, base, &set, &g, true);
+    const gg_screen_result cont = gg_screens_choose(&s, base, &set, true);
     CHECK(cont.action == GG_ACTION_CONTINUE, "'Continue' did not continue");
     CHECK(cont.name[0] != '\0', "'Continue' named no journey to continue");
     seen[GG_SCREEN_PLAY] = true;
@@ -587,7 +587,7 @@ static void the_options_page_returns_where_it_came_from(void) {
     gg_screens_enter(&s, GG_SCREEN_PAUSE, base, &set, &g, true);
     gg_screens_enter(&s, GG_SCREEN_OPTIONS, base, &set, &g, true);
     gg_menu_select(&s.menu, s.menu.n - 1);            // the "Back" row
-    r = gg_screens_choose(&s, base, &set, &g, true);
+    r = gg_screens_choose(&s, base, &set, true);
     CHECK(r.action == GG_ACTION_GO && r.next == GG_SCREEN_PAUSE,
           "the Back row abandoned a paused game (went to %d)", (int)r.next);
 
@@ -669,7 +669,7 @@ static void a_journey_can_be_named_with_directions_alone(void) {
     // Untouched, the alphabet is out of the way and choosing means "begin" -
     // so the keyboard flow is exactly what it was before the grid existed.
     CHECK(s.key_row < 0, "the alphabet started with a cursor on it");
-    gg_screen_result r = gg_screens_choose(&s, base, &set, &g, true);
+    gg_screen_result r = gg_screens_choose(&s, base, &set, true);
     CHECK(r.action == GG_ACTION_NONE, "an empty name was accepted");
 
     // The first direction lands on the first letter, whichever way it was.
@@ -678,7 +678,7 @@ static void a_journey_can_be_named_with_directions_alone(void) {
           s.key_row, s.key_col);
 
     // Choosing on the grid types rather than beginning.
-    r = gg_screens_choose(&s, base, &set, &g, true);
+    r = gg_screens_choose(&s, base, &set, true);
     CHECK(r.action == GG_ACTION_NONE, "choosing a letter began the journey");
     CHECK(SDL_strcmp(s.typed, "A") == 0, "typing 'A' gave '%s'", s.typed);
 
@@ -696,26 +696,26 @@ static void a_journey_can_be_named_with_directions_alone(void) {
     CHECK(s.typed[0] == '\0', "backspacing did not clear the name");
 
     gg_screens_move(&s, 1, 0);           // A -> B
-    gg_screens_choose(&s, base, &set, &g, true);
+    gg_screens_choose(&s, base, &set, true);
     gg_screens_move(&s, -1, 0);          // B -> A
-    gg_screens_choose(&s, base, &set, &g, true);
+    gg_screens_choose(&s, base, &set, true);
     gg_screens_move(&s, 1, 0);
     gg_screens_move(&s, 1, 0);
     gg_screens_move(&s, 1, 0);           // A -> D
-    gg_screens_choose(&s, base, &set, &g, true);
+    gg_screens_choose(&s, base, &set, true);
     CHECK(SDL_strcmp(s.typed, "BAD") == 0, "the alphabet spelled '%s'", s.typed);
 
     // Down past the last row reaches the two wide keys. Coming down from the
     // left of the grid lands on "Rub out", which must rub out and nothing more.
     for (int i = 0; i < 6; i++) gg_screens_move(&s, 0, 1);
-    r = gg_screens_choose(&s, base, &set, &g, true);
+    r = gg_screens_choose(&s, base, &set, true);
     CHECK(r.action == GG_ACTION_NONE, "Rub out began the journey");
     CHECK(SDL_strcmp(s.typed, "BA") == 0, "Rub out left '%s'", s.typed);
 
     // Its neighbour is "Begin", and choosing there starts the journey.
     gg_screens_move(&s, 1, 0);
     for (const char *c = "D"; *c; c++) gg_screens_type(&s, *c);
-    r = gg_screens_choose(&s, base, &set, &g, true);
+    r = gg_screens_choose(&s, base, &set, true);
     CHECK(r.action == GG_ACTION_NEW_GAME, "Begin did not begin");
     CHECK(SDL_strcmp(r.name, "BAD") == 0, "the pad-typed name came through as '%s'",
           r.name);
@@ -726,7 +726,7 @@ static void a_journey_can_be_named_with_directions_alone(void) {
     gg_screens_move(&s, 0, 1);
     gg_screens_move(&s, 1, 0);
     gg_screens_ready(&s);
-    r = gg_screens_choose(&s, base, &set, &g, true);
+    r = gg_screens_choose(&s, base, &set, true);
     CHECK(r.action == GG_ACTION_NEW_GAME, "Start did not accept the name");
     CHECK(SDL_strcmp(r.name, "Padded") == 0, "Start gave '%s'", r.name);
 
@@ -740,7 +740,7 @@ static void a_journey_can_be_named_with_directions_alone(void) {
             s.key_row = row;
             s.key_col = col;
             s.typed[0] = '\0';
-            gg_screens_choose(&s, base, &set, &g, true);
+            gg_screens_choose(&s, base, &set, true);
             CHECK(s.typed[0] != '\0', "the key at %d,%d typed nothing", row, col);
             // Probed in the middle of a name: a space is a legal character but
             // not a legal first or last one, and that rule is about position,

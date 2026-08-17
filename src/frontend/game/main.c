@@ -578,8 +578,7 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
             case SDL_SCANCODE_RETURN: case SDL_SCANCODE_KP_ENTER:
                 if (event->key.mod & SDL_KMOD_ALT) { toggle_fullscreen(app); break; }
                 if (!screen_act(app, gg_screens_choose(&app->screens,
-                        gg_pref_path(), &app->settings, &app->game,
-                        app->have_game)))
+                        gg_pref_path(), &app->settings, app->have_game)))
                     return SDL_APP_SUCCESS;
                 return SDL_APP_CONTINUE;
             case SDL_SCANCODE_ESCAPE:
@@ -646,7 +645,9 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
 //
 // Returns false when the application should exit.
 static bool pad_menu(gg_app *app) {
-    switch (gg_input_nav(&app->in)) {
+    const gg_nav nav = gg_input_nav(&app->in);
+
+    switch (nav) {
     case GG_NAV_UP:     screen_nav(app, 0, -1); break;
     case GG_NAV_DOWN:   screen_nav(app, 0, 1);  break;
     case GG_NAV_LEFT:   screen_nav(app, -1, 0); break;
@@ -654,14 +655,13 @@ static bool pad_menu(gg_app *app) {
     case GG_NAV_ERASE:  gg_screens_type(&app->screens, '\b'); break;
 
     case GG_NAV_ACCEPT:
-        // Start finishes whatever is being composed. On the naming screen that
-        // means the name, wherever the alphabet cursor is sitting.
-        gg_screens_ready(&app->screens);
-        [[fallthrough]];
     case GG_NAV_CHOOSE:
+        // Both choose; they differ only on the naming screen, where A types the
+        // letter under the cursor and Start means "that is the name", wherever
+        // in the alphabet the cursor happens to be sitting.
+        if (nav == GG_NAV_ACCEPT) gg_screens_ready(&app->screens);
         return screen_act(app, gg_screens_choose(&app->screens, gg_pref_path(),
-                                                 &app->settings, &app->game,
-                                                 app->have_game));
+                                                 &app->settings, app->have_game));
     case GG_NAV_BACK:
         return screen_act(app, gg_screens_back(&app->screens));
 
