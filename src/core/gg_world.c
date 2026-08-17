@@ -17,6 +17,10 @@ const gg_terrain_def GG_TERRAIN[GG_TILE_COUNT] = {
     [GG_TILE_WATER_DEEP] = { "deep water", false, true,  0 },
     [GG_TILE_MOUNTAIN]   = { "mountain",   false, false, 0 },
     [GG_TILE_CLIFF]      = { "cliff",      false, false, 0 },
+    // Interiors. The floor is walkable; the wall is not, though a building's
+    // walls are also flagged GG_CELL_BLOCKED, so this is belt and braces.
+    [GG_TILE_FLOOR_WOOD] = { "a wooden floor", true,  false, 0 },
+    [GG_TILE_WALL_BRICK] = { "a brick wall",   false, false, 0 },
 };
 
 // ---------------------------------------------------------------------------
@@ -119,7 +123,21 @@ bool gg_map_place_prop(gg_map *m, int x, int y, gg_prop_id p) {
     for (int cy = y0; cy <= y1; cy++) {
         for (int cx = x0; cx <= x1; cx++) {
             gg_cell *c = gg_map_at(m, cx, cy);
-            c->flags |= GG_CELL_BLOCKED;
+
+            // A hollow prop is a building: its footprint is walls around a
+            // room, not a solid block. The room is walkable *always* - only
+            // the roof is hidden when you step in, so collision never changes
+            // with the camera or with where the player happens to be.
+            const bool wall = !s->hollow ||
+                              cx == x0 || cx == x1 || cy == y0 || cy == y1;
+            if (wall) {
+                c->flags |= GG_CELL_BLOCKED;
+                if (s->hollow) c->terrain = GG_TILE_WALL_BRICK;
+            } else {
+                c->flags |= GG_CELL_INDOORS;
+                c->terrain = GG_TILE_FLOOR_WOOD;
+            }
+            c->flags &= (uint8_t)~GG_CELL_WATER;
         }
     }
 
@@ -135,9 +153,26 @@ bool gg_map_place_prop(gg_map *m, int x, int y, gg_prop_id p) {
             // simulation can tell it apart from open ground.
             d->flags &= (uint8_t)~GG_CELL_BLOCKED;
             d->flags |= GG_CELL_DOOR;
+            if (s->hollow) d->terrain = GG_TILE_FLOOR_WOOD;
         }
     }
     return true;
+}
+
+bool gg_prop_interior(gg_prop_id p, int x, int y,
+                      int *x0, int *y0, int *x1, int *y1) {
+    if (!GG_PROP_SIZE[p].hollow) return false;
+
+    // The room is the footprint inset by its walls.
+    gg_prop_footprint(p, x, y, x0, y0, x1, y1);
+    (*x0)++; (*y0)++; (*x1)--; (*y1)--;
+    return *x0 <= *x1 && *y0 <= *y1;
+}
+
+bool gg_prop_interior_contains(gg_prop_id p, int ax, int ay, int x, int y) {
+    int x0, y0, x1, y1;
+    if (!gg_prop_interior(p, ax, ay, &x0, &y0, &x1, &y1)) return false;
+    return x >= x0 && x <= x1 && y >= y0 && y <= y1;
 }
 
 // ---------------------------------------------------------------------------
@@ -345,6 +380,32 @@ static const gg_prop_id HOUSE_KINDS[] = {
     GG_PROP_HOUSE_BRICK_A, GG_PROP_HOUSE_BRICK_B, GG_PROP_HOUSE_PANELED,
 };
 
+// A few things in the room, so stepping inside is worth doing. Kept away from
+// the column the door is in: furniture there would block the way in, and a
+// house you cannot enter is worse than one that is bare.
+static void furnish(gg_map *m, gg_rng *rng, gg_prop_id house, int hx, int hy) {
+    static const gg_prop_id STUFF[] = {
+        GG_PROP_BARREL, GG_PROP_CRATE, GG_PROP_TABLE,
+    };
+
+    int rx0, ry0, rx1, ry1;
+    if (!gg_prop_interior(house, hx, hy, &rx0, &ry0, &rx1, &ry1)) return;
+
+    int fx0, fy0, fx1, fy1;
+    gg_prop_footprint(house, hx, hy, &fx0, &fy0, &fx1, &fy1);
+    const int door_col = fx0 + GG_PROP_SIZE[house].door_dx;
+
+    const int want = gg_rand_range(rng, 1, 3);
+    for (int i = 0; i < want; i++) {
+        const int x = gg_rand_range(rng, rx0, rx1);
+        const int y = gg_rand_range(rng, ry0, ry1);
+        if (x == door_col) continue;
+        // Placement refuses if the cell is taken, so a collision just means
+        // one fewer item rather than a stack of them.
+        gg_map_place_prop(m, x, y, STUFF[gg_rand_belowi(rng, (int)GG_COUNTOF(STUFF))]);
+    }
+}
+
 // Puts a house down with its anchor at (x, y), and lays a patch of trodden
 // ground in front of the door so the entrance reads from a distance. Returns
 // false if it would not fit, leaving the map untouched.
@@ -358,12 +419,14 @@ static bool build_house(gg_map *m, gg_rng *rng, int x, int y) {
 
     if (s->door_dx != GG_NO_DOOR) {
         const int dx = x0 + s->door_dx;
-        for (int j = 0; j <= 1; j++) {
+        for (int j = 1; j <= 2; j++) {
             gg_cell *c = gg_map_at(m, dx, y1 + j);
             if (c && !(c->flags & GG_CELL_BLOCKED) && !(c->flags & GG_CELL_WATER))
                 c->terrain = GG_TILE_DIRT;
         }
     }
+
+    furnish(m, rng, kind, x, y);
     return true;
 }
 

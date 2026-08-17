@@ -228,10 +228,25 @@ two cannot disagree. `gg_map_place_prop` is the single implementation of
 The terrain table no longer carries masonry: `GG_TILE_MOUNTAIN` used to stand
 in for a wall.
 
-**You cannot go inside.** A door is walkable and flagged, and it opens onto a
-wall. Interiors need a design decision first — Ultima VI omitted roofs entirely
-and showed every interior, whereas these sprites are facades that would need a
-roof cutaway. Named in the plan with both options.
+**You can go inside.** The footprint is the *whole* building, roof depth
+included, because that depth is the room: a house drawn in three-quarter view
+shows its front wall along the bottom and its roof over the space behind, and
+that space is the interior. The perimeter becomes brick wall, the inside a
+wood floor flagged `GG_CELL_INDOORS`, and the door a hole in the front wall.
+Rooms are furnished with barrels, crates and tables, kept clear of the door
+column.
+
+The cutaway is the whole mechanism: **the room is walkable at all times, and
+only the roof is hidden** when the player is inside it. Nothing about collision
+depends on where the player or the camera is, so walking out of a house can
+never put them in a wall. Skipping the sprite is all the renderer does — the
+floor and walls beneath are ordinary terrain, already drawn.
+
+One bug worth recording: the panelled house's door was in a *corner* column of
+its footprint, so stepping through it landed in the side wall rather than the
+room. It looked perfectly correct from outside and was only found by walking
+through it in a screenshot. The baker now refuses a door outside
+`1 .. foot_w-2` for any building.
 
 *Verification: `a_placed_building_blocks_its_whole_footprint`,
 `a_buildings_doorway_is_walkable` (all three kinds),
@@ -329,9 +344,9 @@ Deliberate, documented, with the cost to close:
   per-turn budget.
 - **Whole-view light quad.** Ignores `GG_CELL_INDOORS` and light sources.
   Closing it needs a light model — emitters, radius, and a per-tile blend.
-- **`GG_CELL_INDOORS` is now set by nothing.** It was set on the old
-  rectangles' interiors; buildings have no interior to be inside yet, so the
-  flag is declared and unused until they do.
+- **`GG_CELL_INDOORS` is set but not yet read.** Building interiors carry it;
+  the lighting pass does not consult it, so a room is as dark at night as the
+  street. That is the light-sources plan item.
 - **Roads stop at water** rather than bridging it. Paving the water was what
   put a brown causeway across the middle of the lake; a bridge prop is the
   proper fix.

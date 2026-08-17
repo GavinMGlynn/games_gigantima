@@ -378,6 +378,17 @@ void gg_render_world(const gg_game *g, SDL_Renderer *ren) {
             const gg_rect *r = &GG_PROP_RECT[id];
             const gg_prop_size *s = &GG_PROP_SIZE[id];
 
+            // The cutaway. A building is drawn as a whole house seen from
+            // outside; step through its door and the roof comes off, showing
+            // the room that was walkable all along. Skipping the sprite is the
+            // entire mechanism - the floor and walls beneath it are ordinary
+            // terrain, already drawn by the pass above.
+            if (s->hollow &&
+                gg_prop_interior_contains(id, wx, wy,
+                                          gg_player_const(g)->x,
+                                          gg_player_const(g)->y))
+                continue;
+
             // The sprite is placed so its anchor cell - the footprint's bottom
             // centre - lands on the map cell the prop occupies. For a tree
             // that is the trunk; for a house it is the middle of the front

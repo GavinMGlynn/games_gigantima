@@ -189,7 +189,11 @@ static void loading_a_file_that_is_not_a_map_fails_cleanly(void) {
 // ---------------------------------------------------------------------------
 // Buildings
 // ---------------------------------------------------------------------------
-static void a_placed_building_blocks_its_whole_footprint(void) {
+static void a_buildings_walls_block_but_its_room_does_not(void) {
+    // The contract that makes the cutaway safe: a building's *walls* block and
+    // its *room* does not, always, whatever is being drawn. Nothing about
+    // collision may depend on where the player is standing, or walking out of
+    // a house could put them inside a wall.
     gg_map m;
     CHECK(gg_map_alloc(&m, 24, 24), "alloc failed");
     for (int i = 0; i < 24 * 24; i++) m.cell[i].terrain = GG_TILE_GRASS;
@@ -202,12 +206,52 @@ static void a_placed_building_blocks_its_whole_footprint(void) {
     const gg_prop_size *s = &GG_PROP_SIZE[house];
     const int door_x = x0 + s->door_dx;
 
+    int rx0, ry0, rx1, ry1;
+    CHECK(gg_prop_interior(house, 12, 12, &rx0, &ry0, &rx1, &ry1),
+          "a house should have a room");
+
     for (int y = y0; y <= y1; y++)
         for (int x = x0; x <= x1; x++) {
-            if (x == door_x && y == y1) continue;    // the doorway
-            CHECK(!gg_map_walkable(&m, x, y),
-                  "the wall at %d,%d is walkable", x, y);
+            const bool inside = x >= rx0 && x <= rx1 && y >= ry0 && y <= ry1;
+            if (x == door_x && y == y1) {
+                CHECK(gg_map_walkable(&m, x, y), "the doorway is blocked");
+            } else if (inside) {
+                CHECK(gg_map_walkable(&m, x, y),
+                      "the room at %d,%d is blocked", x, y);
+                CHECK(gg_map_at_const(&m, x, y)->flags & GG_CELL_INDOORS,
+                      "the room at %d,%d is not flagged indoors", x, y);
+            } else {
+                CHECK(!gg_map_walkable(&m, x, y),
+                      "the wall at %d,%d is walkable", x, y);
+            }
         }
+    gg_map_free(&m);
+}
+
+static void a_building_can_be_walked_into_and_out_of(void) {
+    // End to end, through the simulation rather than around it: stand on the
+    // street below the door, walk north twice, and be inside; walk back and be
+    // out. This is the test that would have caught a doorway opening onto a
+    // wall, which is what the exteriors-only version had.
+    gg_map m;
+    CHECK(gg_map_alloc(&m, 24, 24), "alloc failed");
+    for (int i = 0; i < 24 * 24; i++) m.cell[i].terrain = GG_TILE_GRASS;
+
+    const gg_prop_id house = GG_PROP_HOUSE_BRICK_A;
+    CHECK(gg_map_place_prop(&m, 12, 16, house), "placement failed");
+
+    int x0, y0, x1, y1;
+    gg_prop_footprint(house, 12, 16, &x0, &y0, &x1, &y1);
+    const int door_x = x0 + GG_PROP_SIZE[house].door_dx;
+
+    CHECK(gg_map_walkable(&m, door_x, y1 + 1), "the street outside is blocked");
+    CHECK(gg_map_walkable(&m, door_x, y1), "the doorway is blocked");
+    CHECK(gg_map_walkable(&m, door_x, y1 - 1),
+          "the doorway opens onto a wall - you cannot get in");
+    CHECK(gg_prop_interior_contains(house, 12, 16, door_x, y1 - 1),
+          "one step past the door should be inside the room");
+    CHECK(!gg_prop_interior_contains(house, 12, 16, door_x, y1 + 1),
+          "the street should not count as inside");
     gg_map_free(&m);
 }
 
@@ -237,6 +281,15 @@ static void a_buildings_doorway_is_walkable(void) {
               "house %zu: the doorway at %d,%d is not walkable", i, dx, y1);
         CHECK(gg_map_at_const(&n, dx, y1)->flags & GG_CELL_DOOR,
               "house %zu: the doorway is not flagged as one", i);
+
+        // Every door must open into the room, not along a side wall. The
+        // panelled house's door was in a corner column: it looked right from
+        // outside and put you in the wall when you stepped through, which only
+        // showed up in a screenshot.
+        CHECK(gg_map_walkable(&n, dx, y1 - 1),
+              "house %zu: the doorway at %d,%d opens onto a wall", i, dx, y1);
+        CHECK(gg_prop_interior_contains(HOUSES[i], 12, 12, dx, y1 - 1),
+              "house %zu: one step past the door is not inside the room", i);
         gg_map_free(&n);
     }
     gg_map_free(&m);
@@ -305,18 +358,24 @@ static void the_generated_town_has_buildings_with_reachable_doors(void) {
         gg_map m;
         CHECK(gg_map_generate(&m, 160, 140, seed), "generate failed");
 
-        int doors = 0, reachable = 0;
+        int doors = 0, from_street = 0, into_room = 0;
         for (int y = 0; y < m.h; y++)
             for (int x = 0; x < m.w; x++) {
                 if (!(gg_map_at_const(&m, x, y)->flags & GG_CELL_DOOR)) continue;
                 doors++;
-                // The cell below a door is the street it opens onto.
-                if (gg_map_walkable(&m, x, y + 1)) reachable++;
+                // Below a door is the street it opens onto; above is the room.
+                // The second is the one furniture could block, since it is
+                // scattered into the room after the house is placed.
+                if (gg_map_walkable(&m, x, y + 1)) from_street++;
+                if (gg_map_walkable(&m, x, y - 1)) into_room++;
             }
         CHECK(doors > 0, "seed %u produced a town with no doors at all", seed);
-        CHECK(reachable == doors,
-              "seed %u: %d of %d doors open onto something blocked",
-              seed, doors - reachable, doors);
+        CHECK(from_street == doors,
+              "seed %u: %d of %d doors cannot be reached from the street",
+              seed, doors - from_street, doors);
+        CHECK(into_room == doors,
+              "seed %u: %d of %d doors are blocked from the inside - furniture "
+              "landed in the doorway", seed, doors - into_room, doors);
         gg_map_free(&m);
     }
 }
@@ -920,7 +979,8 @@ int main(void) {
     RUN(a_saved_map_reloads_byte_for_byte);
     RUN(loading_a_file_that_is_not_a_map_fails_cleanly);
 
-    RUN(a_placed_building_blocks_its_whole_footprint);
+    RUN(a_buildings_walls_block_but_its_room_does_not);
+    RUN(a_building_can_be_walked_into_and_out_of);
     RUN(a_buildings_doorway_is_walkable);
     RUN(you_can_walk_behind_a_building);
     RUN(a_building_that_does_not_fit_changes_nothing);

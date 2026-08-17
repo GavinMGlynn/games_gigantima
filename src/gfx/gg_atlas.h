@@ -27,6 +27,8 @@ static const gg_rect GG_TILE_RECT[GG_TILE_COUNT] = {
     [GG_TILE_WATER_DEEP] = {   32,   32,  32,  32 },
     [GG_TILE_MOUNTAIN] = {   64,   32,  32,  32 },
     [GG_TILE_CLIFF] = {   96,   32,  32,  32 },
+    [GG_TILE_FLOOR_WOOD] = {  128,   32,  32,  32 },
+    [GG_TILE_WALL_BRICK] = {  160,   32,  32,  32 },
 };
 
 static const gg_rect GG_PROP_RECT[GG_PROP_COUNT] = {
@@ -44,9 +46,12 @@ static const gg_rect GG_PROP_RECT[GG_PROP_COUNT] = {
     [GG_PROP_FERN] = {   96,  160,  32,  64 },
     [GG_PROP_LILYPAD] = {  128,  160,  32,  32 },
     [GG_PROP_CATTAILS] = {  160,  160,  32,  64 },
-    [GG_PROP_HOUSE_BRICK_A] = {  192,  160, 256, 224 },
-    [GG_PROP_HOUSE_BRICK_B] = {  448,  160, 192, 192 },
-    [GG_PROP_HOUSE_PANELED] = {    0,  384, 160, 160 },
+    [GG_PROP_BARREL] = {  192,  160,  32,  64 },
+    [GG_PROP_CRATE] = {  224,  160,  32,  32 },
+    [GG_PROP_TABLE] = {  256,  160,  32,  32 },
+    [GG_PROP_HOUSE_BRICK_A] = {  288,  160, 256, 224 },
+    [GG_PROP_HOUSE_BRICK_B] = {    0,  384, 192, 192 },
+    [GG_PROP_HOUSE_PANELED] = {  192,  384, 160, 160 },
 };
 
 #define GG_ACTOR_FRAME   64

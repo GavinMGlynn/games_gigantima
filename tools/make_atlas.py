@@ -56,6 +56,8 @@ TERRAIN = "Terrain/terrain_summer.png"
 CLIFF = "Terrain/cliff_summer.png"
 SOIL = "Terrain/tilled_soil.png"
 GRIT = "Structure/Floor/Gritty Dirt.png"
+WOOD = "Structure/Floor/Wood Floor A.png"
+BRICK = "Structure/Walls/Brick Wall A.png"
 
 TILES = [
     # name              sheet      col row
@@ -71,6 +73,10 @@ TILES = [
     ("WATER_DEEP",      TERRAIN,     1, 24),
     ("MOUNTAIN",        CLIFF,       1,  1),
     ("CLIFF",           CLIFF,       3,  3),
+    # Interiors. Both tile cleanly left-to-right; their vertical seam is a
+    # plank joint and a brick course, which is what those surfaces look like.
+    ("FLOOR_WOOD",      WOOD,        1,  1),
+    ("WALL_BRICK",      BRICK,       1,  1),
 ]
 
 
@@ -121,11 +127,12 @@ EDGES = [
 TREES = "Terrain/trees_summer.png"
 PLANTS = "Terrain/plants_summer.png"
 HOUSES = "Structure/Structures"
+FURN = "Objects/Furniture"
 
 NO_DOOR = 255
 
 
-def prop(name, sheet, col, row, w, h, foot=None, door=NO_DOOR):
+def prop(name, sheet, col, row, w, h, foot=None, door=NO_DOOR, hollow=False):
     """One prop.
 
     `foot` is the footprint within the sprite as (x, y, w, h) in tiles - the
@@ -139,10 +146,14 @@ def prop(name, sheet, col, row, w, h, foot=None, door=NO_DOOR):
 
     `door` is a column offset within the footprint, on its bottom row. That
     cell is left walkable and flagged as a door.
+
+    `hollow` marks a building: its footprint is walls around a walkable
+    interior rather than a solid block, so the player can go in. The roof is
+    hidden while they are inside - see gg_render.c.
     """
     if foot is None:
         foot = ((w - 1) // 2, h - 1, 1, 1)
-    return (name, sheet, col, row, w, h, foot, door)
+    return (name, sheet, col, row, w, h, foot, door, hollow)
 
 
 PROPS = [
@@ -164,16 +175,28 @@ PROPS = [
     # Buildings. Each is its own file rather than a cell of a sheet, so the
     # column and row are zero and the whole image is the sprite.
     #
-    # The footprints were read off a magnified render with a tile grid over it,
-    # not guessed: for Brick House A the brick wall runs cols 1-6 of 8 and rows
-    # 3-5 of 7, the slate roof overhangs the three rows above it, and the door
-    # is the dark opening in column 2 with the stone step below it.
+    # The footprint is the *whole* building, roof depth included, because that
+    # depth is the room: a house drawn in three-quarter view shows its front
+    # wall along the bottom and its roof over the space behind, and that space
+    # is where the interior goes. The footprint's perimeter becomes walls and
+    # its inside becomes floor.
+    #
+    # Read off a magnified render with a tile grid over it, not guessed: for
+    # Brick House A the brick wall runs cols 1-6 of 8, the slate roof covers
+    # the rows above it, and the door is the dark opening in column 2.
+    # Furnishings. Small enough for a three-tile room, and each stands on one
+    # tile. Chest.png is deliberately absent: it is a palette PNG with no
+    # transparency, so it would draw as a solid square.
+    prop("BARREL",       f"{FURN}/Barrel.png",     0, 0, 1, 2),
+    prop("CRATE",        f"{FURN}/Crate.png",      0, 0, 1, 1),
+    prop("TABLE",        f"{FURN}/End Table.png",  0, 0, 1, 1),
+
     prop("HOUSE_BRICK_A",  f"{HOUSES}/Brick House A.png",   0, 0, 8, 7,
-         foot=(1, 3, 6, 3), door=1),
+         foot=(1, 0, 6, 6), door=1, hollow=True),
     prop("HOUSE_BRICK_B",  f"{HOUSES}/Brick House B.png",   0, 0, 6, 6,
-         foot=(1, 3, 4, 3), door=2),
+         foot=(1, 0, 4, 6), door=2, hollow=True),
     prop("HOUSE_PANELED",  f"{HOUSES}/Paneled House A.png", 0, 0, 5, 5,
-         foot=(0, 2, 5, 3), door=4),
+         foot=(0, 0, 5, 5), door=3, hollow=True),
 ]
 
 
@@ -544,7 +567,7 @@ def build_props():
     packer = Shelf(640)
     entries = []
     cache = {}
-    for name, rel, c, r, wt, ht, foot, door in PROPS:
+    for name, rel, c, r, wt, ht, foot, door, hollow in PROPS:
         if rel not in cache:
             cache[rel] = sheet(rel)
         src = cache[rel]
@@ -560,6 +583,18 @@ def build_props():
         if door != NO_DOOR and door >= fw:
             sys.exit(f"prop {name}: door column {door} is outside a footprint "
                      f"{fw} wide")
+        if hollow and (fw < 3 or fh < 3):
+            sys.exit(f"prop {name} is hollow but its {fw}x{fh} footprint has "
+                     f"no room inside its own walls")
+        if hollow and door == NO_DOOR:
+            sys.exit(f"prop {name} is hollow with no door - nothing could get in")
+        if hollow and not (1 <= door <= fw - 2):
+            # A door in a corner column opens onto the side wall rather than
+            # into the room. It looks perfectly fine from outside and is only
+            # discovered by walking through it, which is how this was found.
+            sys.exit(f"prop {name}: door column {door} is a corner of a {fw}-wide "
+                     f"footprint, so it opens onto a wall. It must be between 1 "
+                     f"and {fw - 2}.")
 
         # The anchor is the footprint's bottom-centre: the map cell the object
         # stands on. Derived here rather than declared, so a footprint and its
@@ -577,7 +612,7 @@ def build_props():
 
         x, y, w, h = packer.add(name, img)
         entries.append((name, x, y, w, h, wt, ht, anchor_x, anchor_y,
-                        fw, fh, door))
+                        fw, fh, door, 1 if hollow else 0))
     return packer.render(), entries
 
 
@@ -728,6 +763,7 @@ def emit_ids(tiles, props, actors, path):
     o.append("    uint8_t anchor_x, anchor_y;")
     o.append("    uint8_t foot_w, foot_h;")
     o.append("    uint8_t door_dx;")
+    o.append("    uint8_t hollow;   // a building: walls around a walkable interior")
     o.append("} gg_prop_size;")
     o.append("extern const gg_prop_size GG_PROP_SIZE[GG_PROP_COUNT];")
     o.append("")
@@ -742,9 +778,9 @@ def emit_sizes(props, path):
     o = [banner("gg_ids.c", "Prop geometry, for the simulation's collision."),
          '#include "core/gg_ids.h"', "",
          "const gg_prop_size GG_PROP_SIZE[GG_PROP_COUNT] = {"]
-    for name, x, y, w, h, wt, ht, ax, ay, fw, fh, door in props:
+    for name, x, y, w, h, wt, ht, ax, ay, fw, fh, door, hollow in props:
         o.append(f"    [GG_PROP_{name}] = {{ {wt}, {ht}, {ax}, {ay}, "
-                 f"{fw}, {fh}, {door} }},")
+                 f"{fw}, {fh}, {door}, {hollow} }},")
     o.append("};")
     with open(path, "w") as f:
         f.write("\n".join(o) + "\n")

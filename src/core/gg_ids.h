@@ -24,6 +24,8 @@ typedef enum {
     GG_TILE_WATER_DEEP,
     GG_TILE_MOUNTAIN,
     GG_TILE_CLIFF,
+    GG_TILE_FLOOR_WOOD,
+    GG_TILE_WALL_BRICK,
     GG_TILE_COUNT
 } gg_tile_id;
 
@@ -42,6 +44,9 @@ typedef enum {
     GG_PROP_FERN,
     GG_PROP_LILYPAD,
     GG_PROP_CATTAILS,
+    GG_PROP_BARREL,
+    GG_PROP_CRATE,
+    GG_PROP_TABLE,
     GG_PROP_HOUSE_BRICK_A,
     GG_PROP_HOUSE_BRICK_B,
     GG_PROP_HOUSE_PANELED,
@@ -81,6 +86,7 @@ typedef struct {
     uint8_t anchor_x, anchor_y;
     uint8_t foot_w, foot_h;
     uint8_t door_dx;
+    uint8_t hollow;   // a building: walls around a walkable interior
 } gg_prop_size;
 extern const gg_prop_size GG_PROP_SIZE[GG_PROP_COUNT];
 

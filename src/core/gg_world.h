@@ -112,6 +112,19 @@ bool gg_map_prop_fits(const gg_map *m, int x, int y, gg_prop_id p);
 // loader cannot disagree about where a building's walls are.
 bool gg_map_place_prop(gg_map *m, int x, int y, gg_prop_id p);
 
+// The room inside a hollow prop - its footprint less the walls. False if the
+// prop is not a building, in which case the outputs are untouched.
+//
+// The room is walkable at all times. Only the roof is hidden when the player
+// steps in, so nothing about collision depends on where the camera or the
+// player happens to be.
+bool gg_prop_interior(gg_prop_id p, int x, int y,
+                      int *x0, int *y0, int *x1, int *y1);
+
+// Is (x, y) inside the room of a hollow prop anchored at (ax, ay)? This is
+// what the renderer asks to decide whether to draw a building's roof.
+bool gg_prop_interior_contains(gg_prop_id p, int ax, int ay, int x, int y);
+
 // --- generation ------------------------------------------------------------
 // Builds the demo continent: terrain bands, a lake, forest, a road and a
 // walled town. Deterministic in `seed` - the same number always produces the

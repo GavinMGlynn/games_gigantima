@@ -100,30 +100,21 @@ item to tick the easy half is the same violation wearing a different shape.
       `equal_ranks_do_not_transition`, `water_and_masonry_take_no_overlay`, and
       an authored scene banding desert / sand / road / dirt / farmland / grass
       with no straight-line edge anywhere in it.*
-- [ ] **Real buildings. In progress: exteriors done, interiors not.**
-      Buildings are now the three pre-assembled houses from
-      `Structure/Structures/`, drawn as props with a footprint smaller than
-      their sprite, so roofs overhang tiles the player walks behind. The
-      terrain table no longer carries masonry.
-      *Verification of the part that is done:
-      `a_placed_building_blocks_its_whole_footprint`,
-      `a_buildings_doorway_is_walkable` (all three kinds),
+- [x] **Real buildings, inside and out.** The three pre-assembled houses from
+      `Structure/Structures/`, drawn as props whose footprint is the whole
+      building - roof depth included, because that depth is the room. The
+      footprint's perimeter is wall, its inside is a walkable wood floor, and
+      the roof is hidden while the player is in the room. Rooms are furnished.
+      The terrain table no longer carries masonry.
+      *Verification: `a_buildings_walls_block_but_its_room_does_not`,
+      `a_building_can_be_walked_into_and_out_of`,
+      `a_buildings_doorway_is_walkable` (all three kinds, and that each door
+      opens into the room rather than along a wall),
       `you_can_walk_behind_a_building`,
       `a_building_that_does_not_fit_changes_nothing`,
-      `the_generated_town_has_buildings_with_reachable_doors` (20 seeds).*
-      **What is missing: you cannot go inside.** A door is walkable and opens
-      onto a wall. The item cannot be finished as written until a design
-      question is settled, because the two answers need different art and a
-      different renderer:
-      - *Ultima VI's own answer*: top-down, roofs omitted entirely, every
-        building's interior permanently visible. Authentic, and it means
-        assembling buildings from `Structure/Walls` and `Structure/Floor`
-        rather than using the pre-assembled sprites, which are facades.
-      - *The LPC answer*: keep the facades and hide the roof when the player
-        steps inside — `Structure/Walls/CutawayOverlay.png` exists for exactly
-        this — with interior floors and furniture behind it.
-      *Verification when settled: the player walks through a door, stands
-      inside, and the interior is visible in a `--shot` frame.*
+      `the_generated_town_has_buildings_with_reachable_doors` (20 seeds, from
+      the street and from inside); and `--shot` frames of the street, the
+      doorway and the furnished room. Detail in `PROJECT_STATUS.md`.*
 - [ ] **A* pathfinding with a per-turn budget**, replacing greedy stepping.
       *Verification: an NPC whose schedule point is behind a wall reaches it;
       a test that walks one across a town with an obstacle between.*
