@@ -67,6 +67,13 @@ static void restore_dialogue(void) {
           "could not put the shipped dialogue back");
 }
 
+// And the book of words, for the same reason: a test that leaves its own
+// spells loaded leaves every test after it unable to cast anything real.
+static void restore_spells(void) {
+    CHECK(gg_magic_load(gg_asset_path("spells.txt")),
+          "could not put the shipped spells back");
+}
+
 static void the_rng_is_reproducible_from_its_seed(void) {
     gg_rng a, b;
     gg_rng_seed(&a, 12345);
@@ -6288,6 +6295,120 @@ static void the_whole_story_can_be_played_from_start_to_finish(void) {
     restore_bestiary();
 }
 
+// Every content file, with the line endings a Windows editor writes.
+//
+// A blank line in a CRLF file is not empty: it holds a carriage return. Left
+// on, that reads as a keyword nobody has heard of, and the whole file is
+// refused - which is what the shipped bestiary, dialogue and quests all did on
+// Windows and nowhere else, because a checkout there converts them and a
+// checkout here does not. Every one of these formats is a file a player may
+// open in Notepad, so this is a rule about the formats and not about CI.
+static void a_content_file_written_on_windows_still_loads(void) {
+    // The same text twice, once with "\n" and once with "\r\n" - including the
+    // blank lines, which are the ones that matter.
+    static const char *const BOOK =
+        "# a book\n"
+        "\n"
+        "person Wilkin\n"
+        "art ELDER\n"
+        "home Britain\n"
+        "at 06 -3 -3\n"
+        "\n"
+        "greet Wilkin, and glad of it.\n"
+        "topic name\n"
+        "  say Wilkin.\n";
+    static const char *const BEASTS =
+        "# a bestiary\n"
+        "\n"
+        "creature RAT\n"
+        "  name a rat\n"
+        "  art OUTLAW\n"
+        "\n"
+        "  damage 1\n"
+        "  haunts 1\n";
+    static const char *const QUESTS =
+        "# a story\n"
+        "\n"
+        "quest ONE\n"
+        "  name The Only Quest\n"
+        "\n"
+        "  stage\n"
+        "    when knows name\n"
+        "    journal It has begun.\n";
+    static const char *const SPELLS =
+        "# some words\n"
+        "\n"
+        "rune MANI life\n"
+        "\n"
+        "spell MANI\n"
+        "  name Heal\n"
+        "  circle 1\n"
+        "  costs ginseng 1\n"
+        "  effect heal 10\n"
+        "  say Thou art mended.\n";
+
+    char crlf[2048];
+
+    #define AS_CRLF(text) do {                                                \
+        size_t o = 0;                                                         \
+        for (const char *r = (text); *r && o < sizeof crlf - 3; r++) {        \
+            if (*r == '\n') crlf[o++] = '\r';                                 \
+            crlf[o++] = *r;                                                   \
+        }                                                                     \
+        crlf[o] = '\0';                                                       \
+    } while (0)
+
+    // The book.
+    CHECK(gg_dialogue_load(write_dialogue(BOOK)), "the book will not load at all");
+    const int people = gg_dialogue_speakers();
+    AS_CRLF(BOOK);
+    CHECK(gg_dialogue_load(write_dialogue(crlf)),
+          "a dialogue file written on Windows was refused");
+    CHECK(gg_dialogue_speakers() == people, "it came back with %d people, not %d",
+          gg_dialogue_speakers(), people);
+    const gg_speaker *w = gg_dialogue_find("Wilkin");
+    CHECK(w != nullptr, "Wilkin is not in the Windows book");
+    CHECK(w && SDL_strcmp(w->greet, "Wilkin, and glad of it.") == 0,
+          "his greeting came back as '%s'", w ? w->greet : "");
+    restore_dialogue();
+
+    // The bestiary.
+    CHECK(gg_bestiary_load(write_bestiary(BEASTS)), "the bestiary will not load");
+    AS_CRLF(BEASTS);
+    CHECK(gg_bestiary_load(write_bestiary(crlf)),
+          "a bestiary written on Windows was refused");
+    const int rat = gg_bestiary_find("RAT");
+    CHECK(rat >= 0, "the rat is not in the Windows bestiary");
+    if (rat >= 0)
+        CHECK(SDL_strcmp(gg_bestiary_at(rat)->name, "a rat") == 0,
+              "it came back called '%s'", gg_bestiary_at(rat)->name);
+    restore_bestiary();
+
+    // The quests.
+    CHECK(gg_quests_load(write_quests(QUESTS)), "the quests will not load");
+    AS_CRLF(QUESTS);
+    CHECK(gg_quests_load(write_quests(crlf)),
+          "a quest file written on Windows was refused");
+    const int one = gg_quest_find("ONE");
+    CHECK(one >= 0, "the quest is not in the Windows file");
+    if (one >= 0)
+        CHECK(SDL_strcmp(gg_quest_at(one)->name, "The Only Quest") == 0,
+              "it came back called '%s'", gg_quest_at(one)->name);
+    restore_quests();
+
+    // The spells.
+    CHECK(gg_magic_load(write_spells(SPELLS)), "the spells will not load");
+    AS_CRLF(SPELLS);
+    CHECK(gg_magic_load(write_spells(crlf)),
+          "a spell file written on Windows was refused");
+    CHECK(gg_magic_runes() == 1 && gg_magic_spells() == 1,
+          "the Windows file gave %d runes and %d spells", gg_magic_runes(),
+          gg_magic_spells());
+    restore_spells();
+
+    #undef AS_CRLF
+}
+
 static void a_map_you_leave_is_as_you_left_it(void) {
     const char *near = author_linked_map("test_mem_a.ggmap", "The Near Field",
                                          "test_mem_b.ggmap", 20, 12,
@@ -6780,6 +6901,7 @@ int main(void) {
     RUN(walking_between_two_maps_takes_everything_with_you);
     RUN(a_party_that_walked_the_road_can_beat_the_man_at_the_end_of_it);
     RUN(the_whole_story_can_be_played_from_start_to_finish);
+    RUN(a_content_file_written_on_windows_still_loads);
     RUN(a_map_you_leave_is_as_you_left_it);
     RUN(a_way_out_that_leads_nowhere_is_refused);
     RUN(the_editor_refuses_a_gate_nobody_can_reach);

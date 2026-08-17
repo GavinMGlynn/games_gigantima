@@ -376,6 +376,16 @@ bool gg_replay_load(gg_replay *r, const char *path) {
         cursor = nl ? nl + 1 : nullptr;
         lineno++;
 
+        // A line ending is "\n" or "\r\n". Left on, the carriage return makes
+        // a *blank* line a line holding "\r" - which is not blank, and is read
+        // as a keyword nobody has ever heard of. Every one of these files then
+        // refuses to load in its entirety, on Windows only, which is where a
+        // checkout puts CRLF and where somebody editing it in Notepad will put
+        // it too. Found by the Windows job and nowhere else.
+        for (size_t n = SDL_strlen(line);
+             n > 0 && (line[n - 1] == '\r' || line[n - 1] == '\n'); n--)
+            line[n - 1] = '\0';
+
         char *rest = nullptr;
         char *key = split_word(line, &rest);
         if (!key) continue;

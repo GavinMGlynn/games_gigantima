@@ -1163,6 +1163,29 @@ The overview is a streaming texture rather than one draw call per tile: 30,000
 `SDL_RenderPoint` calls a frame would halve the frame rate of the window meant
 to be diagnosing it.
 
+### The content files, and line endings
+
+Every content file here is the same line-based shape, and every one of them is
+a file a player may open in an editor. **A line ending is `\n` or `\r\n`**, and
+the parsers now strip the carriage return before looking at a line.
+
+Left on, it does not merely add a stray character: a *blank* line becomes a line
+holding `"\r"`, which is not blank, and is read as a keyword nobody has ever
+heard of — so the whole file is refused, on the first blank line, before it has
+read anything. The shipped bestiary, dialogue, quests and spells all did exactly
+that on Windows and nowhere else, because a checkout there converts them and a
+checkout here does not; the tests only started loading the shipped content
+recently, so that is when it surfaced. It is a rule about the formats rather
+than about CI: the same thing happens to a player who edits `dialogue.txt` in
+Notepad.
+
+*Verification: `a_content_file_written_on_windows_still_loads` writes all four
+formats twice, once with each kind of line ending — blank lines included,
+because those are the ones that matter — and requires the same result from
+both. Checked by removing the fix from one parser and watching it fail; and the
+whole shipped content was converted to CRLF and loaded, which is 8 people, 4
+creatures, 4 quests and a world of 17 actors.*
+
 ### Getting at the game
 
 Three things a player might need in order to play at all, each set from the
