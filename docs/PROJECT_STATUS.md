@@ -1163,6 +1163,42 @@ The overview is a streaming texture rather than one draw call per tile: 30,000
 `SDL_RenderPoint` calls a frame would halve the frame rate of the window meant
 to be diagnosing it.
 
+### Packaging
+
+**A package is a folder somebody unpacks and runs.** The executables at the top
+and `assets/` beside them, which is one of the two places
+`src/platform/gg_paths.c` looks — so a package works from wherever it is put,
+with no install step and nothing set in the environment. On macOS the same
+layout lives inside a bundle: SDL hands a bundled app its *resourcePath* as the
+base path, so the art goes in `Contents/Resources/assets/` and the probe finds
+it unchanged.
+
+The install rules before this put the game in `bin/` and the art in
+`share/gigantima/assets/`. That is the right shape for a distribution package
+and the wrong one for this game, which looks beside its own executable: an
+installed copy found no art at all and started only because nobody had ever run
+one.
+
+`cpack` produces a tarball on Linux, a zip and — where NSIS is installed — an
+installer on Windows, and a disk image of two `.app` bundles on macOS. Names
+carry the version and the platform, because four artifacts called
+`gigantima-0.1.0` in a downloads folder are four files nobody can tell apart.
+Binaries are stripped: the debug info was two thirds of the download, and a bug
+report here is a seed, a turn count and a replay file rather than a stack trace.
+
+**What is finished and what is not.** The Linux tarball is done and checked. The
+Windows installer and the macOS bundles are configured, and their jobs written,
+and **neither has ever been built** — there is no runner for either here. Until
+`.github/workflows/package.yml` has run, that half of the item is a plan.
+
+*Verification: the Linux package built with `cpack`, unpacked into a directory
+with no source tree in it, and played from `/` with `GIGANTIMA_ASSETS` unset —
+40 turns of a generated world, and the whole storyline through `--screen
+ending`, and the editor opening a shipped map. 5.1 MB packed, 9.1 MB unpacked,
+and four shared libraries: libc, libm, the loader and the vDSO. The same
+unpack-and-play check is what the packaging job runs on each platform, which is
+what makes "runs on a clean machine" a thing CI says rather than a hope.*
+
 ### Replay
 
 A session is fully described by what it started from and which actions it was

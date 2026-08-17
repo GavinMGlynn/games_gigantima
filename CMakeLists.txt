@@ -205,6 +205,101 @@ if(GIGANTIMA_TESTS)
         TIMEOUT 120)
 endif()
 
-install(TARGETS gigantima RUNTIME DESTINATION bin)
-install(DIRECTORY assets/ DESTINATION share/gigantima/assets
-        PATTERN "fonts/*.ttf" EXCLUDE)
+# ---------------------------------------------------------------------------
+# Installing, and packaging
+#
+# **A package is a folder somebody unpacks and runs**, so the layout is the one
+# `src/platform/gg_paths.c` already probes: the executables at the top and
+# `assets/` beside them. The previous rules put the binary in `bin/` and the art
+# in `share/gigantima/assets/`, which is the right shape for a distribution
+# package and the wrong one for this game - it found neither, and started only
+# because nobody had run the installed copy.
+#
+# The source TTF is excluded on purpose: the font is baked into
+# `assets/atlas_font.png`, nothing reads the TTF at run time, and it carries its
+# own licence.
+# ---------------------------------------------------------------------------
+set(GG_DOCS README.md LICENSE)
+
+if(APPLE)
+    # A bundle each, because a bundle is how macOS expects to be handed a
+    # program, and each one carries its own assets in Contents/Resources - see
+    # the probe in gg_paths.c. Three megabytes twice is a smaller price than an
+    # editor that cannot find the art it edits.
+    foreach(app gigantima gigantima_editor)
+        set_target_properties(${app} PROPERTIES
+            MACOSX_BUNDLE TRUE
+            MACOSX_BUNDLE_BUNDLE_NAME          "${app}"
+            MACOSX_BUNDLE_GUI_IDENTIFIER       "dev.gavin.${app}"
+            MACOSX_BUNDLE_BUNDLE_VERSION       "${PROJECT_VERSION}"
+            MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+            MACOSX_BUNDLE_COPYRIGHT            "GPL-3.0-or-later")
+        install(TARGETS ${app} BUNDLE DESTINATION .)
+        # Inside Resources/assets, not Resources itself: SDL_GetBasePath
+        # returns a bundle's *resourcePath*, so the `<base>/assets` the probe
+        # in gg_paths.c looks for is Contents/Resources/assets. Putting the art
+        # straight into Resources would have been the obvious guess and the
+        # wrong one.
+        install(DIRECTORY assets/
+                DESTINATION "${app}.app/Contents/Resources/assets"
+                PATTERN "fonts/*.ttf" EXCLUDE)
+    endforeach()
+    install(FILES ${GG_DOCS} DESTINATION .)
+else()
+    install(TARGETS gigantima gigantima_editor RUNTIME DESTINATION .)
+    install(DIRECTORY assets/ DESTINATION assets PATTERN "fonts/*.ttf" EXCLUDE)
+    install(FILES ${GG_DOCS} DESTINATION .)
+endif()
+
+# ---------------------------------------------------------------------------
+# CPack
+# ---------------------------------------------------------------------------
+set(CPACK_PACKAGE_NAME          "gigantima")
+set(CPACK_PACKAGE_VENDOR        "Gavin Glynn")
+set(CPACK_PACKAGE_VERSION       "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "${PROJECT_DESCRIPTION}")
+set(CPACK_PACKAGE_INSTALL_DIRECTORY   "Gigantima")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
+set(CPACK_PACKAGE_CHECKSUM      SHA256)
+# Stripped: the debug info is two thirds of the download and a bug report here
+# is a seed, a turn count and a replay file rather than a stack trace off a
+# player's machine. The build tree keeps its symbols either way.
+set(CPACK_STRIP_FILES           ON)
+set(CPACK_VERBATIM_VARIABLES    ON)
+
+# The archive is named for what it holds and what it runs on, because an
+# artifact called `gigantima-0.1.0.tar.gz` in a downloads folder beside three
+# others is four files nobody can tell apart.
+if(WIN32)
+    set(GG_PLATFORM "windows-x86_64")
+elseif(APPLE)
+    set(GG_PLATFORM "macos-${CMAKE_SYSTEM_PROCESSOR}")
+else()
+    set(GG_PLATFORM "linux-${CMAKE_SYSTEM_PROCESSOR}")
+endif()
+set(CPACK_PACKAGE_FILE_NAME "gigantima-${PROJECT_VERSION}-${GG_PLATFORM}")
+
+if(WIN32)
+    # ZIP always, so there is an artifact even where NSIS is not installed, and
+    # an installer beside it where it is.
+    set(CPACK_GENERATOR "ZIP")
+    find_program(GG_MAKENSIS makensis)
+    if(GG_MAKENSIS)
+        list(APPEND CPACK_GENERATOR "NSIS")
+        set(CPACK_NSIS_PACKAGE_NAME    "Gigantima")
+        set(CPACK_NSIS_DISPLAY_NAME    "Gigantima")
+        set(CPACK_NSIS_MODIFY_PATH     OFF)
+        set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
+        set(CPACK_NSIS_CREATE_ICONS_EXTRA
+            "CreateShortCut \\"$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\Gigantima.lnk\\" \\"$INSTDIR\\\\gigantima.exe\\"")
+        set(CPACK_NSIS_DELETE_ICONS_EXTRA
+            "Delete \\"$SMPROGRAMS\\\\$START_MENU\\\\Gigantima.lnk\\"")
+    endif()
+elseif(APPLE)
+    set(CPACK_GENERATOR "TGZ;DragNDrop")
+    set(CPACK_DMG_VOLUME_NAME "Gigantima ${PROJECT_VERSION}")
+else()
+    set(CPACK_GENERATOR "TGZ")
+endif()
+
+include(CPack)

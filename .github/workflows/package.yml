@@ -1,0 +1,173 @@
+# Something a person can download and run.
+#
+# The build matrix in ci.yml proves the code compiles and passes its tests on
+# four platforms. That is not the same as a thing anybody can play: a package
+# has to carry the art beside the executable, in the layout
+# `src/platform/gg_paths.c` looks in, and it has to run on a machine that has
+# never seen this source tree.
+#
+# So each job builds a package, **unpacks it somewhere else, and plays it from
+# there** with the source tree out of reach and `GIGANTIMA_ASSETS` unset. A
+# package that starts only because it was run from the build directory is the
+# failure this is here to catch.
+name: Package
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+env:
+  CI_SUBMODULES: ext/sdl ext/sdl_image
+
+jobs:
+  linux:
+    name: Linux tarball
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with: { submodules: false }
+      - name: Checkout build submodules
+        run: git submodule update --init --depth 1 $CI_SUBMODULES
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-14 ninja-build \
+            libx11-dev libxext-dev libxrandr-dev libxi-dev libxcursor-dev \
+            libxfixes-dev libxss-dev libxtst-dev libxkbcommon-dev libdecor-0-dev \
+            libwayland-dev wayland-protocols \
+            libgl-dev libegl-dev libpulse-dev libasound2-dev \
+            libdbus-1-dev libudev-dev libusb-1.0-0-dev
+
+      - name: Build
+        run: |
+          cmake -B build -G Ninja -DCMAKE_C_COMPILER=gcc-14 \
+                -DCMAKE_BUILD_TYPE=Release -DGIGANTIMA_TESTS=OFF
+          cmake --build build -j
+
+      - name: Package
+        run: cd build && cpack -G TGZ
+
+      # Unpacked into /tmp and played from /, so the only way it can find its
+      # art is the one a player's copy will use.
+      - name: Play the package from somewhere else
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_RENDER_DRIVER: software
+          SDL_AUDIODRIVER: dummy
+        run: |
+          mkdir -p /tmp/unpacked
+          tar -xzf build/gigantima-*-linux-*.tar.gz -C /tmp/unpacked
+          dir=$(echo /tmp/unpacked/gigantima-*)
+          test -f "$dir/gigantima" || { echo "no game in the package"; exit 1; }
+          test -f "$dir/gigantima_editor" || { echo "no editor"; exit 1; }
+          test -f "$dir/assets/atlas_tiles.png" || { echo "no art"; exit 1; }
+          test -f "$dir/LICENSE" || { echo "no licence"; exit 1; }
+          cd / && env -u GIGANTIMA_ASSETS "$dir/gigantima" \
+            --profile Packaged --new --play --turns 40 2>&1 | tee /tmp/run.log
+          grep -q "played to turn 40" /tmp/run.log || {
+            echo "the packaged game did not play"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gigantima-linux-x86_64
+          path: |
+            build/gigantima-*.tar.gz
+            build/gigantima-*.sha256
+
+  windows:
+    name: Windows zip and installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+        with: { submodules: false }
+      - name: Checkout build submodules
+        shell: bash
+        run: git submodule update --init --depth 1 $CI_SUBMODULES
+
+      - name: Build
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DGIGANTIMA_TESTS=OFF
+          cmake --build build --config Release --parallel
+
+      # NSIS ships with the runner image; the ZIP is generated either way, so
+      # an installer that cannot be built is a missing file rather than a
+      # failed job. See CMakeLists.txt.
+      - name: Package
+        run: cd build; cpack -C Release
+
+      - name: Play the package from somewhere else
+        shell: pwsh
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_RENDER_DRIVER: software
+          SDL_AUDIODRIVER: dummy
+        run: |
+          $zip = Get-ChildItem build/gigantima-*-windows-*.zip | Select-Object -First 1
+          Expand-Archive -Path $zip -DestinationPath C:\unpacked
+          $dir = Get-ChildItem C:\unpacked -Directory | Select-Object -First 1
+          if (!(Test-Path "$($dir.FullName)\gigantima.exe")) { throw "no game in the package" }
+          if (!(Test-Path "$($dir.FullName)\assets\atlas_tiles.png")) { throw "no art" }
+          Remove-Item Env:GIGANTIMA_ASSETS -ErrorAction SilentlyContinue
+          Set-Location C:\
+          & "$($dir.FullName)\gigantima.exe" --profile Packaged --new --play --turns 40 2>&1 |
+            Tee-Object -FilePath C:\run.log
+          if (!(Select-String -Path C:\run.log -Pattern "played to turn 40" -Quiet)) {
+            throw "the packaged game did not play"
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gigantima-windows-x86_64
+          path: |
+            build/gigantima-*.zip
+            build/gigantima-*.exe
+            build/gigantima-*.sha256
+
+  macos:
+    name: macOS bundle
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+        with: { submodules: false }
+      - name: Checkout build submodules
+        run: git submodule update --init --depth 1 $CI_SUBMODULES
+
+      - name: Build
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DGIGANTIMA_TESTS=OFF \
+                -DCMAKE_OSX_ARCHITECTURES=arm64
+          cmake --build build -j3
+
+      - name: Package
+        run: cd build && cpack
+
+      # Through the tarball rather than the disk image: it holds the same two
+      # bundles, and mounting a dmg to prove a bundle runs proves the mounting.
+      - name: Play the package from somewhere else
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_RENDER_DRIVER: software
+          SDL_AUDIODRIVER: dummy
+        run: |
+          mkdir -p /tmp/unpacked
+          tar -xzf build/gigantima-*-macos-*.tar.gz -C /tmp/unpacked
+          dir=$(echo /tmp/unpacked/gigantima-*)
+          app="$dir/gigantima.app"
+          test -x "$app/Contents/MacOS/gigantima" || { echo "no game in the bundle"; exit 1; }
+          test -f "$app/Contents/Resources/assets/atlas_tiles.png" || { echo "no art in the bundle"; exit 1; }
+          test -d "$dir/gigantima_editor.app" || { echo "no editor bundle"; exit 1; }
+          cd / && env -u GIGANTIMA_ASSETS "$app/Contents/MacOS/gigantima" \
+            --profile Packaged --new --play --turns 40 2>&1 | tee /tmp/run.log
+          grep -q "played to turn 40" /tmp/run.log || {
+            echo "the packaged game did not play"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gigantima-macos-arm64
+          path: |
+            build/gigantima-*.tar.gz
+            build/gigantima-*.dmg
+            build/gigantima-*.sha256

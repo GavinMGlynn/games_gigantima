@@ -74,6 +74,18 @@ by being the thing CI actually runs.
 | Windows x64 | MSVC | yes |
 | macOS arm64 | AppleClang | yes |
 
+### Making a package
+
+```sh
+cd build && cpack
+```
+
+A tarball on Linux, a zip and an installer on Windows, and a disk image holding
+two `.app` bundles on macOS. Each is a folder you unpack and run: the
+executables at the top and `assets/` beside them, which is where the game looks
+for its art — so a package works from wherever it is put, with no install step
+and nothing set in the environment.
+
 ## Playing
 
 | | |

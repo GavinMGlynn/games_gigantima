@@ -246,9 +246,14 @@ that is reachable while content is C, so the editor comes before the content.
       fight — recorded in the real game and replayed to an identical state hash,
       as a CI smoke test. Checked by removing one action from a recording and by
       changing its seed, both of which come back as a divergence.*
-- [ ] **Packaging** per platform: an installable Windows build, a macOS bundle,
-      and a Linux tarball, each with the assets alongside.
-      *Verification: an artifact from CI that runs on a clean machine.*
+- [ ] **Packaging** per platform. **The Windows installer and the macOS bundles
+      have been configured and never built** — there is no runner here for
+      either, and until CI has produced them this item is not done. The Linux
+      tarball is finished: `cpack` builds it, it holds both executables, the art
+      and the licence, and it plays from wherever it is unpacked.
+      *Verification: a package unpacked somewhere else and played from there
+      with the source tree out of reach — done for Linux, awaiting a CI run for
+      Windows and macOS.*
 - [ ] **Controller-only playability.** The menus and the naming alphabet are
       already pad-only. What is left is everything the world gains from here —
       each new verb, panel and prompt reachable with a pad as it lands — and
