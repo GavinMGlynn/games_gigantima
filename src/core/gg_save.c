@@ -66,15 +66,23 @@ static bool header_write(const gg_game *g, const char *base, const char *name) {
     SDL_IOStream *io = SDL_IOFromFile(path, "wb");
     if (!io) return false;
 
-    bool ok = SDL_WriteIO(io, GG_SAVE_MAGIC, 8) == 8;
-    ok = ok && gg_io_w32(io, GG_SAVE_VERSION);
-    ok = ok && SDL_WriteIO(io, name, GG_PROFILE_NAME_MAX) == GG_PROFILE_NAME_MAX;
-    ok = ok && gg_io_w32(io, g->day) && gg_io_w32(io, g->minutes);
-    ok = ok && gg_io_w32(io, g->turn) && gg_io_w32(io, (uint32_t)g->level);
+    // Both strings are copied into a zeroed field before being written, never
+    // written from the caller's pointer. A fixed-width field is written at its
+    // full width, and `name` is whatever the caller passed - a string literal
+    // in the tests - so writing 32 bytes from it reads off the end of it.
+    // AddressSanitizer caught exactly that; an ordinary build had not.
+    char who[GG_PROFILE_NAME_MAX] = { 0 };
+    SDL_strlcpy(who, name, sizeof who);
 
     char place[GG_MAP_NAME_MAX] = { 0 };
     SDL_strlcpy(place, gg_game_place(g), sizeof place);
-    ok = ok && SDL_WriteIO(io, place, GG_MAP_NAME_MAX) == GG_MAP_NAME_MAX;
+
+    bool ok = SDL_WriteIO(io, GG_SAVE_MAGIC, 8) == 8;
+    ok = ok && gg_io_w32(io, GG_SAVE_VERSION);
+    ok = ok && SDL_WriteIO(io, who, sizeof who) == sizeof who;
+    ok = ok && gg_io_w32(io, g->day) && gg_io_w32(io, g->minutes);
+    ok = ok && gg_io_w32(io, g->turn) && gg_io_w32(io, (uint32_t)g->level);
+    ok = ok && SDL_WriteIO(io, place, sizeof place) == sizeof place;
 
     SDL_CloseIO(io);
     return ok;

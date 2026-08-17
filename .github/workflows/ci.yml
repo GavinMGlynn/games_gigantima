@@ -64,7 +64,10 @@ jobs:
           SDL_AUDIODRIVER: dummy
         run: |
           ./build/gigantima --play --profile CI --new --seed 7 --turns 60
-          ./build/gigantima --play --profile CI --turns 120 | tee resume.log
+          # 2>&1: the game logs through SDL_Log, which writes to stderr. Piping
+          # stdout alone captured nothing and the grep below failed on a run
+          # that had in fact resumed correctly.
+          ./build/gigantima --play --profile CI --turns 120 2>&1 | tee resume.log
           grep -q "resumed CI" resume.log || {
             echo "the second run did not resume the first"; exit 1; }
           grep -q "turn 60" resume.log || {
