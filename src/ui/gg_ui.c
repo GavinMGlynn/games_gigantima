@@ -117,24 +117,30 @@ void gg_ui_title(SDL_Renderer *ren, uint64_t t, const char *profile) {
     SDL_RenderClear(ren);
 
     const int cx = GG_SCREEN_W / 2;
+    const int line = gg_font_height();
 
-    // The title is drawn from the font sheet at 4x. Scaling the baked glyphs
+    // Laid out against the full screen height rather than from the top down.
+    // The first version stacked everything from y=70 and left the bottom third
+    // empty, which reads as a screen that failed to finish drawing.
+    const int TITLE_SCALE = 4;
+
+    // The title is drawn from the font sheet, scaled. Scaling the baked glyphs
     // rather than shipping a second larger font keeps the look identical and
     // the atlas one texture; nearest filtering means it stays crisp.
-    SDL_SetRenderScale(ren, 4.0f, 4.0f);
-    gg_font_center(ren, cx / 4, 70 / 4, AMBER, "GIGANTIMA");
+    SDL_SetRenderScale(ren, (float)TITLE_SCALE, (float)TITLE_SCALE);
+    gg_font_center(ren, cx / TITLE_SCALE, 120 / TITLE_SCALE, AMBER, "GIGANTIMA");
     SDL_SetRenderScale(ren, 1.0f, 1.0f);
 
-    gg_font_center(ren, cx, 150, DIM, "a world in the manner of Ultima VI");
+    gg_font_center(ren, cx, 120 + line * TITLE_SCALE + 12, DIM,
+                   "a world in the manner of Ultima VI");
 
-    int y = 250;
-    gg_font_center(ren, cx, y, INK, profile && *profile
-                   ? "Thy journey awaits, Avatar." : "Thy journey awaits.");
-    y += gg_font_height() * 2;
+    int y = GG_SCREEN_H / 2 + 20;
+    gg_font_center(ren, cx, y, INK, "Thy journey awaits.");
+    y += line * 2;
 
     if (profile && *profile) {
         gg_font_center(ren, cx, y, MOSS, profile);
-        y += gg_font_height() * 2;
+        y += line * 2;
     }
 
     // A slow pulse rather than a hard blink: at 60 Hz a blink reads as a
@@ -144,8 +150,12 @@ void gg_ui_title(SDL_Renderer *ren, uint64_t t, const char *profile) {
     const SDL_Color prompt = { INK.r, INK.g, INK.b, a };
     gg_font_center(ren, cx, y, prompt, "Press Enter to begin");
 
-    y += gg_font_height() * 3;
-    gg_font_center(ren, cx, y, DIM, "Arrows or WASD to walk   T talk   L look   O open");
-    y += gg_font_height();
-    gg_font_center(ren, cx, y, DIM, "F1 debug window   F11 fullscreen   Esc quit");
+    // The control list is pinned to the bottom rather than following the flow,
+    // so it stays put as the lines above it come and go with the profile.
+    int cy = GG_SCREEN_H - line * 3 - 24;
+    gg_font_center(ren, cx, cy, DIM,
+                   "Arrows, WASD or the keypad to walk   T talk   L look   O open");
+    cy += line;
+    gg_font_center(ren, cx, cy, DIM,
+                   "F1 debug window   F11 fullscreen   Esc quit");
 }

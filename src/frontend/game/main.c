@@ -214,8 +214,10 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
         }
     }
 
-    // A screenshot run is meaningless without a world, so it implies --play.
-    if (app->shot_path) app->started = true;
+    // --shot captures whatever screen the other flags select, so `--shot`
+    // alone photographs the title and `--play --shot` photographs the world.
+    // That is what lets every screen be checked from a headless run, which is
+    // the only way a UI screen gets verified without someone looking at it.
 
     if (!SDL_CreateWindowAndRenderer("Gigantima",
                                      GG_SCREEN_W * scale, GG_SCREEN_H * scale,
@@ -361,13 +363,13 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
         // first time a seed put a wall to the east. So: fall back to waiting,
         // which always advances, and bound the loop regardless.
         uint32_t guard = app->shot_at * 4 + 64;
-        while (app->game.turn < app->shot_at && guard-- > 0) {
+        while (app->started && app->game.turn < app->shot_at && guard-- > 0) {
             const uint32_t before = app->game.turn;
             gg_game_act(&app->game, GG_ACT_E);
             if (app->game.turn == before) gg_game_act(&app->game, GG_ACT_WAIT);
             gg_game_animate(&app->game);
         }
-        if (app->game.turn < app->shot_at)
+        if (app->started && app->game.turn < app->shot_at)
             SDL_Log("gigantima: capture stalled at turn %u of %u",
                     app->game.turn, app->shot_at);
         draw(app);

@@ -68,6 +68,13 @@ jobs:
     steps:
       - name: Install dependencies
         run: |
+          # The stock Rocky image has neither CRB nor EPEL enabled, and the
+          # build needs both: ninja-build and the wayland protocol headers live
+          # in CRB, libXScrnSaver-devel in EPEL. Without them dnf reports only
+          # "No match for argument", which says nothing about which repository
+          # is missing.
+          dnf install -y dnf-plugins-core epel-release
+          dnf config-manager --set-enabled crb
           dnf install -y --setopt=install_weak_deps=False \
             gcc cmake ninja-build git \
             libX11-devel libXext-devel libXrandr-devel libXcursor-devel \
