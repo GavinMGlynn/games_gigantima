@@ -115,9 +115,20 @@ item to tick the easy half is the same violation wearing a different shape.
       `the_generated_town_has_buildings_with_reachable_doors` (20 seeds, from
       the street and from inside); and `--shot` frames of the street, the
       doorway and the furnished room. Detail in `PROJECT_STATUS.md`.*
-- [ ] **A* pathfinding with a per-turn budget**, replacing greedy stepping.
-      *Verification: an NPC whose schedule point is behind a wall reaches it;
-      a test that walks one across a town with an obstacle between.*
+- [x] **A* pathfinding with a per-turn budget**, replacing greedy stepping.
+      Integer costs, octile heuristic, no corner-cutting, and a deterministic
+      tie-break so a seeded world stays reproducible. An unreachable target
+      still yields a step toward the closest cell reached, so a blocked
+      resident edges round an obstacle instead of standing still.
+      *Verification: `a_path_goes_around_a_wall`,
+      `a_path_solves_a_serpentine_maze`,
+      `a_path_never_cuts_a_diagonal_corner`,
+      `an_unreachable_target_still_moves_toward_it`,
+      `a_completely_boxed_in_actor_reports_no_step`,
+      `the_search_is_reproducible`,
+      `a_resident_crosses_the_town_to_a_fixed_target`,
+      `a_resident_walks_round_a_building_rather_than_into_it`.
+      Detail in `PROJECT_STATUS.md`.*
 - [ ] **Light sources and indoor lighting.** `GG_CELL_INDOORS` is set and
       unused; the light quad covers the whole view. *Verification: a night
       frame in which a lit interior is brighter than the street.*

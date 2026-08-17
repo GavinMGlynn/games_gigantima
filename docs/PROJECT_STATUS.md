@@ -113,16 +113,34 @@ still in bed at 02:00. Schedule points that land inside a wall are walked
 outward at placement time until they are somewhere the NPC can actually stand —
 without that, an NPC shoves at a wall all day.
 
-Movement is **greedy, not pathfinding**: one step toward the target, diagonal
-first, with a random legal step when boxed in so a knot in a doorway unpicks
-itself. Over a full simulated game day no townsperson ends up standing in
-terrain, sharing a tile with another, or standing on the player.
+Movement is **A\*** over the tile grid, budgeted at 400 expanded cells per
+resident per turn. Integer step costs (10 orthogonal, 14 diagonal) and an
+octile heuristic, so the whole search stays in integers and a seeded world
+stays reproducible — including the heap's tie-break, which falls back to the
+cell index precisely so two equally good paths resolve the same way on every
+machine.
 
-Greedy movement is a deliberate approximation, not a finished module: an NPC
-whose target is behind a wall will press against that wall. Real pathfinding is
-a named plan item.
+Two properties are worth naming. Diagonals **do not cut corners**: a diagonal
+step needs both of its orthogonal neighbours passable, or an actor slips
+between two walls that meet at a point and leaves a sealed room. And an
+**unreachable target still produces a step**, toward the closest cell the
+search reached — that is what makes a resident whose way is blocked edge around
+the obstacle rather than stand still.
 
-*Verification: `townsfolk_never_walk_into_terrain` (a full 1440-turn day),
+Greedy stepping is kept as the fallback for the one case A\* cannot help with:
+an actor boxed in on every side, where a random legal step is what unpicks a
+knot in a doorway.
+
+`gg_path` knows nothing about maps or actors — passability arrives as a
+callback — so it is tested against hand-drawn mazes with no world at all, and
+a failure points at the search rather than at whatever the generator happened
+to produce.
+
+Over a full simulated game day no townsperson ends up standing in terrain,
+sharing a tile with another, or standing on the player.
+
+*Verification: the pathfinding tests listed in `COMPLETION_PLAN.md`, plus
+`townsfolk_never_walk_into_terrain` (a full 1440-turn day),
 `two_townsfolk_never_share_a_tile`,
 `the_player_never_shares_a_tile_with_a_townsperson`,
 `a_schedule_before_its_first_entry_uses_the_last`.*
@@ -330,7 +348,6 @@ Named plainly, because a reader should not have to infer absence:
 | Level editor | nothing. The map format exists for it |
 | Buildings | rectangles of wall with a door. No roofs, windows, interiors or furniture |
 | Indoor lighting | the light quad covers the whole view; `GG_CELL_INDOORS` is set but unused |
-| Pathfinding | greedy stepping only |
 | Party | the avatar is alone |
 
 ---
@@ -339,9 +356,6 @@ Named plainly, because a reader should not have to infer absence:
 
 Deliberate, documented, with the cost to close:
 
-- **Greedy NPC movement.** Cheap and adequate inside a town; fails when a
-  target is behind a wall. Closing it is A* over the tile grid with a
-  per-turn budget.
 - **Whole-view light quad.** Ignores `GG_CELL_INDOORS` and light sources.
   Closing it needs a light model — emitters, radius, and a per-tile blend.
 - **`GG_CELL_INDOORS` is set but not yet read.** Building interiors carry it;

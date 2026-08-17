@@ -134,6 +134,7 @@ add_library(gigantima_core STATIC
     src/core/gg_ids.c
     src/core/gg_world.c
     src/core/gg_actor.c
+    src/core/gg_path.c
     src/core/gg_game.c
     src/gfx/gg_font.c
     src/gfx/gg_render.c

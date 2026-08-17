@@ -10,6 +10,7 @@
 #include "core/gg_common.h"
 #include "core/gg_world.h"
 #include "core/gg_actor.h"
+#include "core/gg_path.h"
 
 typedef enum {
     GG_MODE_TITLE,       // title screen, before a world exists
@@ -31,6 +32,11 @@ typedef enum {
     GG_ACT_OPEN,
     GG_ACT_COUNT
 } gg_action;
+
+// How many cells one NPC's search may expand in a turn. A town crossing costs
+// a few hundred; the cap is what stops a single unreachable target stalling a
+// turn while every resident searches the whole map.
+#define GG_PATH_BUDGET 400
 
 #define GG_LOG_LINES 5
 #define GG_LOG_WIDTH 96
@@ -54,6 +60,11 @@ typedef struct {
 
     gg_rng   rng;
     gg_mode  mode;
+
+    // Scratch for NPC pathfinding, reused every turn. Held here rather than
+    // inside gg_path so the allocation happens once per game, not once per
+    // step - a search touches thousands of cells.
+    gg_pathfinder path;
 
     uint32_t turn;                // player actions taken
     uint32_t minutes;             // world clock, wrapping at GG_MINUTES_PER_DAY

@@ -12,6 +12,7 @@
 #include "platform/gg_paths.h"
 #include "gfx/gg_render.h"
 #include "gfx/gg_atlas.h"   // GG_EDGE_* piece indices
+#include "core/gg_path.h"
 
 #include <stdio.h>
 
@@ -184,6 +185,274 @@ static void loading_a_file_that_is_not_a_map_fails_cleanly(void) {
 
     CHECK(!gg_map_load(&m, gg_pref_file("test_no_such_file.ggmap")),
           "a missing file was accepted");
+}
+
+// ---------------------------------------------------------------------------
+// Pathfinding
+//
+// Tested against a hand-drawn maze rather than a generated world: gg_path
+// knows nothing about maps or actors, so a plain character grid is the whole
+// context it needs, and a failure points at the search rather than at whatever
+// the generator happened to produce.
+// ---------------------------------------------------------------------------
+typedef struct { const char *const *rows; int w, h; } maze;
+
+static bool maze_passable(void *ctx, int x, int y) {
+    const maze *m = ctx;
+    if (x < 0 || y < 0 || x >= m->w || y >= m->h) return false;
+    return m->rows[y][x] != '#';
+}
+
+// Walks the path one step at a time, as the turn loop does, and returns how
+// many steps it took to arrive - or -1 if it never did.
+static int walk_maze(const maze *mz, int sx, int sy, int tx, int ty, int budget) {
+    gg_pathfinder pf;
+    if (!gg_path_init(&pf, mz->w, mz->h)) return -1;
+
+    int x = sx, y = sy, steps = 0;
+    while (!(x == tx && y == ty) && steps < mz->w * mz->h) {
+        int nx, ny;
+        if (!gg_path_next_step(&pf, maze_passable, (void *)mz, x, y, tx, ty,
+                               budget, &nx, &ny))
+            break;
+        if (nx == x && ny == y) break;        // no progress: would loop forever
+        x = nx; y = ny;
+        steps++;
+    }
+    gg_path_free(&pf);
+    return (x == tx && y == ty) ? steps : -1;
+}
+
+static void a_path_goes_around_a_wall(void) {
+    // The case greedy stepping could not do at all: the target is straight
+    // ahead, and the only way there is round the side.
+    static const char *const ROWS[] = {
+        ".........",
+        ".........",
+        "####.####",
+        "####.####",
+        "####.####",
+        ".........",
+        ".........",
+    };
+    const maze mz = { ROWS, 9, 7 };
+
+    const int steps = walk_maze(&mz, 1, 0, 1, 6, 400);
+    CHECK(steps > 0, "no path found around the wall");
+    // Straight down is 6, and there is no straight way down: the only gap is
+    // the corridor at x=4, so any honest path is longer.
+    CHECK(steps > 6, "the path cut through the wall in %d steps", steps);
+    CHECK(steps <= 20, "the path wandered: %d steps", steps);
+}
+
+static void a_path_solves_a_serpentine_maze(void) {
+    // Long, single-solution, and doubling back on itself, so no amount of
+    // heading toward the target gets there. Greedy stepping cannot solve this.
+    static const char *const ROWS[] = {
+        "###########",
+        "#.........#",
+        "#########.#",
+        "#.........#",
+        "#.#########",
+        "#.........#",
+        "#########.#",
+        "#....T....#",
+        "###########",
+    };
+    const maze mz = { ROWS, 11, 9 };
+    const int steps = walk_maze(&mz, 1, 1, 5, 7, 4000);
+    CHECK(steps > 0, "no path through the maze");
+    // The corridors force roughly 8 + 2 + 8 + 2 + 8 + 2 + 4 tiles of travel.
+    CHECK(steps >= 25, "the maze was solved suspiciously fast: %d steps", steps);
+    CHECK(steps <= 45, "the path wandered: %d steps", steps);
+}
+
+static void a_path_never_cuts_a_diagonal_corner(void) {
+    // Two walls meeting at a point must not be slipped through. Without the
+    // check an actor leaves a sealed room by walking through the join, which
+    // looks like walking through a wall.
+    static const char *const ROWS[] = {
+        ".....",
+        ".#...",
+        "#....",     // the gap between the two walls is a corner, not a door
+        ".....",
+        ".....",
+    };
+    const maze mz = { ROWS, 5, 5 };
+
+    gg_pathfinder pf;
+    CHECK(gg_path_init(&pf, 5, 5), "init failed");
+    int nx, ny;
+    // From (0,1) the only diagonal toward (1,2) squeezes between (1,1) and
+    // (0,2), both walls.
+    if (gg_path_next_step(&pf, maze_passable, (void *)&mz, 0, 1, 1, 3, 400,
+                          &nx, &ny)) {
+        CHECK(!(nx == 1 && ny == 2),
+              "the path cut the corner between two walls");
+    }
+    gg_path_free(&pf);
+}
+
+static void an_unreachable_target_still_moves_toward_it(void) {
+    // A walled-off target must not freeze the actor: it should close the
+    // distance as far as it can. That is what makes a resident whose schedule
+    // point is behind a locked wall stand against the wall rather than at
+    // wherever it happened to be standing.
+    static const char *const ROWS[] = {
+        ".....#....",
+        ".....#....",
+        ".....#....",
+        ".....#....",
+        ".....#....",
+    };
+    const maze mz = { ROWS, 10, 5 };
+
+    gg_pathfinder pf;
+    CHECK(gg_path_init(&pf, 10, 5), "init failed");
+    int nx, ny;
+    const bool ok = gg_path_next_step(&pf, maze_passable, (void *)&mz,
+                                      0, 2, 9, 2, 400, &nx, &ny);
+    CHECK(ok, "an unreachable target should still yield a step");
+    if (ok) {
+        CHECK(gg_path_heuristic(nx, ny, 9, 2) < gg_path_heuristic(0, 2, 9, 2),
+              "the step at %d,%d did not close the distance", nx, ny);
+        CHECK(maze_passable((void *)&mz, nx, ny), "stepped into a wall");
+    }
+    gg_path_free(&pf);
+}
+
+static void a_completely_boxed_in_actor_reports_no_step(void) {
+    static const char *const ROWS[] = {
+        "###",
+        "#.#",
+        "###",
+    };
+    const maze mz = { ROWS, 3, 3 };
+
+    gg_pathfinder pf;
+    CHECK(gg_path_init(&pf, 3, 3), "init failed");
+    int nx, ny;
+    CHECK(!gg_path_next_step(&pf, maze_passable, (void *)&mz, 1, 1, 0, 0, 400,
+                             &nx, &ny),
+          "a sealed cell should report no step at all");
+    gg_path_free(&pf);
+}
+
+static void the_search_is_reproducible(void) {
+    // Two nodes with equal f must come out of the heap in the same order every
+    // run, or a seeded world stops being reproducible. An open field is the
+    // worst case: almost every node ties with several others.
+    static const char *const ROWS[] = {
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+    };
+    const maze mz = { ROWS, 11, 5 };
+
+    int first_x = -1, first_y = -1;
+    for (int run = 0; run < 8; run++) {
+        gg_pathfinder pf;
+        CHECK(gg_path_init(&pf, 11, 5), "init failed");
+        int nx = -1, ny = -1;
+        CHECK(gg_path_next_step(&pf, maze_passable, (void *)&mz, 0, 2, 10, 2,
+                                400, &nx, &ny), "no step in an open field");
+        if (run == 0) { first_x = nx; first_y = ny; }
+        CHECK(nx == first_x && ny == first_y,
+              "run %d chose %d,%d where run 0 chose %d,%d",
+              run, nx, ny, first_x, first_y);
+        gg_path_free(&pf);
+    }
+}
+
+static void a_resident_crosses_the_town_to_a_fixed_target(void) {
+    // The reason pathfinding exists: greedy stepping left a resident pressed
+    // against whatever building stood between it and where it was due.
+    //
+    // One resident with one fixed target, and the rest stood down. Measuring
+    // the *scheduled* positions instead was tried and is a trap: somebody's
+    // schedule turns over on nearly every hour, so whatever moment the test
+    // picks, someone has just been given a new target and had no time to walk
+    // to it. That is the clock moving, not the pathing failing.
+    gg_game g;
+    CHECK(gg_game_new(&g, 91, "Tester"), "new game failed");
+    CHECK(g.actors > 1, "the town has no residents to test");
+
+    for (int i = 1; i < g.actors; i++) g.actor[i].active = false;
+    gg_actor *a = &g.actor[1];
+    a->active = true;
+
+    // A target on the far side of the town square, reachable but with the
+    // buildings between - found by walking outward from a guess until a
+    // walkable cell turns up, so the test does not depend on the exact layout.
+    int tx = g.map.start_x + 12, ty = g.map.start_y + 10;
+    for (int r = 0; r < 20 && !gg_map_walkable(&g.map, tx, ty); r++) {
+        tx = g.map.start_x + 12 - r;
+        ty = g.map.start_y + 10 - r;
+    }
+    CHECK(gg_map_walkable(&g.map, tx, ty), "could not find a target to walk to");
+
+    const int start_d = gg_dist_cheb(a->x, a->y, tx, ty);
+    CHECK(start_d > 8, "the target is too close to prove anything: %d", start_d);
+
+    a->schedn = 1;
+    a->sched[0] = (gg_sched_entry){ .hour = 0, .x = (int16_t)tx, .y = (int16_t)ty };
+
+    for (int t = 0; t < 300; t++) {
+        gg_game_act(&g, GG_ACT_WAIT);
+        if (a->x == tx && a->y == ty) break;
+    }
+
+    CHECK(a->x == tx && a->y == ty,
+          "%s got from %d tiles away to %d, never arriving at %d,%d",
+          a->name, start_d, gg_dist_cheb(a->x, a->y, tx, ty), tx, ty);
+    gg_game_free(&g);
+}
+
+static void a_resident_walks_round_a_building_rather_than_into_it(void) {
+    // The specific failure greedy stepping had: put a wall squarely between an
+    // actor and its target and it pressed against the wall for ever.
+    gg_game g;
+    CHECK(gg_game_new(&g, 92, "Tester"), "new game failed");
+    for (int i = 1; i < g.actors; i++) g.actor[i].active = false;
+    CHECK(g.actors > 1, "no residents");
+
+    // Build the situation rather than hunt for it: a long wall with the actor
+    // on one side and its target on the other, and a gap at one end.
+    gg_actor *a = &g.actor[1];
+    a->active = true;
+    const int cx = g.map.start_x, cy = g.map.start_y;
+
+    for (int y = cy - 6; y <= cy + 6; y++)
+        for (int x = cx - 10; x <= cx + 10; x++) {
+            gg_cell *c = gg_map_at(&g.map, x, y);
+            if (!c) continue;
+            c->terrain = GG_TILE_GRASS;
+            c->prop = GG_NO_PROP;
+            c->flags = 0;
+        }
+    // A wall down the middle, open only at its northern end.
+    for (int y = cy - 3; y <= cy + 6; y++) {
+        gg_cell *c = gg_map_at(&g.map, cx, y);
+        if (c) { c->terrain = GG_TILE_MOUNTAIN; c->flags |= GG_CELL_BLOCKED; }
+    }
+
+    a->x = (int16_t)(cx - 4); a->y = (int16_t)(cy + 2); a->step = 0;
+    const int tx = cx + 4, ty = cy + 2;
+    CHECK(gg_map_walkable(&g.map, tx, ty), "the target is not walkable");
+
+    a->schedn = 1;
+    a->sched[0] = (gg_sched_entry){ .hour = 0, .x = (int16_t)tx, .y = (int16_t)ty };
+
+    for (int t = 0; t < 200; t++) {
+        gg_game_act(&g, GG_ACT_WAIT);
+        if (a->x == tx && a->y == ty) break;
+    }
+    CHECK(a->x == tx && a->y == ty,
+          "%s stopped at %d,%d instead of walking round the wall to %d,%d",
+          a->name, a->x, a->y, tx, ty);
+    gg_game_free(&g);
 }
 
 // ---------------------------------------------------------------------------
@@ -978,6 +1247,15 @@ int main(void) {
     RUN(the_generated_start_tile_is_always_walkable);
     RUN(a_saved_map_reloads_byte_for_byte);
     RUN(loading_a_file_that_is_not_a_map_fails_cleanly);
+
+    RUN(a_path_goes_around_a_wall);
+    RUN(a_path_solves_a_serpentine_maze);
+    RUN(a_path_never_cuts_a_diagonal_corner);
+    RUN(an_unreachable_target_still_moves_toward_it);
+    RUN(a_completely_boxed_in_actor_reports_no_step);
+    RUN(the_search_is_reproducible);
+    RUN(a_resident_crosses_the_town_to_a_fixed_target);
+    RUN(a_resident_walks_round_a_building_rather_than_into_it);
 
     RUN(a_buildings_walls_block_but_its_room_does_not);
     RUN(a_building_can_be_walked_into_and_out_of);

@@ -85,6 +85,19 @@ const char *gg_game_place(const gg_game *g) {
 // ---------------------------------------------------------------------------
 // The world's half of a turn
 // ---------------------------------------------------------------------------
+// What the pathfinder is allowed to know: the map, and who is standing where.
+// Passed as a context rather than compiled in, so gg_path stays testable
+// against a hand-drawn maze with no world at all.
+typedef struct {
+    const gg_game *g;
+    int self;              // the actor being moved, which is not its own obstacle
+} gg_walk_ctx;
+
+static bool path_passable(void *vctx, int x, int y) {
+    const gg_walk_ctx *c = vctx;
+    if (!gg_map_walkable(&c->g->map, x, y)) return false;
+    return !gg_actor_occupied(c->g->actor, c->g->actors, x, y, c->self);
+}
 static void world_turn(gg_game *g, int minutes) {
     g->turn++;
     g->minutes += (uint32_t)minutes;
@@ -108,7 +121,19 @@ static void world_turn(gg_game *g, int minutes) {
                 a->facing = (uint8_t)gg_rand_below(&g->rng, 4);
             continue;
         }
-        gg_actor_step_toward(a, &g->map, g->actor, g->actors, tx, ty, &g->rng);
+        // A* first. Greedy stepping is kept as the fallback for the case the
+        // search cannot help with at all - boxed in on every side - where a
+        // random legal step is what unpicks a knot in a doorway.
+        gg_walk_ctx ctx = { .g = g, .self = i };
+        int nx, ny;
+        if (gg_path_next_step(&g->path, path_passable, &ctx,
+                              a->x, a->y, tx, ty, GG_PATH_BUDGET, &nx, &ny) &&
+            gg_map_walkable(&g->map, nx, ny) &&
+            !gg_actor_occupied(g->actor, g->actors, nx, ny, i)) {
+            gg_actor_move_to(a, nx, ny);
+        } else {
+            gg_actor_step_toward(a, &g->map, g->actor, g->actors, tx, ty, &g->rng);
+        }
     }
 }
 
@@ -315,6 +340,11 @@ static void place_townsfolk(gg_game *g) {
 
 // Everything a new game needs once its map exists, however the map got there.
 static bool finish_new_game(gg_game *g, const char *profile) {
+    if (!gg_path_init(&g->path, g->map.w, g->map.h)) {
+        SDL_Log("gigantima: could not allocate the pathfinder");
+        return false;
+    }
+
     SDL_strlcpy(g->profile, profile && *profile ? profile : "Avatar",
                 sizeof g->profile);
 
@@ -370,5 +400,6 @@ bool gg_game_new_from_map(gg_game *g, const char *path, const char *profile) {
 
 void gg_game_free(gg_game *g) {
     if (!g) return;
+    gg_path_free(&g->path);
     gg_map_free(&g->map);
 }
