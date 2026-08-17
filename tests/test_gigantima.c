@@ -187,6 +187,141 @@ static void loading_a_file_that_is_not_a_map_fails_cleanly(void) {
 }
 
 // ---------------------------------------------------------------------------
+// Buildings
+// ---------------------------------------------------------------------------
+static void a_placed_building_blocks_its_whole_footprint(void) {
+    gg_map m;
+    CHECK(gg_map_alloc(&m, 24, 24), "alloc failed");
+    for (int i = 0; i < 24 * 24; i++) m.cell[i].terrain = GG_TILE_GRASS;
+
+    const gg_prop_id house = GG_PROP_HOUSE_BRICK_A;
+    CHECK(gg_map_place_prop(&m, 12, 12, house), "placement failed on open grass");
+
+    int x0, y0, x1, y1;
+    gg_prop_footprint(house, 12, 12, &x0, &y0, &x1, &y1);
+    const gg_prop_size *s = &GG_PROP_SIZE[house];
+    const int door_x = x0 + s->door_dx;
+
+    for (int y = y0; y <= y1; y++)
+        for (int x = x0; x <= x1; x++) {
+            if (x == door_x && y == y1) continue;    // the doorway
+            CHECK(!gg_map_walkable(&m, x, y),
+                  "the wall at %d,%d is walkable", x, y);
+        }
+    gg_map_free(&m);
+}
+
+static void a_buildings_doorway_is_walkable(void) {
+    gg_map m;
+    CHECK(gg_map_alloc(&m, 24, 24), "alloc failed");
+    for (int i = 0; i < 24 * 24; i++) m.cell[i].terrain = GG_TILE_GRASS;
+
+    // Every house kind, because a door column outside the footprint would
+    // silently put the doorway in a neighbour's wall.
+    static const gg_prop_id HOUSES[] = {
+        GG_PROP_HOUSE_BRICK_A, GG_PROP_HOUSE_BRICK_B, GG_PROP_HOUSE_PANELED,
+    };
+    for (size_t i = 0; i < GG_COUNTOF(HOUSES); i++) {
+        gg_map n;
+        CHECK(gg_map_alloc(&n, 24, 24), "alloc failed");
+        for (int k = 0; k < 24 * 24; k++) n.cell[k].terrain = GG_TILE_GRASS;
+
+        CHECK(gg_map_place_prop(&n, 12, 12, HOUSES[i]), "placement %zu failed", i);
+        const gg_prop_size *s = &GG_PROP_SIZE[HOUSES[i]];
+        CHECK(s->door_dx != GG_NO_DOOR, "house %zu has no door", i);
+
+        int x0, y0, x1, y1;
+        gg_prop_footprint(HOUSES[i], 12, 12, &x0, &y0, &x1, &y1);
+        const int dx = x0 + s->door_dx;
+        CHECK(gg_map_walkable(&n, dx, y1),
+              "house %zu: the doorway at %d,%d is not walkable", i, dx, y1);
+        CHECK(gg_map_at_const(&n, dx, y1)->flags & GG_CELL_DOOR,
+              "house %zu: the doorway is not flagged as one", i);
+        gg_map_free(&n);
+    }
+    gg_map_free(&m);
+}
+
+static void you_can_walk_behind_a_building(void) {
+    // The whole point of drawing buildings as props: the roof overhangs rows
+    // the footprint does not cover, and those stay walkable. If the footprint
+    // were the sprite, a town would be a wall of roofs you could not get past.
+    gg_map m;
+    CHECK(gg_map_alloc(&m, 24, 24), "alloc failed");
+    for (int i = 0; i < 24 * 24; i++) m.cell[i].terrain = GG_TILE_GRASS;
+
+    const gg_prop_id house = GG_PROP_HOUSE_BRICK_A;
+    CHECK(gg_map_place_prop(&m, 12, 12, house), "placement failed");
+
+    int x0, y0, x1, y1;
+    gg_prop_footprint(house, 12, 12, &x0, &y0, &x1, &y1);
+    const gg_prop_size *s = &GG_PROP_SIZE[house];
+
+    CHECK(s->tiles_h > s->foot_h, "this house has no overhang to test");
+    // The row just above the footprint is under the roof and must be open.
+    for (int x = x0; x <= x1; x++)
+        CHECK(gg_map_walkable(&m, x, y0 - 1),
+              "the tile behind the house at %d,%d is blocked", x, y0 - 1);
+    gg_map_free(&m);
+}
+
+static void a_building_that_does_not_fit_changes_nothing(void) {
+    gg_map m;
+    CHECK(gg_map_alloc(&m, 24, 24), "alloc failed");
+    for (int i = 0; i < 24 * 24; i++) m.cell[i].terrain = GG_TILE_GRASS;
+
+    // Off the map edge.
+    CHECK(!gg_map_place_prop(&m, 0, 0, GG_PROP_HOUSE_BRICK_A),
+          "a house was placed over the map edge");
+    for (int i = 0; i < 24 * 24; i++)
+        CHECK(m.cell[i].flags == 0 && m.cell[i].prop == GG_NO_PROP,
+              "a refused placement left the map changed");
+
+    // On water.
+    for (int i = 0; i < 24 * 24; i++) {
+        m.cell[i].terrain = GG_TILE_WATER;
+        m.cell[i].flags = GG_CELL_WATER;
+    }
+    CHECK(!gg_map_place_prop(&m, 12, 12, GG_PROP_HOUSE_BRICK_A),
+          "a house was built on water");
+
+    // Onto another building.
+    for (int i = 0; i < 24 * 24; i++) {
+        m.cell[i].terrain = GG_TILE_GRASS;
+        m.cell[i].flags = 0;
+        m.cell[i].prop = GG_NO_PROP;
+    }
+    CHECK(gg_map_place_prop(&m, 12, 12, GG_PROP_HOUSE_BRICK_A), "first failed");
+    CHECK(!gg_map_place_prop(&m, 13, 12, GG_PROP_HOUSE_BRICK_A),
+          "two houses were placed on top of each other");
+    gg_map_free(&m);
+}
+
+static void the_generated_town_has_buildings_with_reachable_doors(void) {
+    // A door you cannot stand in front of is not a door. Sweep seeds: the town
+    // is laid on a grid but the three houses have different footprints, so
+    // placement refuses often enough that this is worth checking.
+    for (uint32_t seed = 1; seed <= 20; seed++) {
+        gg_map m;
+        CHECK(gg_map_generate(&m, 160, 140, seed), "generate failed");
+
+        int doors = 0, reachable = 0;
+        for (int y = 0; y < m.h; y++)
+            for (int x = 0; x < m.w; x++) {
+                if (!(gg_map_at_const(&m, x, y)->flags & GG_CELL_DOOR)) continue;
+                doors++;
+                // The cell below a door is the street it opens onto.
+                if (gg_map_walkable(&m, x, y + 1)) reachable++;
+            }
+        CHECK(doors > 0, "seed %u produced a town with no doors at all", seed);
+        CHECK(reachable == doors,
+              "seed %u: %d of %d doors open onto something blocked",
+              seed, doors - reachable, doors);
+        gg_map_free(&m);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Clock
 // ---------------------------------------------------------------------------
 static void the_clock_wraps_at_midnight_and_advances_the_day(void) {
@@ -784,6 +919,12 @@ int main(void) {
     RUN(the_generated_start_tile_is_always_walkable);
     RUN(a_saved_map_reloads_byte_for_byte);
     RUN(loading_a_file_that_is_not_a_map_fails_cleanly);
+
+    RUN(a_placed_building_blocks_its_whole_footprint);
+    RUN(a_buildings_doorway_is_walkable);
+    RUN(you_can_walk_behind_a_building);
+    RUN(a_building_that_does_not_fit_changes_nothing);
+    RUN(the_generated_town_has_buildings_with_reachable_doors);
 
     RUN(the_clock_wraps_at_midnight_and_advances_the_day);
     RUN(daylight_peaks_at_noon_and_bottoms_at_midnight);

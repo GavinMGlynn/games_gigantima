@@ -79,6 +79,68 @@ int gg_map_region_at(const gg_map *m, int x, int y) {
 }
 
 // ---------------------------------------------------------------------------
+// Placing props
+// ---------------------------------------------------------------------------
+void gg_prop_footprint(gg_prop_id p, int x, int y,
+                       int *x0, int *y0, int *x1, int *y1) {
+    const gg_prop_size *s = &GG_PROP_SIZE[p];
+    // The anchor is the footprint's bottom centre. For an even-width
+    // footprint the extra column goes to the right, matching how the baker
+    // rounds when it derives the anchor.
+    *x0 = x - (s->foot_w - 1) / 2;
+    *x1 = *x0 + s->foot_w - 1;
+    *y1 = y;
+    *y0 = y - s->foot_h + 1;
+}
+
+bool gg_map_prop_fits(const gg_map *m, int x, int y, gg_prop_id p) {
+    int x0, y0, x1, y1;
+    gg_prop_footprint(p, x, y, &x0, &y0, &x1, &y1);
+
+    for (int cy = y0; cy <= y1; cy++) {
+        for (int cx = x0; cx <= x1; cx++) {
+            const gg_cell *c = gg_map_at_const(m, cx, cy);
+            if (!c) return false;                        // off the map
+            if (c->flags & GG_CELL_WATER) return false;  // nothing is built on water
+            if (c->flags & GG_CELL_BLOCKED) return false;
+            if (GG_HAS_PROP(c)) return false;
+        }
+    }
+    return true;
+}
+
+bool gg_map_place_prop(gg_map *m, int x, int y, gg_prop_id p) {
+    if (!gg_map_prop_fits(m, x, y, p)) return false;
+
+    const gg_prop_size *s = &GG_PROP_SIZE[p];
+    int x0, y0, x1, y1;
+    gg_prop_footprint(p, x, y, &x0, &y0, &x1, &y1);
+
+    for (int cy = y0; cy <= y1; cy++) {
+        for (int cx = x0; cx <= x1; cx++) {
+            gg_cell *c = gg_map_at(m, cx, cy);
+            c->flags |= GG_CELL_BLOCKED;
+        }
+    }
+
+    // The sprite hangs off the anchor cell alone; the rest of the footprint is
+    // blocking with nothing drawn on it, which is what stops one building being
+    // drawn several times.
+    gg_map_at(m, x, y)->prop = (uint8_t)(p + 1);
+
+    if (s->door_dx != GG_NO_DOOR) {
+        gg_cell *d = gg_map_at(m, x0 + s->door_dx, y1);
+        if (d) {
+            // A doorway is a hole in the wall: passable, and marked so the
+            // simulation can tell it apart from open ground.
+            d->flags &= (uint8_t)~GG_CELL_BLOCKED;
+            d->flags |= GG_CELL_DOOR;
+        }
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
 // Generation
 //
 // Not a serious world generator - it exists so there is something coherent to
@@ -272,42 +334,37 @@ static void carve_road(gg_map *m, gg_rng *rng, int x0, int y0, int x1, int y1) {
     }
 }
 
-// One building: a rectangle of blocked cells with a wooden floor inside and a
-// door on one wall. Ultima VI drew buildings in the world grid, so this is a
-// stamp into the same cells everything else lives in - there is no interior
-// map to load.
-static void build_house(gg_map *m, gg_rng *rng, int x, int y, int w, int h) {
-    for (int j = 0; j < h; j++) {
-        for (int i = 0; i < w; i++) {
-            gg_cell *c = gg_map_at(m, x + i, y + j);
-            if (!c) continue;
-            c->prop = GG_NO_PROP;
-            c->terrain = GG_TILE_EARTH_DARK;
-            c->flags &= (uint8_t)~GG_CELL_WATER;
+// The three buildings the art gives us. Drawn as props, so a roof overhangs
+// the rows behind it and the player can walk there - which is what makes a
+// three-quarter view read as a town rather than as a floor plan.
+//
+// Earlier this stamped a rectangle of wall terrain instead, which meant the
+// terrain table was carrying masonry it had no business knowing about, and
+// every building was a bare box.
+static const gg_prop_id HOUSE_KINDS[] = {
+    GG_PROP_HOUSE_BRICK_A, GG_PROP_HOUSE_BRICK_B, GG_PROP_HOUSE_PANELED,
+};
 
-            const bool wall = (i == 0 || j == 0 || i == w - 1 || j == h - 1);
-            if (wall) {
-                // The pale cobble reads as masonry against the dark interior.
-                // The striated cliff face was tried first and made every
-                // building a brown blob, because the floor is brown too - a
-                // wall has to contrast with what it encloses, not just with
-                // the grass outside.
-                c->terrain = GG_TILE_MOUNTAIN;
-                c->flags |= GG_CELL_BLOCKED;
-            } else {
-                c->flags |= GG_CELL_INDOORS;
-            }
+// Puts a house down with its anchor at (x, y), and lays a patch of trodden
+// ground in front of the door so the entrance reads from a distance. Returns
+// false if it would not fit, leaving the map untouched.
+static bool build_house(gg_map *m, gg_rng *rng, int x, int y) {
+    const gg_prop_id kind = HOUSE_KINDS[gg_rand_belowi(rng, (int)GG_COUNTOF(HOUSE_KINDS))];
+    if (!gg_map_place_prop(m, x, y, kind)) return false;
+
+    const gg_prop_size *s = &GG_PROP_SIZE[kind];
+    int x0, y0, x1, y1;
+    gg_prop_footprint(kind, x, y, &x0, &y0, &x1, &y1);
+
+    if (s->door_dx != GG_NO_DOOR) {
+        const int dx = x0 + s->door_dx;
+        for (int j = 0; j <= 1; j++) {
+            gg_cell *c = gg_map_at(m, dx, y1 + j);
+            if (c && !(c->flags & GG_CELL_BLOCKED) && !(c->flags & GG_CELL_WATER))
+                c->terrain = GG_TILE_DIRT;
         }
     }
-    // The door goes in the south wall, which is the one the player approaches
-    // from when the town is entered by road from the north.
-    const int dx = x + 1 + (int)gg_rand_below(rng, (uint32_t)(w - 2));
-    gg_cell *d = gg_map_at(m, dx, y + h - 1);
-    if (d) {
-        d->flags &= (uint8_t)~GG_CELL_BLOCKED;
-        d->flags |= GG_CELL_DOOR;
-        d->terrain = GG_TILE_DIRT;
-    }
+    return true;
 }
 
 static void build_town(gg_map *m, gg_rng *rng, int tx, int ty, int tw, int th) {
@@ -328,17 +385,20 @@ static void build_town(gg_map *m, gg_rng *rng, int tx, int ty, int tw, int th) {
         }
     }
 
-    // A ring of houses around a central square, placed on a loose grid so the
-    // town has streets rather than a random pile of boxes.
+    // A ring of houses around a central square, on a loose grid so the town
+    // has streets rather than a random pile of boxes. The anchor is the middle
+    // of a house's front wall, so the grid step has to clear the widest
+    // footprint - six tiles - plus a street.
     for (int j = 0; j < 3; j++) {
         for (int i = 0; i < 4; i++) {
             if (j == 1 && (i == 1 || i == 2)) continue;   // leave the square
-            const int w = gg_rand_range(rng, 5, 7);
-            const int h = gg_rand_range(rng, 4, 6);
-            const int x = tx + 2 + i * 8;
-            const int y = ty + 2 + j * 8;
-            if (x + w >= tx + tw || y + h >= ty + th) continue;
-            build_house(m, rng, x, y, w, h);
+            const int x = tx + 5 + i * 8;
+            const int y = ty + 6 + j * 8;
+            // Placement can refuse, and a refusal is fine: the three houses
+            // have different footprints, so one may not clear its neighbour,
+            // and the gap it leaves reads as a town that grew rather than one
+            // that was laid out.
+            build_house(m, rng, x, y);
         }
     }
 

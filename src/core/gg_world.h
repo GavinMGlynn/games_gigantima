@@ -93,6 +93,25 @@ bool gg_map_walkable(const gg_map *m, int x, int y);
 // there are at most GG_REGION_MAX of them and this is not on a hot path.
 int gg_map_region_at(const gg_map *m, int x, int y);
 
+// --- placing props ---------------------------------------------------------
+// The tile range a prop occupies if anchored at (x, y). The anchor is the
+// footprint's bottom centre - the cell the thing stands on - so the footprint
+// extends up and out from there.
+void gg_prop_footprint(gg_prop_id p, int x, int y,
+                       int *x0, int *y0, int *x1, int *y1);
+
+// Could a prop be anchored here? False if any of its footprint would fall off
+// the map, land on water, or land on something already occupied.
+bool gg_map_prop_fits(const gg_map *m, int x, int y, gg_prop_id p);
+
+// Anchors a prop at (x, y): puts the sprite on the anchor cell, blocks the
+// rest of the footprint, and opens its doorway if it has one. Returns false
+// and changes nothing if it does not fit.
+//
+// One implementation, so the generator, the editor and any future content
+// loader cannot disagree about where a building's walls are.
+bool gg_map_place_prop(gg_map *m, int x, int y, gg_prop_id p);
+
 // --- generation ------------------------------------------------------------
 // Builds the demo continent: terrain bands, a lake, forest, a road and a
 // walled town. Deterministic in `seed` - the same number always produces the

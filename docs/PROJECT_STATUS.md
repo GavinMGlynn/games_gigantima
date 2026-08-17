@@ -212,6 +212,33 @@ a square lake, each exactly once), `water_at_the_map_edge_draws_no_shoreline_aga
 land-boundary art, so this must never happen), `the_coastline_has_no_isolated_puddles`
 (25 seeds).*
 
+### Buildings
+
+Exteriors only. The three pre-assembled houses from LPC's
+`Structure/Structures/` — brick, gabled brick and panelled — with roofs,
+chimneys, windows, doorframes and porches, drawn as props.
+
+A prop's **footprint is smaller than its sprite**, which is what makes this
+work: a house is 8×7 tiles but stands on 6×3, so the roof overhangs the rows
+behind it and the player walks there. The anchor is the footprint's bottom
+centre, derived in the baker from the footprint rather than declared, so the
+two cannot disagree. `gg_map_place_prop` is the single implementation of
+"put a building here", shared by the generator and, later, the editor.
+
+The terrain table no longer carries masonry: `GG_TILE_MOUNTAIN` used to stand
+in for a wall.
+
+**You cannot go inside.** A door is walkable and flagged, and it opens onto a
+wall. Interiors need a design decision first — Ultima VI omitted roofs entirely
+and showed every interior, whereas these sprites are facades that would need a
+roof cutaway. Named in the plan with both options.
+
+*Verification: `a_placed_building_blocks_its_whole_footprint`,
+`a_buildings_doorway_is_walkable` (all three kinds),
+`you_can_walk_behind_a_building`,
+`a_building_that_does_not_fit_changes_nothing`,
+`the_generated_town_has_buildings_with_reachable_doors` (20 seeds).*
+
 ### Input
 
 Keyboard and gamepad, read every frame and merged, so either can be used at any
@@ -302,13 +329,11 @@ Deliberate, documented, with the cost to close:
   per-turn budget.
 - **Whole-view light quad.** Ignores `GG_CELL_INDOORS` and light sources.
   Closing it needs a light model — emitters, radius, and a per-tile blend.
-- **Buildings as flat rectangles.** The LPC Structure sheets carry roofs,
-  windows and doorframes in 3×3 arrangements this project has not decoded yet.
+- **`GG_CELL_INDOORS` is now set by nothing.** It was set on the old
+  rectangles' interiors; buildings have no interior to be inside yet, so the
+  flag is declared and unused until they do.
 - **Roads stop at water** rather than bridging it. Paving the water was what
   put a brown causeway across the middle of the lake; a bridge prop is the
   proper fix.
-- **`GG_TILE_MOUNTAIN` doubles as masonry.** The pale cobble reads as stone
-  wall against the dark interior, which is why it was chosen over the striated
-  cliff face — but it is a terrain tile standing in for a structure tile.
 - **The map's `region` byte is written and never read** beyond the region
   bounding boxes. It is there for the editor.

@@ -100,10 +100,30 @@ item to tick the easy half is the same violation wearing a different shape.
       `equal_ranks_do_not_transition`, `water_and_masonry_take_no_overlay`, and
       an authored scene banding desert / sand / road / dirt / farmland / grass
       with no straight-line edge anywhere in it.*
-- [ ] **Real buildings.** Walls, roofs, windows, doorframes and interior floors
-      from the LPC Structure sheets, replacing the current rectangles of
-      `GG_TILE_MOUNTAIN`. *Verification: a town frame in which buildings read
-      as buildings; the terrain table no longer used for masonry.*
+- [ ] **Real buildings. In progress: exteriors done, interiors not.**
+      Buildings are now the three pre-assembled houses from
+      `Structure/Structures/`, drawn as props with a footprint smaller than
+      their sprite, so roofs overhang tiles the player walks behind. The
+      terrain table no longer carries masonry.
+      *Verification of the part that is done:
+      `a_placed_building_blocks_its_whole_footprint`,
+      `a_buildings_doorway_is_walkable` (all three kinds),
+      `you_can_walk_behind_a_building`,
+      `a_building_that_does_not_fit_changes_nothing`,
+      `the_generated_town_has_buildings_with_reachable_doors` (20 seeds).*
+      **What is missing: you cannot go inside.** A door is walkable and opens
+      onto a wall. The item cannot be finished as written until a design
+      question is settled, because the two answers need different art and a
+      different renderer:
+      - *Ultima VI's own answer*: top-down, roofs omitted entirely, every
+        building's interior permanently visible. Authentic, and it means
+        assembling buildings from `Structure/Walls` and `Structure/Floor`
+        rather than using the pre-assembled sprites, which are facades.
+      - *The LPC answer*: keep the facades and hide the roof when the player
+        steps inside — `Structure/Walls/CutawayOverlay.png` exists for exactly
+        this — with interior floors and furniture behind it.
+      *Verification when settled: the player walks through a door, stands
+      inside, and the interior is visible in a `--shot` frame.*
 - [ ] **A* pathfinding with a per-turn budget**, replacing greedy stepping.
       *Verification: an NPC whose schedule point is behind a wall reaches it;
       a test that walks one across a town with an obstacle between.*

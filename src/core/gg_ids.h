@@ -42,6 +42,9 @@ typedef enum {
     GG_PROP_FERN,
     GG_PROP_LILYPAD,
     GG_PROP_CATTAILS,
+    GG_PROP_HOUSE_BRICK_A,
+    GG_PROP_HOUSE_BRICK_B,
+    GG_PROP_HOUSE_PANELED,
     GG_PROP_COUNT
 } gg_prop_id;
 
@@ -61,9 +64,24 @@ typedef enum { GG_FACE_UP, GG_FACE_LEFT, GG_FACE_DOWN, GG_FACE_RIGHT } gg_facing
 #define GG_ACTOR_FRAMES  8
 #define GG_ACTOR_DIRS    4
 
-// A prop's footprint in tiles, which the simulation needs for
-// collision. The sprite may stand taller and overhang above it.
-typedef struct { uint8_t tiles_w, tiles_h, foot_h; } gg_prop_size;
+// A prop's geometry, which the simulation needs for collision and
+// the renderer for placement.
+//
+//   tiles_w/h   the sprite, in tiles
+//   anchor_x/y  the sprite cell that sits on the map cell the prop
+//               occupies - always the footprint's bottom centre
+//   foot_w/h    the footprint: what stands on the ground and blocks.
+//               The sprite may be larger and overhang the rows above,
+//               which is how a roof covers tiles you can walk behind.
+//   door_dx     column within the footprint that is a doorway, or
+//               GG_NO_DOOR. That cell stays walkable.
+#define GG_NO_DOOR 255
+typedef struct {
+    uint8_t tiles_w, tiles_h;
+    uint8_t anchor_x, anchor_y;
+    uint8_t foot_w, foot_h;
+    uint8_t door_dx;
+} gg_prop_size;
 extern const gg_prop_size GG_PROP_SIZE[GG_PROP_COUNT];
 
 #endif // GG_IDS_H

@@ -261,12 +261,22 @@ void gg_render_screen_to_tile(const gg_game *g, int sx, int sy, int *tx, int *ty
 // Depth-sorted sprite list
 // ---------------------------------------------------------------------------
 // Sized for the worst case: every cell of the gathered band holding a prop,
-// plus every actor. The band is wider and taller than the view because a
-// sub-tile camera shows part of a row past each edge, and a tall prop whose
-// base is below the bottom edge still has a canopy inside it. Static rather
-// than allocated: it is rebuilt every frame and the bound is small and known.
-#define GATHER_X (GG_VIEW_TILES_X + 5)
-#define GATHER_Y (GG_VIEW_TILES_Y + 8)
+// plus every actor. Static rather than allocated: it is rebuilt every frame
+// and the bound is small and known.
+//
+// The band runs well outside the view, because a prop is anchored at its
+// footprint and drawn from there in every direction. The largest is an 8x7
+// house anchored 3 tiles from its left edge and 5 rows up from its bottom, so
+// its roof reaches five rows above the anchor and its walls four columns to
+// the right. Under-sizing this does not crash - it makes buildings pop in at
+// the edge of the screen, which is exactly the artifact a sub-tile camera was
+// added to remove.
+#define GATHER_PAD_L 5
+#define GATHER_PAD_R 6
+#define GATHER_PAD_T 2
+#define GATHER_PAD_B 8
+#define GATHER_X (GG_VIEW_TILES_X + GATHER_PAD_L + GATHER_PAD_R)
+#define GATHER_Y (GG_VIEW_TILES_Y + GATHER_PAD_T + GATHER_PAD_B)
 #define MAX_SPRITES (GATHER_X * GATHER_Y + GG_ACTORS_MAX)
 
 typedef struct {
@@ -357,8 +367,10 @@ void gg_render_world(const gg_game *g, SDL_Renderer *ren) {
     static gg_sprite list[MAX_SPRITES];
     int n = 0;
 
-    for (int wy = cam_ty - 1; wy < cam_ty + GATHER_Y - 1 && n < MAX_SPRITES; wy++) {
-        for (int wx = cam_tx - 2; wx < cam_tx + GATHER_X - 2 && n < MAX_SPRITES; wx++) {
+    for (int wy = cam_ty - GATHER_PAD_T;
+         wy < cam_ty + GG_VIEW_TILES_Y + GATHER_PAD_B && n < MAX_SPRITES; wy++) {
+        for (int wx = cam_tx - GATHER_PAD_L;
+             wx < cam_tx + GG_VIEW_TILES_X + GATHER_PAD_R && n < MAX_SPRITES; wx++) {
             const gg_cell *c = gg_map_at_const(&g->map, wx, wy);
             if (!c || !GG_HAS_PROP(c)) continue;
 
@@ -366,13 +378,17 @@ void gg_render_world(const gg_game *g, SDL_Renderer *ren) {
             const gg_rect *r = &GG_PROP_RECT[id];
             const gg_prop_size *s = &GG_PROP_SIZE[id];
 
-            // Anchor: horizontally centred on the base tile, bottom edge flush
-            // with the bottom of the base tile row. Everything is computed in
-            // world pixels and shifted by the camera, so props slide with the
-            // terrain rather than snapping between tiles.
+            // The sprite is placed so its anchor cell - the footprint's bottom
+            // centre - lands on the map cell the prop occupies. For a tree
+            // that is the trunk; for a house it is the middle of the front
+            // wall, several rows up from the bottom of the sprite, which is
+            // what lets the roof overhang tiles the player can walk behind.
+            //
+            // All in world pixels, shifted by the camera, so props slide with
+            // the terrain rather than snapping between tiles.
             const int base_y = (wy + 1) * GG_TILE;
-            const int px = wx * GG_TILE - ((s->tiles_w - 1) / 2) * GG_TILE - cam_px;
-            const int py = base_y - r->h - cam_py;
+            const int px = (wx - s->anchor_x) * GG_TILE - cam_px;
+            const int py = (wy - s->anchor_y) * GG_TILE - cam_py;
 
             list[n++] = (gg_sprite){
                 .key = base_y,

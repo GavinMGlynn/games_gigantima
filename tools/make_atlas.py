@@ -120,22 +120,60 @@ EDGES = [
 # ---------------------------------------------------------------------------
 TREES = "Terrain/trees_summer.png"
 PLANTS = "Terrain/plants_summer.png"
+HOUSES = "Structure/Structures"
+
+NO_DOOR = 255
+
+
+def prop(name, sheet, col, row, w, h, foot=None, door=NO_DOOR):
+    """One prop.
+
+    `foot` is the footprint within the sprite as (x, y, w, h) in tiles - the
+    part that stands on the ground and blocks. It defaults to a single tile at
+    the sprite's bottom centre, which is right for a tree: three tiles wide and
+    four tall, but standing on one, with the canopy overhanging the rows above.
+
+    A building is the case that needs the general form. Its roof overhangs
+    upward over tiles that are *behind* it, and the player should be able to
+    walk there - so the footprint is the wall body, not the whole sprite.
+
+    `door` is a column offset within the footprint, on its bottom row. That
+    cell is left walkable and flagged as a door.
+    """
+    if foot is None:
+        foot = ((w - 1) // 2, h - 1, 1, 1)
+    return (name, sheet, col, row, w, h, foot, door)
+
 
 PROPS = [
-    ("TREE_OAK",     TREES,   4,  0, 3, 4, 1),
-    ("TREE_ELM",     TREES,   7,  0, 3, 4, 1),
-    ("TREE_TALL",    TREES,  10,  0, 3, 4, 1),
-    ("TREE_PINE",    TREES,   4, 12, 3, 4, 1),
-    ("TREE_FIR",     TREES,   7, 12, 3, 4, 1),
-    ("TREE_BARE",    TREES,   0,  8, 3, 5, 1),
-    ("STUMP",        TREES,   1, 14, 1, 1, 1),
-    ("BUSH_ROUND",   PLANTS,  0,  0, 1, 2, 1),
-    ("BUSH_LEAFY",   PLANTS,  2,  0, 1, 2, 1),
-    ("BUSH_CONIFER", PLANTS,  0,  2, 1, 2, 1),
-    ("REEDS",        PLANTS, 11,  0, 1, 2, 1),
-    ("FERN",         PLANTS,  3,  2, 1, 2, 1),
-    ("LILYPAD",      PLANTS, 12,  2, 1, 1, 1),
-    ("CATTAILS",     PLANTS, 14,  2, 1, 2, 1),
+    prop("TREE_OAK",     TREES,   4,  0, 3, 4),
+    prop("TREE_ELM",     TREES,   7,  0, 3, 4),
+    prop("TREE_TALL",    TREES,  10,  0, 3, 4),
+    prop("TREE_PINE",    TREES,   4, 12, 3, 4),
+    prop("TREE_FIR",     TREES,   7, 12, 3, 4),
+    prop("TREE_BARE",    TREES,   0,  8, 3, 5),
+    prop("STUMP",        TREES,   1, 14, 1, 1),
+    prop("BUSH_ROUND",   PLANTS,  0,  0, 1, 2),
+    prop("BUSH_LEAFY",   PLANTS,  2,  0, 1, 2),
+    prop("BUSH_CONIFER", PLANTS,  0,  2, 1, 2),
+    prop("REEDS",        PLANTS, 11,  0, 1, 2),
+    prop("FERN",         PLANTS,  3,  2, 1, 2),
+    prop("LILYPAD",      PLANTS, 12,  2, 1, 1),
+    prop("CATTAILS",     PLANTS, 14,  2, 1, 2),
+
+    # Buildings. Each is its own file rather than a cell of a sheet, so the
+    # column and row are zero and the whole image is the sprite.
+    #
+    # The footprints were read off a magnified render with a tile grid over it,
+    # not guessed: for Brick House A the brick wall runs cols 1-6 of 8 and rows
+    # 3-5 of 7, the slate roof overhangs the three rows above it, and the door
+    # is the dark opening in column 2 with the stone step below it.
+    prop("HOUSE_BRICK_A",  f"{HOUSES}/Brick House A.png",   0, 0, 8, 7,
+         foot=(1, 3, 6, 3), door=1),
+    prop("HOUSE_BRICK_B",  f"{HOUSES}/Brick House B.png",   0, 0, 6, 6,
+         foot=(1, 3, 4, 3), door=2),
+    prop("HOUSE_PANELED",  f"{HOUSES}/Paneled House A.png", 0, 0, 5, 5,
+         foot=(0, 2, 5, 3), door=4),
 ]
 
 
@@ -503,10 +541,10 @@ def build_overlays(tile_images):
 
 
 def build_props():
-    packer = Shelf(512)
+    packer = Shelf(640)
     entries = []
     cache = {}
-    for name, rel, c, r, wt, ht, base in PROPS:
+    for name, rel, c, r, wt, ht, foot, door in PROPS:
         if rel not in cache:
             cache[rel] = sheet(rel)
         src = cache[rel]
@@ -514,8 +552,32 @@ def build_props():
         if not img.getchannel("A").getextrema()[1]:
             sys.exit(f"prop {name} at {rel} ({c},{r}) is entirely transparent - "
                      f"the pick is wrong")
+
+        fx, fy, fw, fh = foot
+        if fx + fw > wt or fy + fh > ht:
+            sys.exit(f"prop {name}: footprint {foot} falls outside a {wt}x{ht} "
+                     f"sprite")
+        if door != NO_DOOR and door >= fw:
+            sys.exit(f"prop {name}: door column {door} is outside a footprint "
+                     f"{fw} wide")
+
+        # The anchor is the footprint's bottom-centre: the map cell the object
+        # stands on. Derived here rather than declared, so a footprint and its
+        # anchor cannot disagree.
+        anchor_x = fx + (fw - 1) // 2
+        anchor_y = fy + fh - 1
+
+        # The anchor cell must actually have something drawn on it, or the
+        # sprite is hanging off its own footprint.
+        cell = img.crop((anchor_x * TILE, anchor_y * TILE,
+                         (anchor_x + 1) * TILE, (anchor_y + 1) * TILE))
+        if not cell.getchannel("A").getextrema()[1]:
+            sys.exit(f"prop {name}: nothing is drawn at the anchor cell "
+                     f"({anchor_x},{anchor_y}) - the footprint is misplaced")
+
         x, y, w, h = packer.add(name, img)
-        entries.append((name, x, y, w, h, wt, ht, base))
+        entries.append((name, x, y, w, h, wt, ht, anchor_x, anchor_y,
+                        fw, fh, door))
     return packer.render(), entries
 
 
@@ -649,9 +711,24 @@ def emit_ids(tiles, props, actors, path):
     o.append(f"#define GG_ACTOR_FRAMES  {WALK_FRAMES}")
     o.append(f"#define GG_ACTOR_DIRS    {DIRS}")
     o.append("")
-    o.append("// A prop's footprint in tiles, which the simulation needs for")
-    o.append("// collision. The sprite may stand taller and overhang above it.")
-    o.append("typedef struct { uint8_t tiles_w, tiles_h, foot_h; } gg_prop_size;")
+    o.append("// A prop's geometry, which the simulation needs for collision and")
+    o.append("// the renderer for placement.")
+    o.append("//")
+    o.append("//   tiles_w/h   the sprite, in tiles")
+    o.append("//   anchor_x/y  the sprite cell that sits on the map cell the prop")
+    o.append("//               occupies - always the footprint's bottom centre")
+    o.append("//   foot_w/h    the footprint: what stands on the ground and blocks.")
+    o.append("//               The sprite may be larger and overhang the rows above,")
+    o.append("//               which is how a roof covers tiles you can walk behind.")
+    o.append("//   door_dx     column within the footprint that is a doorway, or")
+    o.append("//               GG_NO_DOOR. That cell stays walkable.")
+    o.append("#define GG_NO_DOOR 255")
+    o.append("typedef struct {")
+    o.append("    uint8_t tiles_w, tiles_h;")
+    o.append("    uint8_t anchor_x, anchor_y;")
+    o.append("    uint8_t foot_w, foot_h;")
+    o.append("    uint8_t door_dx;")
+    o.append("} gg_prop_size;")
     o.append("extern const gg_prop_size GG_PROP_SIZE[GG_PROP_COUNT];")
     o.append("")
     o.append("#endif // GG_IDS_H")
@@ -662,11 +739,12 @@ def emit_ids(tiles, props, actors, path):
 
 def emit_sizes(props, path):
     """The one generated .c file - a table the simulation links against."""
-    o = [banner("gg_ids.c", "Prop footprints, for the simulation's collision."),
+    o = [banner("gg_ids.c", "Prop geometry, for the simulation's collision."),
          '#include "core/gg_ids.h"', "",
          "const gg_prop_size GG_PROP_SIZE[GG_PROP_COUNT] = {"]
-    for name, x, y, w, h, wt, ht, base in props:
-        o.append(f"    [GG_PROP_{name}] = {{ {wt}, {ht}, {base} }},")
+    for name, x, y, w, h, wt, ht, ax, ay, fw, fh, door in props:
+        o.append(f"    [GG_PROP_{name}] = {{ {wt}, {ht}, {ax}, {ay}, "
+                 f"{fw}, {fh}, {door} }},")
     o.append("};")
     with open(path, "w") as f:
         f.write("\n".join(o) + "\n")
@@ -687,7 +765,7 @@ def emit_atlas(tiles, props, actors, edges, overlays, font_meta, path):
     o.append("")
 
     o.append("static const gg_rect GG_PROP_RECT[GG_PROP_COUNT] = {")
-    for name, x, y, w, h, wt, ht, base in props:
+    for name, x, y, w, h, *_rest in props:
         o.append(f"    [GG_PROP_{name}] = {{ {x:4d}, {y:4d}, {w:3d}, {h:3d} }},")
     o.append("};")
     o.append("")
