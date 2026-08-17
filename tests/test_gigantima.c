@@ -17,6 +17,7 @@
 #include "core/gg_dialogue.h"
 #include "core/gg_combat.h"
 #include "core/gg_magic.h"
+#include "core/gg_bestiary.h"
 #include "ui/gg_menu.h"
 #include "ui/gg_screens.h"
 #include "platform/gg_settings.h"
@@ -869,7 +870,8 @@ static bool games_match(const gg_game *a, const gg_game *b, const char **why) {
             x->party != y->party || x->hostile != y->hostile ||
             x->speed != y->speed || x->energy != y->energy ||
             x->damage != y->damage || x->guard != y->guard ||
-            x->loot_kind != y->loot_kind || x->loot_count != y->loot_count ||
+            x->beast != y->beast || x->reach != y->reach ||
+            x->notice != y->notice || x->flees != y->flees ||
             x->schedn != y->schedn || SDL_strcmp(x->name, y->name) != 0) {
             *why = "an actor";
             return false;
@@ -3251,8 +3253,8 @@ static uint32_t play_out_encounter(uint32_t seed) {
     int cx = 0, cy = 0;
     if (!set_up_encounter(&g, seed, &cx, &cy)) return 0;
 
-    CHECK(gg_spawn_foe(&g, GG_ACTOR_BRIGAND, cx + 1, cy) >= 0, "no brigand");
-    CHECK(gg_spawn_foe(&g, GG_ACTOR_OUTLAW, cx + 3, cy + 1) >= 0, "no outlaw");
+    CHECK(gg_spawn_named(&g, "BRIGAND", cx + 1, cy) >= 0, "no brigand");
+    CHECK(gg_spawn_named(&g, "OUTLAW", cx + 3, cy + 1) >= 0, "no outlaw");
 
     // Swing east until one side is done, bounded so a stalemate ends the test
     // rather than hanging it.
@@ -3314,7 +3316,7 @@ static void a_blow_lands_or_misses_by_the_dice_and_never_for_nothing(void) {
     int cx = 0, cy = 0;
     CHECK(set_up_encounter(&g, 7, &cx, &cy), "setup failed");
 
-    const int foe = gg_spawn_foe(&g, GG_ACTOR_BRIGAND, cx + 1, cy);
+    const int foe = gg_spawn_named(&g, "BRIGAND", cx + 1, cy);
     CHECK(foe >= 0, "no brigand");
 
     int hits = 0, misses = 0, total = 0;
@@ -3374,7 +3376,7 @@ static void a_thrown_stone_reaches_across_the_room_and_lands_there(void) {
     int cx = 0, cy = 0;
     CHECK(set_up_encounter(&g, 9, &cx, &cy), "setup failed");
 
-    const int foe = gg_spawn_foe(&g, GG_ACTOR_BRIGAND, cx + 4, cy);
+    const int foe = gg_spawn_named(&g, "BRIGAND", cx + 4, cy);
     CHECK(foe >= 0, "no brigand");
     g.actor[foe].hp = g.actor[foe].hp_max = 90;     // survives the whole test
 
@@ -3418,7 +3420,7 @@ static void a_wall_stops_a_stone(void) {
     int cx = 0, cy = 0;
     CHECK(set_up_encounter(&g, 10, &cx, &cy), "setup failed");
 
-    const int foe = gg_spawn_foe(&g, GG_ACTOR_BRIGAND, cx + 3, cy);
+    const int foe = gg_spawn_named(&g, "BRIGAND", cx + 3, cy);
     CHECK(foe >= 0, "no brigand");
     CHECK(gg_line_of_sight(&g, cx, cy, cx + 3, cy), "open ground blocked sight");
 
@@ -3459,8 +3461,8 @@ static void the_quick_strike_before_the_slow_and_more_often(void) {
     // An outlaw is the quick one and a brigand the slow one; that is the whole
     // observable difference initiative makes, so it is what gets checked.
     const int far_off = GG_NOTICE_RANGE + 3;
-    CHECK(gg_spawn_foe(&g, GG_ACTOR_OUTLAW, cx + far_off, cy) >= 0, "no outlaw");
-    CHECK(gg_spawn_foe(&g, GG_ACTOR_BRIGAND, cx - far_off, cy) >= 0, "no brigand");
+    CHECK(gg_spawn_named(&g, "OUTLAW", cx + far_off, cy) >= 0, "no outlaw");
+    CHECK(gg_spawn_named(&g, "BRIGAND", cx - far_off, cy) >= 0, "no brigand");
 
     const int outlaw = g.actors - 2, brigand = g.actors - 1;
     CHECK(g.actor[outlaw].speed > g.actor[brigand].speed,
@@ -3496,12 +3498,20 @@ static void what_falls_leaves_what_it_carried(void) {
     int cx = 0, cy = 0;
     CHECK(set_up_encounter(&g, 12, &cx, &cy), "setup failed");
 
-    const int foe = gg_spawn_foe(&g, GG_ACTOR_BRIGAND, cx + 1, cy);
+    const int foe = gg_spawn_named(&g, "BRIGAND", cx + 1, cy);
     CHECK(foe >= 0, "no brigand");
     const int fx = g.actor[foe].x, fy = g.actor[foe].y;
-    const uint8_t kind = g.actor[foe].loot_kind;
-    const uint8_t count = g.actor[foe].loot_count;
-    CHECK(count > 0, "a brigand carries nothing worth taking");
+
+    // What it carries comes out of the bestiary now, so that is what this
+    // reads: the first line of its table is the one it always drops.
+    const gg_beast *b = gg_bestiary_at(g.actor[foe].beast);
+    CHECK(b != nullptr, "the brigand came from no row of the bestiary");
+    CHECK(b && b->loots > 0, "a brigand carries nothing worth taking");
+    if (!b || b->loots == 0) { gg_game_free(&g); return; }
+    const uint8_t kind = b->loot[0].kind;
+    CHECK(b->loot[0].chance == 100,
+          "this test wants a certainty, and that line drops %u%% of the time",
+          b->loot[0].chance);
 
     CHECK(gg_ground_at(&g.map, fx, fy) < 0, "something was already lying there");
 
@@ -3517,17 +3527,27 @@ static void what_falls_leaves_what_it_carried(void) {
 
     const int loot = gg_ground_at(&g.map, fx, fy);
     CHECK(loot >= 0, "the brigand left nothing behind");
-    if (loot >= 0) {
-        CHECK(g.map.ground[loot].kind == kind, "it left the wrong thing");
-        CHECK(g.map.ground[loot].count == count, "it left %u, expected %u",
-              g.map.ground[loot].count, count);
-    }
+    // Its table may have dropped more than one kind, so the certain one has to
+    // be somewhere on the tile rather than necessarily first.
+    bool found = false;
+    int total = 0;
+    for (int i = 0; i < g.map.grounds; i++)
+        if (g.map.ground[i].x == fx && g.map.ground[i].y == fy) {
+            if (g.map.ground[i].kind == kind) {
+                found = true;
+                total = g.map.ground[i].count;
+            }
+        }
+    CHECK(found, "the brigand did not leave the thing it always leaves");
+    CHECK(total >= b->loot[0].least && total <= b->loot[0].most,
+          "it left %d, which is outside the %u to %u its table allows",
+          total, b->loot[0].least, b->loot[0].most);
 
     // And what it left can be picked up like anything else.
     gg_player(&g)->x = (int16_t)fx;
     gg_player(&g)->y = (int16_t)fy;
     gg_game_act(&g, GG_ACT_GET);
-    CHECK(gg_pack_count(&g, (gg_item_id)kind) >= count,
+    CHECK(gg_pack_count(&g, (gg_item_id)kind) >= total,
           "the loot could not be picked up");
 
     gg_game_free(&g);
@@ -3551,7 +3571,7 @@ static void a_townsperson_is_never_caught_in_a_fight(void) {
     CHECK(gg_strike(&g, g.player, 1) == 0, "a townsperson was struck");
     CHECK(bystander->hp == 20, "a townsperson lost health in somebody's fight");
 
-    const int foe = gg_spawn_foe(&g, GG_ACTOR_BRIGAND, cx + 2, cy);
+    const int foe = gg_spawn_named(&g, "BRIGAND", cx + 2, cy);
     CHECK(foe >= 0, "no brigand");
     CHECK(!gg_at_odds(&g, foe, 1), "a brigand counts a townsperson as an enemy");
 
@@ -3563,7 +3583,7 @@ static void the_avatar_dying_ends_the_game_rather_than_the_world(void) {
     int cx = 0, cy = 0;
     CHECK(set_up_encounter(&g, 14, &cx, &cy), "setup failed");
 
-    const int foe = gg_spawn_foe(&g, GG_ACTOR_BRIGAND, cx + 1, cy);
+    const int foe = gg_spawn_named(&g, "BRIGAND", cx + 1, cy);
     CHECK(foe >= 0, "no brigand");
 
     gg_player(&g)->hp = 1;
@@ -3781,14 +3801,14 @@ static void a_bolt_needs_something_to_aim_at_and_spends_nothing_without_one(void
           "a bolt with no target still burned the ash");
 
     // Out of reach is the same answer.
-    const int far_foe = gg_spawn_foe(&g, GG_ACTOR_BRIGAND, cx + 7, cy);
+    const int far_foe = gg_spawn_named(&g, "BRIGAND", cx + 7, cy);
     CHECK(far_foe >= 0, "no distant brigand");
     g.actor[far_foe].hp = g.actor[far_foe].hp_max = 90;
     CHECK(!gg_cast(&g, 0), "a bolt reached further than it says it does");
     CHECK(gg_pack_count(&g, GG_ITEM_ASH) == had, "a refused bolt spent ash");
 
     // In reach: it lands, and it costs.
-    const int near_foe = gg_spawn_foe(&g, GG_ACTOR_BRIGAND, cx + 3, cy);
+    const int near_foe = gg_spawn_named(&g, "BRIGAND", cx + 3, cy);
     CHECK(near_foe >= 0, "no near brigand");
     g.actor[near_foe].hp = g.actor[near_foe].hp_max = 90;
 
@@ -3940,6 +3960,338 @@ static void a_spell_of_light_survives_a_save(void) {
 }
 
 // ---------------------------------------------------------------------------
+// The bestiary
+// ---------------------------------------------------------------------------
+static const char *write_bestiary(const char *text) {
+    const char *path = gg_pref_file("test_bestiary.txt");
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    CHECK(io != nullptr, "could not write a bestiary");
+    if (io) {
+        const size_t n = SDL_strlen(text);
+        CHECK(SDL_WriteIO(io, text, n) == n, "short write on the bestiary");
+        SDL_CloseIO(io);
+    }
+    return path;
+}
+
+// Puts the shipped bestiary back, so a test that loaded its own does not leave
+// every test after it fighting something that no longer exists.
+static void restore_bestiary(void) {
+    CHECK(gg_bestiary_load(gg_asset_path("bestiary.txt")),
+          "could not put the shipped bestiary back");
+}
+
+// The plan's own verification: a creature added with no code change. Every
+// number below comes out of the file and is then observed in the world.
+static void a_creature_can_be_added_in_a_file_alone(void) {
+    const char *path = write_bestiary(
+        "creature WOLF\n"
+        "  name a lean wolf\n"
+        "  art BRIGAND\n"
+        "  health 23\n"
+        "  level 2\n"
+        "  speed 175\n"
+        "  damage 4\n"
+        "  guard 1\n"
+        "  reach 1\n"
+        "  notice 11\n"
+        "  flees 5\n"
+        "  loot BREAD 2 2 100\n"
+        "  haunts 3\n");
+    CHECK(gg_bestiary_load(path), "the bestiary did not load");
+    CHECK(gg_bestiary_count() == 1, "expected one creature, got %d",
+          gg_bestiary_count());
+
+    const int which = gg_bestiary_find("WOLF");
+    CHECK(which >= 0, "the wolf is not in the bestiary");
+
+    gg_game g;
+    int cx = 0, cy = 0;
+    CHECK(set_up_encounter(&g, 51, &cx, &cy), "setup failed");
+
+    const int who = gg_spawn_named(&g, "WOLF", cx + 2, cy);
+    CHECK(who >= 0, "the wolf would not be placed");
+    if (who < 0) { gg_game_free(&g); restore_bestiary(); return; }
+
+    // Every one of these is a number in the file and nowhere in C.
+    const gg_actor *a = &g.actor[who];
+    CHECK(SDL_strcmp(a->name, "a lean wolf") == 0,
+          "it is called '%s', not what the file says", a->name);
+    CHECK(a->hp == 23 && a->hp_max == 23, "it has %d health, expected 23", a->hp);
+    CHECK(a->level == 2, "it is level %u, expected 2", a->level);
+    CHECK(a->speed == 175, "it moves at %u, expected 175", a->speed);
+    CHECK(a->damage == 4, "it deals %u, expected 4", a->damage);
+    CHECK(a->guard == 1, "it turns aside %u, expected 1", a->guard);
+    CHECK(a->notice == 11, "it notices at %u, expected 11", a->notice);
+    CHECK(a->flees == 5, "it flees at %d, expected 5", a->flees);
+    CHECK(a->hostile, "it is not hostile");
+    CHECK(a->art == GG_ACTOR_BRIGAND, "it is wearing the wrong sprite");
+
+    // Its stats reach the rules, not just the struct.
+    CHECK(gg_attack_power(&g, who) == 4, "the rules give it %d damage",
+          gg_attack_power(&g, who));
+    CHECK(gg_guard_power(&g, who) == 1, "the rules give it %d guard",
+          gg_guard_power(&g, who));
+    CHECK(gg_at_odds(&g, g.player, who), "the wolf is not an enemy");
+
+    // And its loot table is the one in the file.
+    const int fx = a->x, fy = a->y;
+    for (int i = 0; i < 80 && g.actor[who].active; i++) {
+        g.actor[who].hp = 1;
+        gg_strike(&g, g.player, who);
+    }
+    CHECK(!g.actor[who].active, "the wolf would not fall");
+    const int loot = gg_ground_at(&g.map, fx, fy);
+    CHECK(loot >= 0, "the wolf left nothing");
+    if (loot >= 0) {
+        CHECK(g.map.ground[loot].kind == GG_ITEM_BREAD,
+              "it left the wrong thing");
+        CHECK(g.map.ground[loot].count == 2, "it left %u, expected 2",
+              g.map.ground[loot].count);
+    }
+
+    gg_game_free(&g);
+
+    // And the generator places `haunts` of it without being told what it is.
+    gg_game w;
+    CHECK(gg_game_new(&w, 52, "Wilds"), "new game failed");
+    int wolves = 0;
+    for (int i = 0; i < w.actors; i++)
+        if (w.actor[i].active && w.actor[i].hostile &&
+            SDL_strcmp(w.actor[i].name, "a lean wolf") == 0) wolves++;
+    CHECK(wolves > 0, "the generator placed none of the only creature there is");
+    CHECK(wolves <= 3, "the generator placed %d, more than the file allows",
+          wolves);
+    gg_game_free(&w);
+
+    restore_bestiary();
+    SDL_RemovePath(path);
+}
+
+// Behaviour out of the file: a hurt creature would rather be elsewhere.
+static void a_creature_flees_when_it_is_hurt_enough(void) {
+    const char *path = write_bestiary(
+        "creature COWARD\n"
+        "  name a coward\n"
+        "  art BRIGAND\n"
+        "  health 20\n"
+        "  damage 2\n"
+        "  notice 12\n"
+        "  flees 10\n"
+        "creature DIEHARD\n"
+        "  name a diehard\n"
+        "  art BRIGAND\n"
+        "  health 20\n"
+        "  damage 2\n"
+        "  notice 12\n"
+        "  flees 0\n");
+    CHECK(gg_bestiary_load(path), "the bestiary did not load");
+
+    gg_game g;
+    int cx = 0, cy = 0;
+    CHECK(set_up_encounter(&g, 53, &cx, &cy), "setup failed");
+
+    const int coward = gg_spawn_named(&g, "COWARD", cx + 3, cy);
+    const int diehard = gg_spawn_named(&g, "DIEHARD", cx - 3, cy);
+    CHECK(coward >= 0 && diehard >= 0, "the pair would not be placed");
+    if (coward < 0 || diehard < 0) { gg_game_free(&g); restore_bestiary(); return; }
+
+    // Hale, both close in.
+    for (int i = 0; i < 2; i++) gg_game_act(&g, GG_ACT_WAIT);
+    const gg_actor *p = gg_player_const(&g);
+    CHECK(gg_dist_cheb(p->x, p->y, g.actor[coward].x, g.actor[coward].y) < 3,
+          "the coward did not close while it was hale");
+
+    // Hurt the coward past its limit and it turns round.
+    g.actor[coward].hp = 5;
+    const int before = gg_dist_cheb(p->x, p->y,
+                                    g.actor[coward].x, g.actor[coward].y);
+    for (int i = 0; i < 3; i++) gg_game_act(&g, GG_ACT_WAIT);
+    const int after = gg_dist_cheb(p->x, p->y,
+                                   g.actor[coward].x, g.actor[coward].y);
+    CHECK(after > before, "a coward at 5 of 20 health closed from %d to %d",
+          before, after);
+
+    // The one whose file says it never flees does not, at the same health.
+    g.actor[diehard].hp = 5;
+    const int d_before = gg_dist_cheb(p->x, p->y,
+                                      g.actor[diehard].x, g.actor[diehard].y);
+    for (int i = 0; i < 3; i++) gg_game_act(&g, GG_ACT_WAIT);
+    const int d_after = gg_dist_cheb(p->x, p->y,
+                                     g.actor[diehard].x, g.actor[diehard].y);
+    CHECK(d_after <= d_before,
+          "a creature whose file says it never flees ran anyway (%d to %d)",
+          d_before, d_after);
+
+    gg_game_free(&g);
+    restore_bestiary();
+    SDL_RemovePath(path);
+}
+
+// How near you must come is the creature's own business, out of its file - not
+// one number shared by everything in the world.
+static void a_creature_notices_at_the_distance_its_file_says(void) {
+    const char *path = write_bestiary(
+        "creature WATCHFUL\n"
+        "  name a watchful thing\n"
+        "  art BRIGAND\n"
+        "  health 20\n"
+        "  damage 2\n"
+        "  notice 12\n"
+        "creature DOZY\n"
+        "  name a dozy thing\n"
+        "  art BRIGAND\n"
+        "  health 20\n"
+        "  damage 2\n"
+        "  notice 3\n");
+    CHECK(gg_bestiary_load(path), "the bestiary did not load");
+
+    gg_game g;
+    int cx = 0, cy = 0;
+    CHECK(set_up_encounter(&g, 56, &cx, &cy), "setup failed");
+
+    // Both the same distance out - far enough that the watchful one cares and
+    // the dozy one does not, which is only true if each reads its own number.
+    const int out = 9;
+    const int watchful = gg_spawn_named(&g, "WATCHFUL", cx + out, cy);
+    const int dozy = gg_spawn_named(&g, "DOZY", cx - out, cy);
+    CHECK(watchful >= 0 && dozy >= 0, "the pair would not be placed");
+    if (watchful < 0 || dozy < 0) { gg_game_free(&g); restore_bestiary(); return; }
+    CHECK(out < g.actor[watchful].notice && out > g.actor[dozy].notice,
+          "this test wants a distance between the two notice ranges");
+
+    const int w_before = gg_dist_cheb(cx, cy, g.actor[watchful].x,
+                                      g.actor[watchful].y);
+    const int d_before = gg_dist_cheb(cx, cy, g.actor[dozy].x, g.actor[dozy].y);
+
+    for (int i = 0; i < 3; i++) gg_game_act(&g, GG_ACT_WAIT);
+
+    const gg_actor *p = gg_player_const(&g);
+    const int w_after = gg_dist_cheb(p->x, p->y, g.actor[watchful].x,
+                                     g.actor[watchful].y);
+    const int d_after = gg_dist_cheb(p->x, p->y, g.actor[dozy].x, g.actor[dozy].y);
+
+    CHECK(w_after < w_before,
+          "the watchful one notices at %u and was %d away, and did not stir",
+          g.actor[watchful].notice, w_before);
+    CHECK(d_after == d_before,
+          "the dozy one notices at %u and was %d away, but closed from %d to %d",
+          g.actor[dozy].notice, d_before, d_before, d_after);
+
+    gg_game_free(&g);
+    restore_bestiary();
+    SDL_RemovePath(path);
+}
+
+// A creature with reach fights at a distance without anything in its hands.
+static void a_creature_with_reach_strikes_from_where_it_stands(void) {
+    const char *path = write_bestiary(
+        "creature SLINGER\n"
+        "  name a slinger\n"
+        "  art OUTLAW\n"
+        "  health 12\n"
+        "  damage 2\n"
+        "  reach 4\n"
+        "  notice 10\n"
+        "  loot STONE 1 1 100\n");
+    CHECK(gg_bestiary_load(path), "the bestiary did not load");
+
+    gg_game g;
+    int cx = 0, cy = 0;
+    CHECK(set_up_encounter(&g, 54, &cx, &cy), "setup failed");
+
+    const int who = gg_spawn_named(&g, "SLINGER", cx + 3, cy);
+    CHECK(who >= 0, "the slinger would not be placed");
+    if (who < 0) { gg_game_free(&g); restore_bestiary(); return; }
+
+    CHECK(gg_reach(&g, who) == 4, "it reaches %d, expected 4", gg_reach(&g, who));
+
+    // Three tiles away and it can already hurt you - which is the whole
+    // difference a reach above one makes.
+    const int before = gg_player_const(&g)->hp;
+    for (int i = 0; i < 12; i++) {
+        gg_game_act(&g, GG_ACT_WAIT);
+        if (gg_player_const(&g)->hp < before) break;
+    }
+    CHECK(gg_player_const(&g)->hp < before,
+          "a slinger three tiles away never landed anything");
+
+    gg_game_free(&g);
+    restore_bestiary();
+    SDL_RemovePath(path);
+}
+
+static void a_bestiary_that_does_not_parse_loads_nothing(void) {
+    static const char *const BAD[] = {
+        "name a thing\n",                                    // before any creature
+        "creature X\n  name a thing\n  art NOSUCHART\n",     // no such art
+        "creature X\n  art BRIGAND\n  damage 1\n",           // no name
+        "creature X\n  name a thing\n  art BRIGAND\n",       // does no damage
+        "creature X\n  name a thing\n  damage 1\n  wibble 3\n",  // unknown word
+        "creature X\n  name a thing\n  damage 1\n"
+            "  loot NOSUCHITEM 1 1 100\n",                   // no such loot
+        "creature X\n  name a thing\n  damage 1\n"
+            "  loot GOLD 5 2 100\n",                         // most below least
+        "creature X\n  name a thing\n  damage 1\n"
+            "  loot GOLD 1 2 400\n",                         // impossible chance
+        "creature X\n  name a thing\n  damage 1\n  health 0\n",  // no health
+        "creature X\n  name a thing\n  damage 1\n  speed nine\n", // not a number
+    };
+    for (size_t i = 0; i < GG_COUNTOF(BAD); i++) {
+        const char *path = write_bestiary(BAD[i]);
+        CHECK(!gg_bestiary_load(path), "bad bestiary %zu loaded anyway", i);
+        CHECK(gg_bestiary_count() == 0,
+              "bad bestiary %zu left %d creatures behind", i,
+              gg_bestiary_count());
+        SDL_RemovePath(path);
+    }
+    CHECK(!gg_bestiary_load(gg_pref_file("test_no_such_bestiary.txt")),
+          "a missing bestiary reported success");
+    restore_bestiary();
+}
+
+// The shipped bestiary has to be one the world can actually use.
+static void the_vale_is_stocked_with_creatures_that_work(void) {
+    CHECK(gg_bestiary_load(gg_asset_path("bestiary.txt")), "no bestiary");
+    CHECK(gg_bestiary_count() > 0, "the vale holds nothing at all");
+
+    int haunting = 0;
+    for (int i = 0; i < gg_bestiary_count(); i++) {
+        const gg_beast *b = gg_bestiary_at(i);
+        CHECK(b->name[0] != '\0', "creature %d has no name", i);
+        CHECK(b->art < GG_ACTOR_COUNT, "%s wears art that does not exist", b->id);
+        CHECK(b->health > 0, "%s has no health", b->id);
+        CHECK(b->damage > 0, "%s can hurt nobody", b->id);
+        CHECK(b->speed > 0, "%s can never act", b->id);
+        CHECK(b->reach >= 1, "%s cannot reach its own tile", b->id);
+        CHECK(b->notice >= 1, "%s never notices anything", b->id);
+        CHECK(b->flees < b->health,
+              "%s flees at %d of %d health, so it flees from the start",
+              b->id, b->flees, b->health);
+        for (int k = 0; k < b->loots; k++) {
+            CHECK(b->loot[k].kind < GG_ITEM_COUNT, "%s drops a thing that is not "
+                  "an item", b->id);
+            CHECK(b->loot[k].least <= b->loot[k].most,
+                  "%s drops between %u and %u, which is backwards", b->id,
+                  b->loot[k].least, b->loot[k].most);
+        }
+        haunting += b->haunts;
+    }
+    CHECK(haunting > 0, "nothing in the bestiary ever appears in a map");
+
+    // And a generated world actually holds some of them.
+    gg_game g;
+    CHECK(gg_game_new(&g, 55, "Stocked"), "new game failed");
+    int foes = 0;
+    for (int i = 0; i < g.actors; i++)
+        if (g.actor[i].active && g.actor[i].hostile) foes++;
+    CHECK(foes > 0, "a generated world holds nothing hostile at all");
+    CHECK(foes <= haunting, "the world holds %d, more than the %d the file "
+          "allows", foes, haunting);
+    gg_game_free(&g);
+}
+
+// ---------------------------------------------------------------------------
 // Content tables
 // ---------------------------------------------------------------------------
 static void every_terrain_and_item_has_a_name(void) {
@@ -3988,6 +4340,13 @@ static void a_props_atlas_rect_matches_the_size_it_declares(void) {
 int main(void) {
     // The simulation must not need video; prove it by never initialising it.
     SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
+
+    // The world is content now. A test binary that loads none of it is testing
+    // an engine with an empty world, which is not the engine that ships - so
+    // the shipped bestiary is loaded here, exactly as the game loads it. Tests
+    // that want their own creatures load over the top and clear afterwards.
+    if (!gg_bestiary_load(gg_asset_path("bestiary.txt")))
+        SDL_Log("gigantima: tests could not load the bestiary");
 
     RUN(the_rng_is_reproducible_from_its_seed);
     RUN(a_zero_seed_does_not_stick_at_zero);
@@ -4119,6 +4478,13 @@ int main(void) {
     RUN(a_spell_file_that_does_not_parse_loads_nothing);
     RUN(every_spell_in_the_vale_can_be_learned_from_somebody);
     RUN(a_spell_of_light_survives_a_save);
+
+    RUN(a_creature_can_be_added_in_a_file_alone);
+    RUN(a_creature_flees_when_it_is_hurt_enough);
+    RUN(a_creature_notices_at_the_distance_its_file_says);
+    RUN(a_creature_with_reach_strikes_from_where_it_stands);
+    RUN(a_bestiary_that_does_not_parse_loads_nothing);
+    RUN(the_vale_is_stocked_with_creatures_that_work);
 
     RUN(every_terrain_and_item_has_a_name);
     RUN(every_prop_has_a_plausible_footprint);

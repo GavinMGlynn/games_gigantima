@@ -1,5 +1,6 @@
 // gg_save.c - writing and reading a saved game, and the profiles around them.
 #include "core/gg_save.h"
+#include "core/gg_bestiary.h"
 
 #define SAVE_FILE    "world.ggsave"
 #define PROFILE_FILE "profile.ggprof"
@@ -137,7 +138,12 @@ static bool actor_write(SDL_IOStream *io, const gg_actor *a) {
     ok = ok && gg_io_w32(io, a->hostile ? 1u : 0u);
     ok = ok && gg_io_w32(io, a->speed) && gg_io_w32(io, (uint32_t)(uint16_t)a->energy);
     ok = ok && gg_io_w32(io, a->damage) && gg_io_w32(io, a->guard);
-    ok = ok && gg_io_w32(io, a->loot_kind) && gg_io_w32(io, a->loot_count);
+    // Which row of the bestiary, and the behaviour taken from it. The row is
+    // an index into a file that may have been edited between saves, so it is
+    // checked rather than trusted on the way back in.
+    ok = ok && gg_io_w32(io, a->beast);
+    ok = ok && gg_io_w32(io, a->reach) && gg_io_w32(io, a->notice) &&
+               gg_io_w32(io, (uint32_t)(uint16_t)a->flees);
     ok = ok && gg_io_w32(io, a->schedn);
     for (int i = 0; ok && i < a->schedn; i++) {
         ok = gg_io_w32(io, a->sched[i].hour) &&
@@ -152,7 +158,7 @@ static bool actor_read(SDL_IOStream *io, gg_actor *a) {
     uint32_t active = 0, art = 0, facing = 0, x = 0, y = 0, def = 0, n = 0;
     uint32_t hp = 0, hpmax = 0, level = 0, party = 0;
     uint32_t hostile = 0, speed = 0, energy = 0, damage = 0, guard = 0;
-    uint32_t loot_kind = 0, loot_count = 0;
+    uint32_t beast = 0, reach = 0, notice = 0, flees = 0;
     bool ok = gg_io_r32(io, &active) && gg_io_r32(io, &art) &&
               gg_io_r32(io, &facing);
     ok = ok && SDL_ReadIO(io, a->name, GG_ACTOR_NAME_MAX) == GG_ACTOR_NAME_MAX;
@@ -162,8 +168,9 @@ static bool actor_read(SDL_IOStream *io, gg_actor *a) {
                gg_io_r32(io, &level) && gg_io_r32(io, &party);
     ok = ok && gg_io_r32(io, &hostile) && gg_io_r32(io, &speed) &&
                gg_io_r32(io, &energy) && gg_io_r32(io, &damage) &&
-               gg_io_r32(io, &guard) && gg_io_r32(io, &loot_kind) &&
-               gg_io_r32(io, &loot_count);
+               gg_io_r32(io, &guard) && gg_io_r32(io, &beast) &&
+               gg_io_r32(io, &reach) && gg_io_r32(io, &notice) &&
+               gg_io_r32(io, &flees);
     ok = ok && gg_io_r32(io, &n) && n <= GG_SCHEDULE_MAX;
     if (!ok) return false;
 
@@ -188,10 +195,15 @@ static bool actor_read(SDL_IOStream *io, gg_actor *a) {
     a->energy = (int16_t)(uint16_t)energy;
     a->damage = (uint8_t)damage;
     a->guard = (uint8_t)guard;
-    // Clamped: an item id past the table would index off the end of GG_ITEM
-    // the moment they were killed, and this file may not be ours.
-    a->loot_kind = (uint8_t)(loot_kind < GG_ITEM_COUNT ? loot_kind : 0);
-    a->loot_count = (uint8_t)(loot_count > 255 ? 0 : loot_count);
+    // Clamped: a bestiary row past the end would be read when this thing died,
+    // and the file it indexes into may have been edited since the save.
+    a->beast = (uint8_t)(beast < (uint32_t)gg_bestiary_count() ? beast : 0);
+    // Not coerced to a minimum here: a townsperson has no reach at all, and
+    // turning that into 1 on the way in made a saved game differ from the one
+    // it was saved from. gg_reach applies the default where it is needed.
+    a->reach = (uint8_t)reach;
+    a->notice = (uint8_t)notice;
+    a->flees = (int16_t)(uint16_t)flees;
     a->schedn = (uint8_t)n;
 
     for (uint32_t i = 0; i < n; i++) {

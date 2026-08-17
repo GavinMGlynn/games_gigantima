@@ -1,0 +1,69 @@
+# What lives in the vale.
+#
+# A creature is a row. Adding one is an edit to this file and nothing else -
+# no code knows the name of anything in here.
+#
+#   creature ID          the name a data file calls it by
+#     name TEXT          what the message log calls it
+#     art ID             which composited sprite to wear
+#     health N           what it can take
+#     level N            counts toward landing a blow
+#     speed N            energy a turn; 100 is one action, 200 is two
+#     damage N           what it deals
+#     guard N            what it turns aside
+#     reach N            1 is arm's length; more means it throws
+#     notice N           how near you must come before it cares
+#     flees N            health below which it would rather be elsewhere
+#     loot ID MIN MAX PC  a line of its loot table, PC per cent of the time
+#     haunts N           how many the generator puts in a map
+#
+# This art set has no monsters in it at all - it is people, head to foot - so
+# the vale's trouble is people. A caravan that never arrived is better served
+# by that than by a wolf.
+
+creature BRIGAND
+  name a brigand
+  art BRIGAND
+  health 16
+  level 1
+  speed 100
+  damage 3
+  guard 2
+  reach 1
+  notice 8
+  flees 4
+  loot GOLD 6 14 100
+  loot BREAD 1 1 30
+  haunts 4
+
+creature OUTLAW
+  name an outlaw
+  art OUTLAW
+  health 10
+  level 1
+  speed 150
+  damage 2
+  guard 0
+  reach 1
+  notice 10
+  flees 3
+  loot STONE 2 4 100
+  loot NIGHTSHADE 1 1 25
+  haunts 2
+
+# The one that throws. Slower and softer than the others, and dangerous at a
+# distance rather than beside you - which is what a reach above one buys.
+creature SLINGER
+  name a slinger
+  art OUTLAW
+  health 8
+  level 1
+  speed 90
+  damage 2
+  guard 0
+  reach 4
+  notice 9
+  flees 3
+  loot STONE 3 6 100
+  loot GOLD 2 6 50
+  haunts 2

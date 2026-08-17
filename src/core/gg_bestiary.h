@@ -1,0 +1,58 @@
+// gg_bestiary.h - what lives in the world, out of a file rather than out of C.
+//
+// A creature is a row: what it looks like, what it can take and deal, how it
+// behaves, what it leaves and how many of it the world holds. Adding one is an
+// edit to `assets/bestiary.txt` and nothing else - which is the whole point of
+// the item, and the reason `gg_spawn_foe` takes an index into this rather than
+// a sprite id with a switch behind it.
+#ifndef GG_BESTIARY_H
+#define GG_BESTIARY_H
+
+#include "core/gg_common.h"
+#include "core/gg_ids.h"
+
+#define GG_BEASTS_MAX     16
+#define GG_BEAST_LOOT_MAX  3
+#define GG_BEAST_NAME_MAX 24
+
+// One line of a loot table: some of a thing, some of the time.
+typedef struct {
+    uint8_t kind;        // gg_item_id
+    uint8_t least, most; // inclusive
+    uint8_t chance;      // per cent
+} gg_loot;
+
+typedef struct {
+    char    id[GG_BEAST_NAME_MAX];    // BRIGAND - what a data file calls it
+    char    name[GG_BEAST_NAME_MAX];  // "a brigand" - what the log calls it
+    uint8_t art;                      // gg_actor_id
+
+    int16_t health;
+    uint8_t level;
+    uint8_t speed;      // energy per turn; 100 is one action a turn
+    uint8_t damage, guard;
+    uint8_t reach;      // 1 is arm's length; more is something that throws
+
+    // Behaviour. `notice` is how near you have to come before it cares, and
+    // `flees` the health below which it would rather be elsewhere - which is
+    // the difference between a creature and a number that walks at you.
+    uint8_t notice;
+    int16_t flees;
+
+    gg_loot loot[GG_BEAST_LOOT_MAX];
+    int     loots;
+
+    uint8_t haunts;     // how many the generator puts in a map
+} gg_beast;
+
+// All or nothing, and every complaint names the file and the line.
+bool gg_bestiary_load(const char *path);
+void gg_bestiary_clear(void);
+
+int gg_bestiary_count(void);
+const gg_beast *gg_bestiary_at(int i);
+
+// By the name a data file uses, or -1.
+int gg_bestiary_find(const char *id);
+
+#endif // GG_BESTIARY_H

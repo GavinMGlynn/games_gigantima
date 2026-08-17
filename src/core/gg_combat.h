@@ -25,10 +25,11 @@
 // an unarmoured, unskilled pair trade blows about half the time.
 #define GG_HIT_TARGET 10
 
-// How near the Avatar has to come before something hostile takes an interest.
-// Without a limit a brigand hunts from anywhere on the map, and a player who
-// stands still for a few hundred turns is killed by somebody who set out from
-// the far side of the continent - which is not menace, it is bookkeeping.
+// How near the Avatar has to come before something takes an interest, for
+// anything that does not say. Each creature may set its own; without any limit
+// at all a brigand hunts from anywhere on the map, and a player who stands
+// still for a few hundred turns is killed by somebody who set out from the far
+// side of the continent - which is not menace, it is bookkeeping.
 #define GG_NOTICE_RANGE 8
 
 // Are these two on opposite sides? The Avatar and their party on one, anything
@@ -66,9 +67,15 @@ bool gg_throw_at(gg_game *g, int who, int tx, int ty);
 // world's half of a turn.
 void gg_combat_turn(gg_game *g);
 
-// Puts a brigand at (x, y). Returns its actor index, or -1 if there is no room
-// or the tile will not take one. Exposed because a scripted encounter is how
-// this is tested, and a test must be able to build one exactly.
-int gg_spawn_foe(gg_game *g, gg_actor_id art, int x, int y);
+// Puts one of the bestiary's creatures at (x, y). `beast` is an index into
+// gg_bestiary_at. Returns its actor index, or -1 if there is no room, the tile
+// will not take one, or there is no such creature.
+//
+// Nothing in C knows what a brigand is: this reads the row and copies it.
+int gg_spawn_foe(gg_game *g, int beast, int x, int y);
+
+// The same, by the name the bestiary uses - "BRIGAND". For tests and for the
+// day a quest wants to put something specific somewhere.
+int gg_spawn_named(gg_game *g, const char *id, int x, int y);
 
 #endif // GG_COMBAT_H

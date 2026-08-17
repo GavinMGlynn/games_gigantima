@@ -1,6 +1,7 @@
 // gg_combat.c - blows struck, and who strikes first.
 #include "core/gg_combat.h"
 #include "core/gg_path.h"
+#include "core/gg_bestiary.h"
 
 // ---------------------------------------------------------------------------
 // Sides
@@ -51,7 +52,10 @@ int gg_guard_power(const gg_game *g, int who) {
 int gg_reach(const gg_game *g, int who) {
     if (who < 0 || who >= g->actors) return 1;
     const gg_item_def *w = held(g, who, GG_SLOT_WEAPON);
-    return (w && w->reach) ? w->reach : 1;
+    if (w && w->reach) return w->reach;
+    // Nothing readied: whatever this creature can do unaided, which for
+    // something that slings is more than an arm's length.
+    return g->actor[who].reach ? g->actor[who].reach : 1;
 }
 
 // ---------------------------------------------------------------------------
@@ -102,9 +106,19 @@ static void die(gg_game *g, int who) {
 
     gg_log(g, "%s falls.", a->name);
 
-    if (a->loot_count > 0)
-        gg_ground_drop(&g->map, a->x, a->y, (gg_item_id)a->loot_kind,
-                       a->loot_count);
+    // Its loot table, rolled through the game's RNG so what falls is part of
+    // the seeded world. Every line is its own roll, so a creature can carry a
+    // purse always and a phial sometimes.
+    const gg_beast *b = gg_bestiary_at(a->beast);
+    if (b) {
+        for (int i = 0; i < b->loots; i++) {
+            const gg_loot *l = &b->loot[i];
+            if ((int)gg_rand_below(&g->rng, 100) >= l->chance) continue;
+            const int n = l->least +
+                (int)gg_rand_below(&g->rng, (uint32_t)(l->most - l->least + 1));
+            gg_ground_drop(&g->map, a->x, a->y, (gg_item_id)l->kind, n);
+        }
+    }
 
     // Removed rather than left as a corpse: there is no corpse art, and a
     // body that blocks nothing and can be walked through is worse than none.
@@ -224,11 +238,29 @@ static void take_one_action(gg_game *g, int who) {
 
     // Out of sight, out of mind. They hold their ground until somebody comes
     // near enough to be worth robbing, with the occasional turn of the head so
-    // a waiting brigand is not a statue.
-    if (d > GG_NOTICE_RANGE) {
+    // a waiting brigand is not a statue. How near is the creature's own
+    // business, out of the bestiary.
+    const int notice = a->notice ? a->notice : GG_NOTICE_RANGE;
+    if (d > notice) {
         if (gg_rand_below(&g->rng, 16) == 0)
             a->facing = (uint8_t)gg_rand_below(&g->rng, 4);
         return;
+    }
+
+    // Hurt enough to want to be elsewhere. Running is behaviour, not cowardice
+    // in the rules' eyes: a creature that fights to the last point of health
+    // whatever happens is a number that walks at you.
+    if (a->flees > 0 && a->hp <= a->flees) {
+        const int away_x = a->x + (a->x - g->actor[foe].x > 0 ? 1 :
+                                   a->x - g->actor[foe].x < 0 ? -1 : 0);
+        const int away_y = a->y + (a->y - g->actor[foe].y > 0 ? 1 :
+                                   a->y - g->actor[foe].y < 0 ? -1 : 0);
+        if (gg_map_walkable(&g->map, away_x, away_y) &&
+            !gg_actor_occupied(g->actor, g->actors, away_x, away_y, who)) {
+            gg_actor_move_to(a, away_x, away_y);
+            return;
+        }
+        // Cornered. Then it fights, which is the other half of fleeing.
     }
 
     if (d <= 1) {
@@ -284,7 +316,9 @@ void gg_combat_turn(gg_game *g) {
     }
 }
 
-int gg_spawn_foe(gg_game *g, gg_actor_id art, int x, int y) {
+int gg_spawn_foe(gg_game *g, int beast, int x, int y) {
+    const gg_beast *b = gg_bestiary_at(beast);
+    if (!b) return -1;
     if (g->actors >= GG_ACTORS_MAX) return -1;
     if (!gg_map_walkable(&g->map, x, y)) return -1;
     if (gg_actor_occupied(g->actor, g->actors, x, y, -1)) return -1;
@@ -293,7 +327,6 @@ int gg_spawn_foe(gg_game *g, gg_actor_id art, int x, int y) {
     gg_actor *a = &g->actor[i];
     SDL_zerop(a);
     a->active = true;
-    a->art = (uint8_t)art;
     a->def = GG_ACTOR_NO_DEF;
     a->facing = GG_FACE_DOWN;
     a->x = (int16_t)x;
@@ -302,27 +335,23 @@ int gg_spawn_foe(gg_game *g, gg_actor_id art, int x, int y) {
     a->from_y = a->y;
     a->hostile = true;
     a->party = GG_NOT_IN_PARTY;
-    a->level = 1;
 
-    // An outlaw is quicker and lighter; a brigand hits harder and stands up to
-    // more. Two shapes rather than one, so initiative and guard are both
-    // visible in an ordinary fight instead of being numbers nobody meets.
-    if (art == GG_ACTOR_OUTLAW) {
-        SDL_strlcpy(a->name, "an outlaw", sizeof a->name);
-        a->hp = a->hp_max = 10;
-        a->speed = 150;
-        a->damage = 2;
-        a->guard = 0;
-        a->loot_kind = GG_ITEM_STONE;
-        a->loot_count = 3;
-    } else {
-        SDL_strlcpy(a->name, "a brigand", sizeof a->name);
-        a->hp = a->hp_max = 16;
-        a->speed = 100;
-        a->damage = 3;
-        a->guard = 2;
-        a->loot_kind = GG_ITEM_GOLD;
-        a->loot_count = 12;
-    }
+    // Every one of these comes out of the file. Nothing here knows what a
+    // brigand is, which is the whole point of the bestiary.
+    a->beast = (uint8_t)beast;
+    a->art = b->art;
+    a->hp = a->hp_max = b->health;
+    a->level = b->level;
+    a->speed = b->speed;
+    a->damage = b->damage;
+    a->guard = b->guard;
+    a->reach = b->reach;
+    a->notice = b->notice;
+    a->flees = b->flees;
+    SDL_strlcpy(a->name, b->name, sizeof a->name);
     return i;
+}
+
+int gg_spawn_named(gg_game *g, const char *id, int x, int y) {
+    return gg_spawn_foe(g, gg_bestiary_find(id), x, y);
 }

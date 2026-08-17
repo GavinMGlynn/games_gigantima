@@ -50,8 +50,16 @@ typedef struct {
     int16_t energy;
     uint8_t damage, guard;
 
-    // What they leave behind. One kind and a count, dropped where they fall.
-    uint8_t loot_kind, loot_count;
+    // Behaviour, out of the bestiary. `reach` above one is something that
+    // throws; `notice` is how near you must come; `flees` is the health below
+    // which it would rather be elsewhere.
+    uint8_t reach, notice;
+    int16_t flees;
+
+    // Which row of the bestiary this came from, so its loot table can be
+    // rolled when it falls. A save cannot write a pointer, and an index into a
+    // file that may have been edited is checked on the way back in.
+    uint8_t beast;
 
     int16_t x, y;         // tile the actor occupies now
     int16_t from_x, from_y;   // tile it left, for drawing the slide

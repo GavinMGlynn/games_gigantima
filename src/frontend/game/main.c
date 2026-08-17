@@ -23,6 +23,7 @@
 #include "core/gg_dialogue.h"
 #include "core/gg_combat.h"
 #include "core/gg_magic.h"
+#include "core/gg_bestiary.h"
 #include "ui/gg_screens.h"
 #include "platform/gg_settings.h"
 
@@ -484,6 +485,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
         SDL_Log("gigantima: no dialogue loaded; the town will be quiet");
     if (!gg_magic_load(gg_asset_path("spells.txt")))
         SDL_Log("gigantima: no spells loaded; nothing will answer to a word");
+    if (!gg_bestiary_load(gg_asset_path("bestiary.txt")))
+        SDL_Log("gigantima: no bestiary loaded; the hills will be empty");
 
     gg_settings_load(&app->settings, gg_pref_file(GG_SETTINGS_FILE));
     if (app->settings.rumble == false) app->in.no_rumble = true;
@@ -780,8 +783,8 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
         // simulation, so the frame shows a real exchange of blows.
         if (app->screen_name && SDL_strcmp(app->screen_name, "fight") == 0) {
             const gg_actor *pl = gg_player_const(&app->game);
-            gg_spawn_foe(&app->game, GG_ACTOR_BRIGAND, pl->x + 1, pl->y);
-            gg_spawn_foe(&app->game, GG_ACTOR_OUTLAW, pl->x + 2, pl->y - 1);
+            gg_spawn_named(&app->game, "BRIGAND", pl->x + 1, pl->y);
+            gg_spawn_named(&app->game, "SLINGER", pl->x + 3, pl->y - 1);
             gg_game_act(&app->game, GG_ACT_FIGHT);
             gg_game_act(&app->game, GG_ACT_FIGHT);
         }
@@ -903,6 +906,7 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result) {
 
     gg_dialogue_clear();
     gg_magic_clear();
+    gg_bestiary_clear();
     gg_input_quit(&app->in);
     gg_game_free(&app->game);
     debug_close(app);

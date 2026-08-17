@@ -418,6 +418,48 @@ world, "that will do" in a menu — and so has to be readable from either drain.
 
 *Verification: `the_pad_feeds_the_world_and_the_menus_separately`.*
 
+### The bestiary
+
+What lives in the world is a **file**. `assets/bestiary.txt` gives each creature
+its sprite, health, level, speed, damage, guard, reach, loot table and how many
+of it a map holds — and nothing in C knows what a brigand is. `gg_spawn_foe`
+takes a row index and copies it; the generator loops the bestiary placing each
+creature's `haunts`; the switch that used to hold two creatures' numbers is
+gone.
+
+Two of the fields are **behaviour** rather than statistics, and both are visible
+in play:
+
+- `notice` — how near you must come before it cares. Its own, not one number
+  shared by everything: a watchful thing stirs at eleven tiles while a dozy one
+  beside it does not.
+- `flees` — the health below which it would rather be elsewhere. A creature that
+  fights to its last point whatever happens is a number that walks at you. A
+  cornered one still fights, because that is the other half of fleeing.
+
+`reach` above one is something that fights **at a distance with nothing in its
+hands** — the vale's slinger hits from three tiles away, which is a line in a
+file rather than a special case in the code.
+
+**Loot is a table**, several lines deep, each with its own chance, rolled
+through the game's RNG so what falls is part of the seeded world. A brigand
+carries a purse always and a loaf sometimes.
+
+Damage is deliberately **not defaulted**. A creature that can hurt nobody is
+scenery, and the loader refuses one — but a default of 1 made that check
+unreachable, which the malformed-bestiary test caught.
+
+*Verification: `a_creature_can_be_added_in_a_file_alone` (the plan's own — every
+number read back out of the world, plus the generator placing it without being
+told what it is), `a_creature_flees_when_it_is_hurt_enough`,
+`a_creature_notices_at_the_distance_its_file_says`,
+`a_creature_with_reach_strikes_from_where_it_stands`,
+`a_bestiary_that_does_not_parse_loads_nothing` (ten malformed files and a
+missing one), `the_vale_is_stocked_with_creatures_that_work`. Three were checked
+by breaking the rule they pin — fixing notice at the global constant, never
+fleeing, and ignoring a creature's own reach — and the first of those was not
+caught until a test was added for it, which is why that one exists.*
+
 ### Magic
 
 Ultima's magic is a **language**, and this is built as one. A spell is a phrase
@@ -785,7 +827,7 @@ Named plainly, because a reader should not have to infer absence:
 | | |
 | --- | --- |
 | Story, quests, journal | nothing at all |
-| Combat depth | blows, initiative, reach and loot exist; there are no skills, no criticals, no morale, no fleeing, and two kinds of foe |
+| Combat depth | blows, initiative, reach, loot and fleeing exist; there are no skills, no criticals and three kinds of foe |
 | Magic beyond three effects | light, heal and harm. No summoning, no travel, no enchantment, no mana - reagents are the whole cost |
 | Arms | a hammer, a throwing stone and a shield. No swords: this art set has none that stand on their own |
 | Trade | nothing. Items carry a value in copper, and no one buys or sells |

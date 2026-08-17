@@ -34,6 +34,17 @@ const gg_prop_size GG_PROP_SIZE[GG_PROP_COUNT] = {
     [GG_PROP_HOUSE_PANELED] = { 5, 5, 2, 4, 5, 5, 3, 1, 0 },
 };
 
+const char *const GG_ACTOR_ID_NAME[GG_ACTOR_COUNT] = {
+    [GG_ACTOR_AVATAR] = "AVATAR",
+    [GG_ACTOR_GUARD] = "GUARD",
+    [GG_ACTOR_MERCHANT] = "MERCHANT",
+    [GG_ACTOR_HEALER] = "HEALER",
+    [GG_ACTOR_MAGE] = "MAGE",
+    [GG_ACTOR_ELDER] = "ELDER",
+    [GG_ACTOR_BRIGAND] = "BRIGAND",
+    [GG_ACTOR_OUTLAW] = "OUTLAW",
+};
+
 const gg_item_def GG_ITEM[GG_ITEM_COUNT] = {
     [GG_ITEM_BREAD] = {
         "BREAD",

@@ -1052,6 +1052,10 @@ def emit_ids(tiles, props, actors, items, path):
     o.append("} gg_item_def;")
     o.append("extern const gg_item_def GG_ITEM[GG_ITEM_COUNT];")
     o.append("")
+    o.append("// The name a data file calls each of these by - the bestiary says")
+    o.append("// BRIGAND and gets the sprite, without a number nobody can check.")
+    o.append("extern const char *const GG_ACTOR_ID_NAME[GG_ACTOR_COUNT];")
+    o.append("")
     o.append("// Row order within an actor's block, matching LPC's Walk.png.")
     o.append("typedef enum { GG_FACE_UP, GG_FACE_LEFT, GG_FACE_DOWN, "
              "GG_FACE_RIGHT } gg_facing;")
@@ -1095,7 +1099,7 @@ def emit_ids(tiles, props, actors, items, path):
         f.write("\n".join(o) + "\n")
 
 
-def emit_sizes(props, items, path):
+def emit_sizes(props, items, actors, path):
     """The one generated .c file - tables the simulation links against."""
     o = [banner("gg_ids.c", "Prop geometry and the item table, for the "
                             "simulation."),
@@ -1104,6 +1108,12 @@ def emit_sizes(props, items, path):
     for name, x, y, w, h, wt, ht, ax, ay, fw, fh, door, hollow, light in props:
         o.append(f"    [GG_PROP_{name}] = {{ {wt}, {ht}, {ax}, {ay}, "
                  f"{fw}, {fh}, {door}, {hollow}, {light} }},")
+    o.append("};")
+    o.append("")
+
+    o.append("const char *const GG_ACTOR_ID_NAME[GG_ACTOR_COUNT] = {")
+    for name, *_ in actors:
+        o.append(f'    [GG_ACTOR_{name}] = "{name}",')
     o.append("};")
     o.append("")
 
@@ -1302,7 +1312,7 @@ def main():
 
     src = os.path.join(ROOT, "src")
     emit_ids(tiles, props, actors, items, os.path.join(src, "core", "gg_ids.h"))
-    emit_sizes(props, items, os.path.join(src, "core", "gg_ids.c"))
+    emit_sizes(props, items, actors, os.path.join(src, "core", "gg_ids.c"))
     emit_atlas(tiles, props, actors, items, edges, overlays, font_meta,
                os.path.join(src, "gfx", "gg_atlas.h"))
     emit_credits(os.path.join(ASSETS, "CREDITS.md"))

@@ -150,8 +150,14 @@ found, not when someone remembers.
       effect and its reagent cost both observable — and refused, spending
       nothing, when the words, the circle, the reagents or the target are
       missing.*
-- [ ] **Bestiary in data.** Creature stats, behaviour and loot tables as files.
-      *Verification: a creature added with no code change.*
+- [x] **Bestiary in data.** Stats, behaviour and loot tables in
+      `assets/bestiary.txt` — including how near it must be before it notices
+      you, the health below which it would rather be elsewhere, how far it can
+      strike, and how many of it a map holds. Nothing in C knows what a brigand
+      is.
+      *Verification: a creature added in a file alone — its name, stats,
+      sprite, loot and the number the generator places, all observed in a world
+      that was never told what it was.*
 - [ ] **Audio.** Music that follows the region and the time of day, ambience,
       and effects driven from the simulation the way rumble already is. Needs a
       freely-licensed sound set vendored with its attribution, as the art was.

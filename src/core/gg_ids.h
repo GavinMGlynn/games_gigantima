@@ -123,6 +123,10 @@ typedef struct {
 } gg_item_def;
 extern const gg_item_def GG_ITEM[GG_ITEM_COUNT];
 
+// The name a data file calls each of these by - the bestiary says
+// BRIGAND and gets the sprite, without a number nobody can check.
+extern const char *const GG_ACTOR_ID_NAME[GG_ACTOR_COUNT];
+
 // Row order within an actor's block, matching LPC's Walk.png.
 typedef enum { GG_FACE_UP, GG_FACE_LEFT, GG_FACE_DOWN, GG_FACE_RIGHT } gg_facing;
 

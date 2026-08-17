@@ -112,7 +112,8 @@ the title; `--new` starts that profile over rather than resuming.
 Walking into somebody talks to them, as Ultima VI did — the common case needs
 no key at all.
 
-There are brigands in the hills, and they are people — this art set has no
+There are brigands in the hills — and outlaws, and a slinger who fights from
+three tiles away — and they are people — this art set has no
 monsters in it at all, which suits a caravan that never arrived better than a
 wolf would. Walking into one strikes it, the same gesture that talks to a
 townsperson; a readied stone reaches five tiles and lands where it was thrown.
@@ -129,7 +130,8 @@ Magic is a **language**. A spell is a phrase — `IN LOR`, `VAS MANI` — and yo
 cast it when you know the runes it is made of, which are words in the same
 vocabulary the conversations use: ask Nystul about the RUNES. Reagents are
 ordinary things you carry, and they grow where they would grow — ginseng under
-trees, ash at the foot of the cliffs. It is all in `assets/spells.txt`.
+trees, ash at the foot of the cliffs. It is all in `assets/spells.txt`, and what lives in the hills is all in
+`assets/bestiary.txt` — stats, behaviour and loot alike.
 
 Conversation is a **vocabulary, not a dialogue tree**. Everyone starts knowing
 two words, NAME and JOB; a topic can be asked when you know one of its words,
@@ -176,7 +178,7 @@ src/platform/   asset and save paths, keyboard and gamepad
 src/debug/      the debug window
 src/frontend/   main.c per executable
 tools/          the art baker and the sheet-scanning tool it was built with
-assets/         the atlases, dialogue.txt and spells.txt - the content
+assets/         the atlases, and the content: dialogue, spells, bestiary
 ext/            pinned submodules — see ext/README.md
 docs/           the completion plan and the project status
 ```

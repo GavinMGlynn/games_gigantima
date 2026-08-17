@@ -2,6 +2,7 @@
 #include "core/gg_game.h"
 #include "core/gg_combat.h"
 #include "core/gg_magic.h"
+#include "core/gg_bestiary.h"
 
 #include <stdarg.h>
 
@@ -1159,8 +1160,9 @@ static bool finish_new_game(gg_game *g, const char *profile) {
 
     place_townsfolk(g);
 
-    // Trouble in the wilderness, well away from the town gate. The vale's
-    // problem is people, and this is where the caravan met them.
+    // Trouble in the wilderness, well away from the town gate. How many of
+    // what comes out of the bestiary - nothing here knows a brigand from a
+    // slinger, which is what lets a creature be added to a file alone.
     {
         int cx = g->map.start_x, cy = g->map.start_y;
         for (int i = 0; i < g->map.regions; i++)
@@ -1170,18 +1172,21 @@ static bool finish_new_game(gg_game *g, const char *profile) {
                 break;
             }
 
-        // Placed from the seeded RNG like everything else, so the same number
-        // puts the same brigands in the same places.
-        int placed = 0;
-        for (int tries = 0; tries < 400 && placed < 6; tries++) {
-            const int x = gg_rand_belowi(&g->rng, g->map.w);
-            const int y = gg_rand_belowi(&g->rng, g->map.h);
-            if (gg_dist_cheb(cx, cy, x, y) < 24) continue;   // not on the doorstep
-            const gg_cell *c = gg_map_at_const(&g->map, x, y);
-            if (!c || (c->flags & GG_CELL_INDOORS)) continue;
-            const gg_actor_id art = (placed % 3 == 2) ? GG_ACTOR_OUTLAW
-                                                      : GG_ACTOR_BRIGAND;
-            if (gg_spawn_foe(g, art, x, y) >= 0) placed++;
+        for (int kind = 0; kind < gg_bestiary_count(); kind++) {
+            const gg_beast *b = gg_bestiary_at(kind);
+            if (!b || b->haunts == 0) continue;
+
+            int placed = 0;
+            for (int tries = 0; tries < 300 && placed < b->haunts; tries++) {
+                const int x = gg_rand_belowi(&g->rng, g->map.w);
+                const int y = gg_rand_belowi(&g->rng, g->map.h);
+                // Not on the town's doorstep: the vale should be safe to leave
+                // a house in, and dangerous to walk out of.
+                if (gg_dist_cheb(cx, cy, x, y) < 24) continue;
+                const gg_cell *c = gg_map_at_const(&g->map, x, y);
+                if (!c || (c->flags & GG_CELL_INDOORS)) continue;
+                if (gg_spawn_foe(g, kind, x, y) >= 0) placed++;
+            }
         }
     }
 
