@@ -94,7 +94,11 @@ found, not when someone remembers.
       default. *Verification: the save tests, plus a CI smoke test that plays,
       quits and resumes through the real binary.*
 - [x] **Title screen, menus, setup and profile pages.** New game, continue,
-      choose profile, options, pause, quit — six screens in all.
+      choose profile, options, pause, quit — six screens in all. Options covers
+      window scale, fullscreen and rumble; **the music and effects rows are
+      shown but inert**, and say "no sound yet" rather than pretending — a
+      volume that adjusts nothing is not a control, so it belongs to the audio
+      item below and is tracked there.
       *Verification: every screen reachable and leavable by keyboard and by
       gamepad alone, including naming a new journey; and a `--shot` frame per
       screen, taken in CI.*
@@ -120,8 +124,10 @@ found, not when someone remembers.
 - [ ] **Audio.** Music that follows the region and the time of day, ambience,
       and effects driven from the simulation the way rumble already is. Needs a
       freely-licensed sound set vendored with its attribution, as the art was.
+      Includes making the options page's music and effects rows live, which is
+      where the volume control this project promised actually lands.
       *Verification: a headless run producing a capture with the expected events
-      in it.*
+      in it, and both volume rows changing what it contains.*
 
 ## Phase 3 — Content at scale
 
