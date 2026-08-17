@@ -82,7 +82,7 @@ jobs:
           SDL_RENDER_DRIVER: software
           SDL_AUDIODRIVER: dummy
         run: |
-          for s in title profiles name options pause play pack; do
+          for s in title profiles name options pause play pack talk; do
             ./build/gigantima --screen "$s" --profile CI --shot "screen-$s.bmp"
             test -s "screen-$s.bmp" || { echo "$s drew nothing"; exit 1; }
           done

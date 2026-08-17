@@ -14,7 +14,11 @@
 #include "core/gg_game.h"
 
 #define GG_SAVE_MAGIC   "GGSAVE\0\0"
-#define GG_SAVE_VERSION 1
+// Version 2 carries the words the player has learned, which is the whole of
+// the story state. There is no migration from 1: a version-1 save has a
+// different inventory in it as well, and guessing at either would resume
+// somebody into a world that is not the one they left.
+#define GG_SAVE_VERSION 2
 
 #define GG_PROFILE_NAME_MAX 32
 #define GG_PROFILES_MAX     64

@@ -20,6 +20,7 @@
 #include "platform/gg_paths.h"
 #include "debug/gg_debug.h"
 #include "core/gg_save.h"
+#include "core/gg_dialogue.h"
 #include "ui/gg_screens.h"
 #include "platform/gg_settings.h"
 
@@ -472,6 +473,12 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
                 gg_map_walkable(&app->game.map, p->x, p->y) ? "" : " (in terrain)");
     }
 
+    // The book of what people say. A world with no book still runs - everybody
+    // greets and nobody has anything more to add - so this is a log line rather
+    // than a failure, the same as a missing gamepad.
+    if (!gg_dialogue_load(gg_asset_path("dialogue.txt")))
+        SDL_Log("gigantima: no dialogue loaded; the town will be quiet");
+
     gg_settings_load(&app->settings, gg_pref_file(GG_SETTINGS_FILE));
     if (app->settings.rumble == false) app->in.no_rumble = true;
     if (no_rumble) app->settings.rumble = false;
@@ -492,6 +499,9 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
             // but it is a page the player looks at, so --shot has to be able to
             // photograph it like the rest.
             { "pack",     GG_SCREEN_PLAY },
+            // Like `pack`: a mode of the world rather than a screen, but a
+            // page the player reads, so --shot has to be able to photograph it.
+            { "talk",     GG_SCREEN_PLAY },
         };
         bool known = false;
         for (size_t k = 0; k < GG_COUNTOF(NAMED); k++)
@@ -600,9 +610,16 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
 
         switch (event->key.scancode) {
         case SDL_SCANCODE_ESCAPE:
-            // In the world, Escape opens the pause menu rather than quitting:
-            // losing a session to a stray keypress is not acceptable now that
-            // there is a session to lose.
+            // Escape backs out of whatever is open before it reaches for the
+            // pause menu: a conversation or the pack first, and only then the
+            // menu. Losing a session to a stray keypress is not acceptable now
+            // that there is a session to lose, and neither is having to press
+            // a different key to close each thing.
+            if (app->game.mode == GG_MODE_CONVERSE ||
+                app->game.mode == GG_MODE_PACK) {
+                gg_game_act(&app->game, GG_ACT_WAIT);
+                return SDL_APP_CONTINUE;
+            }
             screen_go(app, GG_SCREEN_PAUSE);
             return SDL_APP_CONTINUE;
         case SDL_SCANCODE_F11:
@@ -732,9 +749,24 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
             SDL_Log("gigantima: capture stalled at turn %u of %u",
                     app->game.turn, app->shot_at);
         // Opened after the turns have been played, not before: the loop above
-        // acts on the world, and in the pack those same actions close it.
+        // acts on the world, and in the pack or a conversation those same
+        // actions would close it again.
         if (app->screen_name && SDL_strcmp(app->screen_name, "pack") == 0)
             app->game.mode = GG_MODE_PACK;
+
+        // Walks up to the first townsperson and talks, so the conversation
+        // panel can be photographed without anyone driving the game.
+        if (app->screen_name && SDL_strcmp(app->screen_name, "talk") == 0) {
+            for (int i = 0; i < app->game.actors; i++) {
+                if (i == app->game.player || !app->game.actor[i].active) continue;
+                gg_actor *pl = gg_player(&app->game);
+                pl->x = app->game.actor[i].x;
+                pl->y = (int16_t)(app->game.actor[i].y + 1);
+                pl->step = 0;
+                gg_game_act(&app->game, GG_ACT_N);
+                break;
+            }
+        }
 
         // With --debug, capture the debug window rather than the game: that is
         // the view you wanted a picture of, and it is otherwise unreachable
@@ -816,6 +848,7 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result) {
             SDL_Log("gigantima: saved %s on exit", app->game.profile);
     }
 
+    gg_dialogue_clear();
     gg_input_quit(&app->in);
     gg_game_free(&app->game);
     debug_close(app);

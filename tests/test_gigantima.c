@@ -14,6 +14,7 @@
 #include "gfx/gg_atlas.h"   // GG_EDGE_* piece indices
 #include "core/gg_path.h"
 #include "core/gg_save.h"
+#include "core/gg_dialogue.h"
 #include "ui/gg_menu.h"
 #include "ui/gg_screens.h"
 #include "platform/gg_settings.h"
@@ -835,6 +836,9 @@ static bool games_match(const gg_game *a, const gg_game *b, const char **why) {
     if (a->rng.s != b->rng.s)     { *why = "rng"; return false; }
     if (a->player != b->player)   { *why = "player index"; return false; }
     if (a->actors != b->actors)   { *why = "actor count"; return false; }
+    if (a->knownn != b->knownn)   { *why = "words known"; return false; }
+    for (int i = 0; i < a->knownn; i++)
+        if (SDL_strcmp(a->known[i], b->known[i]) != 0) { *why = "a word"; return false; }
     if (a->packn != b->packn)     { *why = "pack size"; return false; }
     for (int i = 0; i < a->packn; i++)
         if (a->pack[i].kind != b->pack[i].kind ||
@@ -2570,6 +2574,311 @@ static void every_item_is_one_the_rules_can_handle(void) {
 }
 
 // ---------------------------------------------------------------------------
+// Conversation
+// ---------------------------------------------------------------------------
+// Writes a dialogue file and returns its path. Authored here rather than
+// pointing at the shipped book, so these tests pin the rules rather than
+// whatever the vale's writers last said.
+static const char *write_dialogue(const char *text) {
+    const char *path = gg_pref_file("test_dialogue.txt");
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    CHECK(io != nullptr, "could not write a dialogue file");
+    if (io) {
+        const size_t n = SDL_strlen(text);
+        CHECK(SDL_WriteIO(io, text, n) == n, "short write on the dialogue file");
+        SDL_CloseIO(io);
+    }
+    return path;
+}
+
+// The plan's own verification: a conversation defined entirely in a data file,
+// with a topic that only unlocks after another has been asked.
+static void a_topic_unlocks_only_after_the_word_is_learned(void) {
+    const char *path = write_dialogue(
+        "person Smith\n"
+        "greet Well met.\n"
+        "topic name\n"
+        "  say I am the smith.\n"
+        "topic job forge\n"
+        "  say I keep the forge. Ask of the ORDER.\n"
+        "  teach order\n"
+        "topic order\n"
+        "  say Twenty blades by the equinox, and no steel to make them.\n"
+        "bye Mind the sparks.\n");
+    CHECK(gg_dialogue_load(path), "the dialogue file did not load");
+    CHECK(gg_dialogue_speakers() == 1, "expected one speaker, got %d",
+          gg_dialogue_speakers());
+
+    const gg_speaker *s = gg_dialogue_find("Smith");
+    CHECK(s != nullptr, "the smith is not in the book");
+    if (!s) return;
+    CHECK(s->topics == 3, "expected three topics, got %d", s->topics);
+
+    gg_game g;
+    CHECK(gg_game_new(&g, 21, "Talker"), "new game failed");
+
+    // A fresh player knows the two words everybody starts with, and nothing
+    // else - so ORDER is not askable however plainly it is written in the file.
+    CHECK(gg_knows(&g, "name") && gg_knows(&g, "job"),
+          "a new game does not know the words everyone starts with");
+    CHECK(!gg_knows(&g, "order"), "a new game already knows ORDER");
+
+    // Put the smith in the world and walk up to him.
+    g.actor[1] = g.actor[0];
+    SDL_strlcpy(g.actor[1].name, "Smith", sizeof g.actor[1].name);
+    g.actor[1].active = true;
+    g.actor[1].def = 0;
+    if (g.actors < 2) g.actors = 2;
+
+    g.talking_to = 1;
+    g.mode = GG_MODE_CONVERSE;
+    g.speaker = gg_dialogue_find("Smith");
+    gg_conversation_refresh(&g);
+
+    CHECK(g.askables == 2, "expected two askable words, got %d", g.askables);
+    bool offers_order = false;
+    for (int i = 0; i < g.askables; i++)
+        if (SDL_strcasecmp(g.askable[i], "order") == 0) offers_order = true;
+    CHECK(!offers_order, "ORDER was offered before it was learned");
+
+    // Ask about the job. That is the only thing that hands over the word.
+    int job = -1;
+    for (int i = 0; i < g.askables; i++)
+        if (SDL_strcasecmp(g.askable[i], "job") == 0) job = i;
+    CHECK(job >= 0, "JOB is not askable");
+    g.ask_cursor = job;
+    gg_conversation_ask(&g);
+
+    CHECK(gg_knows(&g, "order"), "asking about the job did not teach ORDER");
+    CHECK(g.askables == 3, "the new word did not appear in the list (%d words)",
+          g.askables);
+
+    offers_order = false;
+    for (int i = 0; i < g.askables; i++)
+        if (SDL_strcasecmp(g.askable[i], "order") == 0) offers_order = true;
+    CHECK(offers_order, "ORDER is known but not offered");
+
+    // And asking it says what the file says, with nothing about it in C.
+    for (int i = 0; i < g.askables; i++)
+        if (SDL_strcasecmp(g.askable[i], "order") == 0) g.ask_cursor = i;
+    gg_conversation_ask(&g);
+    CHECK(g.saids == 1, "expected one line of answer, got %d", g.saids);
+    CHECK(SDL_strstr(g.said[0], "equinox") != nullptr,
+          "the answer did not come from the file: '%s'", g.said[0]);
+
+    gg_game_free(&g);
+    gg_dialogue_clear();
+    SDL_RemovePath(path);
+}
+
+// A word learned from one person unlocks a different person's topic. This is
+// the whole reason the gate is "do you know the word" rather than a per-speaker
+// flag, and it is what lets a rumour cross a town.
+static void a_word_learned_from_one_person_opens_another(void) {
+    const char *path = write_dialogue(
+        "person Iolo\n"
+        "greet Hail.\n"
+        "topic job\n"
+        "  say Ask Shamino of the CARAVAN.\n"
+        "  teach caravan\n"
+        "person Shamino\n"
+        "greet The gate is watched.\n"
+        "topic job\n"
+        "  say I watch the road.\n"
+        "topic caravan\n"
+        "  say It never came.\n");
+    CHECK(gg_dialogue_load(path), "the dialogue file did not load");
+
+    gg_game g;
+    CHECK(gg_game_new(&g, 22, "Rumour"), "new game failed");
+
+    // Shamino has nothing to say about the caravan yet.
+    g.speaker = gg_dialogue_find("Shamino");
+    g.mode = GG_MODE_CONVERSE;
+    g.talking_to = 0;
+    gg_conversation_refresh(&g);
+    CHECK(g.askables == 1, "Shamino offers %d words before the rumour, expected 1",
+          g.askables);
+
+    // Hear it from Iolo instead.
+    g.speaker = gg_dialogue_find("Iolo");
+    gg_conversation_refresh(&g);
+    g.ask_cursor = 0;
+    gg_conversation_ask(&g);
+    CHECK(gg_knows(&g, "caravan"), "Iolo did not teach the word");
+
+    // Now Shamino will answer, without anything having been told about him.
+    g.speaker = gg_dialogue_find("Shamino");
+    gg_conversation_refresh(&g);
+    CHECK(g.askables == 2, "Shamino offers %d words after the rumour, expected 2",
+          g.askables);
+
+    gg_game_free(&g);
+    gg_dialogue_clear();
+    SDL_RemovePath(path);
+}
+
+static void what_was_learned_survives_a_save(void) {
+    const char *who = "Rememberer";
+    wipe_saves(who);
+
+    const char *path = write_dialogue(
+        "person Nell\n"
+        "greet Eighty winters.\n"
+        "topic job\n"
+        "  say Remembering is work enough.\n"
+        "  teach stones\n"
+        "topic stones\n"
+        "  say They have stood a long while.\n");
+    CHECK(gg_dialogue_load(path), "the dialogue file did not load");
+
+    gg_game a;
+    CHECK(gg_game_new(&a, 23, who), "new game failed");
+    a.speaker = gg_dialogue_find("Nell");
+    a.mode = GG_MODE_CONVERSE;
+    a.talking_to = 0;
+    gg_conversation_refresh(&a);
+    a.ask_cursor = 0;
+    gg_conversation_ask(&a);
+    CHECK(gg_knows(&a, "stones"), "the word was not learned");
+
+    // Saved mid-conversation on purpose: the words have to come back, and the
+    // conversation itself must not - it holds a pointer into the book.
+    CHECK(gg_save_write(&a, save_base(), who), "save failed");
+
+    gg_game b;
+    SDL_zero(b);
+    CHECK(gg_save_read(&b, save_base(), who), "load failed");
+    CHECK(gg_knows(&b, "stones"), "the resumed game forgot what it was told");
+    CHECK(b.mode == GG_MODE_PLAY, "the resumed game came back mid-conversation");
+    CHECK(b.speaker == nullptr, "the resumed game kept a pointer into the book");
+
+    gg_game_free(&b);
+    gg_game_free(&a);
+    gg_dialogue_clear();
+    SDL_RemovePath(path);
+    wipe_saves(who);
+}
+
+// A book that does not parse must load nothing at all. Half a book puts half a
+// conversation in somebody's mouth, which is worse than a silent town.
+static void a_dialogue_file_that_does_not_parse_loads_nothing(void) {
+    static const char *const BAD[] = {
+        "greet Hail.\n",                                  // before any person
+        "person A\ngreet Hi.\nsay Orphan.\n",             // say with no topic
+        "person A\ngreet Hi.\ntopic\n  say Nothing.\n",   // topic with no word
+        "person A\ngreet Hi.\ntopic x\n",                 // topic that says nothing
+        "person A\ntopic x\n  say Something.\n",          // person with no greeting
+        "person A\ngreet Hi.\nwibble What?\n",            // a word we do not know
+    };
+    for (size_t i = 0; i < GG_COUNTOF(BAD); i++) {
+        const char *path = write_dialogue(BAD[i]);
+        CHECK(!gg_dialogue_load(path), "bad book %zu loaded anyway", i);
+        CHECK(gg_dialogue_speakers() == 0,
+              "bad book %zu left %d speakers behind", i, gg_dialogue_speakers());
+        SDL_RemovePath(path);
+    }
+
+    // And a file that is not there at all is a clean no, not a crash.
+    CHECK(!gg_dialogue_load(gg_pref_file("test_no_such_dialogue.txt")),
+          "a missing dialogue file reported success");
+    CHECK(gg_dialogue_speakers() == 0, "a missing file left speakers behind");
+}
+
+static void synonyms_ask_the_same_topic_and_show_one_label(void) {
+    const char *path = write_dialogue(
+        "person Iolo\n"
+        "greet Hail.\n"
+        "topic job market stall\n"
+        "  say I keep the stall.\n");
+    CHECK(gg_dialogue_load(path), "the dialogue file did not load");
+
+    const gg_speaker *s = gg_dialogue_find("Iolo");
+    CHECK(s != nullptr, "Iolo is missing");
+    if (s) {
+        CHECK(gg_speaker_topic(s, "job") == gg_speaker_topic(s, "market"),
+              "a synonym found a different topic");
+        CHECK(gg_speaker_topic(s, "STALL") == gg_speaker_topic(s, "job"),
+              "matching a keyword is case-sensitive, and should not be");
+        CHECK(gg_speaker_topic(s, "elephant") == nullptr,
+              "a word nobody wrote found a topic");
+    }
+
+    // Knowing any synonym offers the topic, and the label is the first word -
+    // the one the author chose - not whichever synonym happened to be learned.
+    gg_game g;
+    CHECK(gg_game_new(&g, 24, "Syn"), "new game failed");
+    g.knownn = 0;
+    gg_learn(&g, "market");
+    g.speaker = s;
+    g.mode = GG_MODE_CONVERSE;
+    g.talking_to = 0;
+    gg_conversation_refresh(&g);
+    CHECK(g.askables == 1, "expected one askable word, got %d", g.askables);
+    if (g.askables == 1)
+        CHECK(SDL_strcmp(g.askable[0], "job") == 0,
+              "the list shows '%s', not the label the author chose", g.askable[0]);
+
+    gg_game_free(&g);
+    gg_dialogue_clear();
+    SDL_RemovePath(path);
+}
+
+// The shipped book has to be one the game can actually read, and its words have
+// to be reachable - a topic nobody teaches is a topic nobody can ever ask.
+static void the_vale_has_a_book_and_every_word_in_it_is_reachable(void) {
+    CHECK(gg_dialogue_load(gg_asset_path("dialogue.txt")),
+          "the shipped dialogue file does not load");
+    CHECK(gg_dialogue_speakers() > 0, "the shipped book has nobody in it");
+
+    // Collect what the book can teach, plus what everyone starts knowing.
+    char vocab[GG_KNOWN_MAX][GG_WORD_MAX];
+    int vocabn = 0;
+    SDL_strlcpy(vocab[vocabn++], GG_WORD_NAME, GG_WORD_MAX);
+    SDL_strlcpy(vocab[vocabn++], GG_WORD_JOB, GG_WORD_MAX);
+
+    // Walked by name, which is the handle the API gives - and naming them here
+    // is itself the check that every townsperson has an entry.
+    static const char *const WHO[] = {
+        "Iolo", "Shamino", "Nell", "Dupre", "Katrina", "Nystul", "Gwenno",
+        "Chuckles",
+    };
+    for (size_t w = 0; w < GG_COUNTOF(WHO); w++) {
+        const gg_speaker *s = gg_dialogue_find(WHO[w]);
+        CHECK(s != nullptr, "%s is in the town but not in the book", WHO[w]);
+        if (!s) continue;
+        for (int t = 0; t < s->topics; t++) {
+            if (!s->topic[t].teach[0]) continue;
+            bool have = false;
+            for (int v = 0; v < vocabn; v++)
+                if (SDL_strcasecmp(vocab[v], s->topic[t].teach) == 0) have = true;
+            if (!have && vocabn < GG_KNOWN_MAX)
+                SDL_strlcpy(vocab[vocabn++], s->topic[t].teach, GG_WORD_MAX);
+        }
+    }
+
+    // Every keyword anyone answers to must be in that vocabulary, or it is a
+    // question no player could ever put.
+    for (size_t w = 0; w < GG_COUNTOF(WHO); w++) {
+        const gg_speaker *s = gg_dialogue_find(WHO[w]);
+        if (!s) continue;
+        for (int t = 0; t < s->topics; t++) {
+            bool reachable = false;
+            for (int k = 0; k < s->topic[t].words && !reachable; k++)
+                for (int v = 0; v < vocabn && !reachable; v++)
+                    if (SDL_strcasecmp(vocab[v], s->topic[t].word[k]) == 0)
+                        reachable = true;
+            CHECK(reachable,
+                  "%s answers to '%s', which nothing in the book ever teaches",
+                  WHO[w], s->topic[t].word[0]);
+        }
+        CHECK(s->bye[0] != '\0', "%s has no parting line", WHO[w]);
+    }
+
+    gg_dialogue_clear();
+}
+
+// ---------------------------------------------------------------------------
 // Content tables
 // ---------------------------------------------------------------------------
 static void every_terrain_and_item_has_a_name(void) {
@@ -2718,6 +3027,13 @@ int main(void) {
     RUN(what_is_held_stays_held_through_the_pack_shifting);
     RUN(only_things_meant_to_be_held_can_be_held);
     RUN(every_item_is_one_the_rules_can_handle);
+
+    RUN(a_topic_unlocks_only_after_the_word_is_learned);
+    RUN(a_word_learned_from_one_person_opens_another);
+    RUN(what_was_learned_survives_a_save);
+    RUN(a_dialogue_file_that_does_not_parse_loads_nothing);
+    RUN(synonyms_ask_the_same_topic_and_show_one_label);
+    RUN(the_vale_has_a_book_and_every_word_in_it_is_reachable);
 
     RUN(every_terrain_and_item_has_a_name);
     RUN(every_prop_has_a_plausible_footprint);

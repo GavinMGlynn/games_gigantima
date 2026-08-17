@@ -1,0 +1,121 @@
+# The book of what people say.
+#
+# Read by the game, written by hand for now and by the editor later. Nothing in
+# here is compiled in: adding a person or a topic is an edit to this file.
+#
+#   person NAME        starts a block; the name matches the townsfolk table
+#   greet  TEXT        what they say when you walk up to them
+#   topic  WORD [WORD] a thing they will talk about, and its synonyms
+#     say  TEXT        a line of the answer; up to three
+#     teach WORD       asking this hands over a word you did not have
+#   bye    TEXT        what they say as you leave
+#
+# Everyone begins knowing NAME and JOB and nothing else. Every other word in
+# this file has to be taught by some topic, or nobody can ever ask it - which is
+# also how a rumour crosses a town: Iolo teaches CARAVAN, and it is Shamino and
+# Nell who know what became of it.
+
+person Iolo
+greet Hail, Avatar! The market opens at dawn, and closes when I say.
+topic name
+  say Iolo, and my father Iolo before me. The stall is older than either.
+topic job market stall
+  say I buy and I sell, and lately I do more of the one than the other.
+  say My shelves are bare. Ask of the CARAVAN and thou wilt know why.
+  teach caravan
+topic caravan
+  say Three weeks late out of the north, and not a word from it since.
+  say Shamino watched the road that fortnight. Ask HIM what he saw.
+  teach road
+bye Come back when thou hast coin, Avatar.
+
+person Shamino
+greet The gate is watched. Pass freely.
+topic name
+  say Shamino. I keep this gate, and have since the old lord's day.
+topic job gate watch
+  say I watch the road in and the road out. Little enough comes either way.
+topic caravan
+  say Aye, I watched for it. Fourteen nights, and it never came.
+topic road
+  say The north road runs past the standing stones and into the fells.
+  say Nell has walked it longer than I have been alive. Ask her of the STONES.
+  teach stones
+bye Keep thy blade keen.
+
+person Nell
+greet I have seen eighty winters in this vale, and this is the strangest.
+topic name
+  say Nell. I was born in the house behind thee, and I shall die in it.
+topic job
+  say At my age, remembering is work enough.
+topic stones
+  say The standing stones have stood since before the vale was named.
+  say Something has been moving among them at night. I have seen the light.
+  teach light
+topic light
+  say A cold light, and it does not flicker as a fire does.
+  say It began the week thy caravan failed to come. Make of that what thou wilt.
+topic caravan
+  say Goods do not simply stop. Somebody stopped them.
+bye Mind thy step in the dark, child.
+
+person Dupre
+greet Well met. Keep thy blade keen.
+topic name
+  say Dupre. Ask the tavern keeper for the rest of it.
+topic job
+  say I am paid to stand here and look as though I would be trouble.
+topic stones
+  say I would not go near them after dark. Nor would any man with sense.
+bye Mind how thou goest.
+
+person Katrina
+greet Art thou wounded? I have herbs, and patience for both.
+topic name
+  say Katrina. I keep the herbs, and the herbs keep the vale.
+topic job herbs healing
+  say I mend what walks in. Bring me anything that bleeds.
+topic light
+  say I have had three folk in this month with the same tale of a cold light.
+  say All three came back from the north road. None of them will go again.
+bye Go carefully, Avatar.
+
+person Nystul
+greet The stars speak, if thou wilt listen.
+topic name
+  say Nystul, of the tower that was, before the roof went.
+topic job magic
+  say I read what is written above, and write down what little I understand.
+topic light
+  say A cold light is not a fire and not a lamp. That leaves few things.
+  say None of them are glad to be seen. Ask Gwenno of the NORTH.
+  teach north
+topic stones
+  say Older than the vale, and older than whatever now walks among them.
+bye Look up more often, Avatar.
+
+person Gwenno
+greet Dost thou bring news from the north?
+topic name
+  say Gwenno. My husband walked north in the spring and has not walked back.
+topic job
+  say I keep the second house and wait, which is not much of a trade.
+topic north
+  say Nothing has come down that road since the caravan failed - no trader,
+  say no traveller, and no word of my husband. Someone must go and look.
+topic caravan
+  say My husband walked with it. That is all I know and all I care to know.
+bye Fare thee well. Go north, if thou hast courage.
+
+person Chuckles
+greet A riddle! Why does the Avatar cross the vale?
+topic name
+  say Chuckles! Some call me worse, but only once.
+topic job riddle
+  say To make thee laugh, or failing that, to make thee leave. Both pay.
+topic caravan
+  say Late, late, and later still. Perhaps it took the scenic road!
+topic light
+  say A light with no fire? Now that IS a riddle, and I do not care for it.
+bye Ha! Off with thee.

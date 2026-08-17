@@ -76,7 +76,7 @@ by being the thing CI actually runs.
 | | |
 | --- | --- |
 | Arrows / WASD / keypad | walk — the keypad also gives the four diagonals |
-| `T` | talk to whoever you face |
+| `T` | talk to whoever you face, and ask about the word under the cursor |
 | `L` | look at what you stand on |
 | `O` | open |
 | `G` | take what is underfoot |
@@ -109,6 +109,13 @@ the title; `--new` starts that profile over rather than resuming.
 Walking into somebody talks to them, as Ultima VI did — the common case needs
 no key at all.
 
+Conversation is a **vocabulary, not a dialogue tree**. Everyone starts knowing
+two words, NAME and JOB; a topic can be asked when you know one of its words,
+and answers hand over words you did not have. So a rumour heard from the
+merchant is what makes the gatekeeper worth asking, and there is no flag system
+anywhere making that happen. It is all in `assets/dialogue.txt` — adding a
+person or a topic is an edit to a text file.
+
 People leave things about their houses, and apples fall under trees. Everything
 you carry has a weight, and thirty stone is all anyone can manage — a bar of
 silver is four of them, so a hoard is a decision rather than a total. Ready a
@@ -129,7 +136,7 @@ window, writes a single frame and exits, which is how CI checks that the game
 can still find and draw its own art — it photographs whatever the other flags
 select, so `--shot` alone gets the title screen and `--debug --shot` gets the
 debug view; `--screen NAME` opens a named page — `title`, `profiles`, `name`,
-`options`, `play`, `pause` or `pack` — so each one can be photographed in turn.
+`options`, `play`, `pause`, `pack` or `talk` — so each one can be photographed in turn.
 `--at X,Y` and `--time HH:MM` put the avatar somewhere specific at a specific
 hour, because verifying a change to how water is drawn means getting to water,
 and checking that a lit room differs from the street at night means getting to
@@ -147,6 +154,7 @@ src/platform/   asset and save paths, keyboard and gamepad
 src/debug/      the debug window
 src/frontend/   main.c per executable
 tools/          the art baker and the sheet-scanning tool it was built with
+assets/         the atlases, and dialogue.txt - what people say
 ext/            pinned submodules — see ext/README.md
 docs/           the completion plan and the project status
 ```

@@ -11,6 +11,7 @@
 #include "core/gg_world.h"
 #include "core/gg_actor.h"
 #include "core/gg_path.h"
+#include "core/gg_dialogue.h"
 
 typedef enum {
     GG_MODE_TITLE,       // title screen, before a world exists
@@ -53,6 +54,10 @@ typedef enum {
 
 #define GG_LOG_LINES 5
 #define GG_LOG_WIDTH 96
+
+// How many words the player may collect. Generous: the vocabulary is the whole
+// of the story state, so running out would silently stop the plot.
+#define GG_KNOWN_MAX 64
 
 // --- the pack --------------------------------------------------------------
 // `gg_item_id` and the table describing each kind are generated from the art by
@@ -107,8 +112,28 @@ typedef struct {
     int          pack_cursor;
     int          equipped[GG_SLOT_COUNT];
 
-    // Who we are talking to, while mode == GG_MODE_CONVERSE.
+    // --- conversation, while mode == GG_MODE_CONVERSE ----------------------
     int  talking_to;
+
+    // The words the player has collected. This is the whole of the branching:
+    // a topic is askable when its word is known, so what somebody told you an
+    // hour ago in another house is what makes this question possible now.
+    char known[GG_KNOWN_MAX][GG_WORD_MAX];
+    int  knownn;
+
+    // Who is speaking, resolved from the actor's name on entry. Not saved -
+    // it points into the loaded book, and a pointer in a file is a pointer
+    // into the wrong process. Rebuilt the same way greetings are.
+    const gg_speaker *speaker;
+
+    // What they are saying now, and which of the words they will answer to is
+    // under the cursor. The list is rebuilt whenever a word is learned, so a
+    // topic that has just been unlocked appears without leaving the panel.
+    char said[GG_TOPIC_LINES_MAX][GG_LINE_MAX];
+    int  saids;
+    char askable[GG_TOPICS_MAX][GG_WORD_MAX];
+    int  askables;
+    int  ask_cursor;
 
     // Rolling message log, newest last.
     char log[GG_LOG_LINES][GG_LOG_WIDTH];
@@ -173,6 +198,23 @@ void gg_log(gg_game *g, SDL_PRINTF_FORMAT_STRING const char *fmt, ...)
 // Maps a direction action to a tile delta. Returns false for non-movement
 // actions, which is how the caller tells them apart.
 bool gg_action_delta(gg_action a, int *dx, int *dy);
+
+// --- conversation ----------------------------------------------------------
+// Does the player know this word? Case-insensitive: it came from a person.
+bool gg_knows(const gg_game *g, const char *word);
+
+// Adds a word to what the player knows. Returns false if it was already known
+// or there is no room, so a caller can tell whether anything was learned.
+bool gg_learn(gg_game *g, const char *word);
+
+// Rebuilds the list of words the person being spoken to will answer to, out of
+// the words the player knows. Called on entering a conversation and again
+// whenever a word is learned, so a topic that has just been unlocked appears
+// without the player having to leave and come back.
+void gg_conversation_refresh(gg_game *g);
+
+// Asks the word under the cursor. Does nothing outside a conversation.
+void gg_conversation_ask(gg_game *g);
 
 // --- the pack --------------------------------------------------------------
 // How many of a kind are carried, across every slot holding it.

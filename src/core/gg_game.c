@@ -4,6 +4,104 @@
 #include <stdarg.h>
 
 // ---------------------------------------------------------------------------
+// Conversation
+//
+// The vocabulary is the state. There is no dialogue tree, no flags and no
+// script: a topic can be asked when its word is known, and words are handed
+// over by other topics. That one rule is what lets a rumour cross a town -
+// Iolo teaches CARAVAN, and it is Shamino and Nell who have something to say
+// about it - without anything in here knowing that a rumour exists.
+// ---------------------------------------------------------------------------
+bool gg_knows(const gg_game *g, const char *word) {
+    if (!word || !*word) return false;
+    for (int i = 0; i < g->knownn; i++)
+        if (SDL_strcasecmp(g->known[i], word) == 0) return true;
+    return false;
+}
+
+bool gg_learn(gg_game *g, const char *word) {
+    if (!word || !*word) return false;
+    if (gg_knows(g, word)) return false;
+    if (g->knownn >= GG_KNOWN_MAX) return false;
+    SDL_strlcpy(g->known[g->knownn++], word, GG_WORD_MAX);
+    return true;
+}
+
+void gg_conversation_refresh(gg_game *g) {
+    g->askables = 0;
+    if (!g->speaker) return;
+
+    for (int i = 0; i < g->speaker->topics && g->askables < GG_TOPICS_MAX; i++) {
+        const gg_topic *t = &g->speaker->topic[i];
+        // Any synonym will do, but the first one is what gets shown - so a
+        // player who learned "market" is offered "job", which is the word the
+        // author chose to label it with.
+        for (int w = 0; w < t->words; w++) {
+            if (!gg_knows(g, t->word[w])) continue;
+            SDL_strlcpy(g->askable[g->askables++], t->word[0], GG_WORD_MAX);
+            break;
+        }
+    }
+    if (g->ask_cursor >= g->askables) g->ask_cursor = 0;
+    if (g->ask_cursor < 0) g->ask_cursor = 0;
+}
+
+// What they say, replacing whatever they said before.
+static void speaker_says(gg_game *g, const char *const *lines, int n) {
+    g->saids = 0;
+    for (int i = 0; i < n && g->saids < GG_TOPIC_LINES_MAX; i++)
+        SDL_strlcpy(g->said[g->saids++], lines[i], GG_LINE_MAX);
+}
+
+// Walking up to somebody. The book is looked up by the actor's name; a person
+// with no entry still greets, because a town half-written should read as a town
+// whose people are quiet, not as a broken one.
+static void begin_conversation(gg_game *g, int who) {
+    g->talking_to = who;
+    g->mode = GG_MODE_CONVERSE;
+    g->speaker = gg_dialogue_find(g->actor[who].name);
+    g->ask_cursor = 0;
+
+    const char *hail = g->speaker && g->speaker->greet[0] ? g->speaker->greet
+                     : g->actor[who].greeting ? g->actor[who].greeting
+                     : "Hail.";
+    const char *one[1] = { hail };
+    speaker_says(g, one, 1);
+    gg_conversation_refresh(g);
+    gg_log(g, "%s: \"%s\"", g->actor[who].name, hail);
+}
+
+static void end_conversation(gg_game *g) {
+    if (g->speaker && g->speaker->bye[0])
+        gg_log(g, "%s: \"%s\"", g->actor[g->talking_to].name, g->speaker->bye);
+    g->mode = GG_MODE_PLAY;
+    g->talking_to = -1;
+    g->speaker = nullptr;
+    g->saids = 0;
+    g->askables = 0;
+}
+
+void gg_conversation_ask(gg_game *g) {
+    if (g->mode != GG_MODE_CONVERSE || !g->speaker) return;
+    if (g->ask_cursor < 0 || g->ask_cursor >= g->askables) return;
+
+    const gg_topic *t = gg_speaker_topic(g->speaker, g->askable[g->ask_cursor]);
+    if (!t) return;
+
+    const char *lines[GG_TOPIC_LINES_MAX];
+    for (int i = 0; i < t->says; i++) lines[i] = t->say[i];
+    speaker_says(g, lines, t->says);
+
+    // Learning a word is the only thing a conversation changes in the world,
+    // and it may make this very speaker answerable to something new - so the
+    // list is rebuilt before the player looks at it again.
+    if (t->teach[0] && gg_learn(g, t->teach)) {
+        gg_log(g, "Thou hast learned of %s.", t->teach);
+        gg_conversation_refresh(g);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // The pack
 // ---------------------------------------------------------------------------
 int gg_pack_count(const gg_game *g, gg_item_id kind) {
@@ -232,10 +330,7 @@ static void do_move(gg_game *g, int dx, int dy) {
     for (int i = 0; i < g->actors; i++) {
         if (i == g->player || !g->actor[i].active) continue;
         if (g->actor[i].x == nx && g->actor[i].y == ny) {
-            g->talking_to = i;
-            g->mode = GG_MODE_CONVERSE;
-            gg_log(g, "%s: \"%s\"", g->actor[i].name,
-                   g->actor[i].greeting ? g->actor[i].greeting : "Hail.");
+            begin_conversation(g, i);
             return;
         }
     }
@@ -284,10 +379,7 @@ static void do_talk(gg_game *g) {
         gg_log(g, "There is no one there.");
         return;
     }
-    g->talking_to = who;
-    g->mode = GG_MODE_CONVERSE;
-    gg_log(g, "%s: \"%s\"", g->actor[who].name,
-           g->actor[who].greeting ? g->actor[who].greeting : "Hail.");
+    begin_conversation(g, who);
 }
 
 // How a quantity of something reads in a sentence: "a loaf of bread", or
@@ -437,11 +529,24 @@ static void do_open(gg_game *g) {
 }
 
 void gg_game_act(gg_game *g, gg_action a) {
+    // In a conversation the directions run down the list of words this person
+    // will answer to, and asking is the same button that started the talk.
+    // Nothing here advances the world: a conversation costs no time, which is
+    // Ultima's own rule and the reason you can afford to ask everything.
     if (g->mode == GG_MODE_CONVERSE) {
-        // Any key leaves the conversation for now. The keyword system that
-        // makes this worth entering is a named plan item.
-        g->mode = GG_MODE_PLAY;
-        g->talking_to = -1;
+        int dx, dy;
+        if (gg_action_delta(a, &dx, &dy)) {
+            if (dy && g->askables > 0)
+                g->ask_cursor = (g->ask_cursor + (dy > 0 ? 1 : -1) + g->askables)
+                              % g->askables;
+            return;
+        }
+        switch (a) {
+        case GG_ACT_TALK: case GG_ACT_USE:  gg_conversation_ask(g); break;
+        case GG_ACT_WAIT: case GG_ACT_OPEN:
+        case GG_ACT_PACK:                   end_conversation(g); break;
+        default: break;
+        }
         return;
     }
 
@@ -625,6 +730,13 @@ static bool finish_new_game(gg_game *g, const char *profile) {
     gg_pack_add(g, GG_ITEM_APPLE, 2);
     gg_pack_add(g, GG_ITEM_TORCH, 2);
     gg_pack_add(g, GG_ITEM_GOLD, 100);
+
+    // The two words everybody starts with. Every other word in the book has to
+    // be given by somebody, which is what makes asking around the point.
+    g->knownn = 0;
+    gg_learn(g, GG_WORD_NAME);
+    gg_learn(g, GG_WORD_JOB);
+    g->talking_to = -1;
 
     // The player is actor 0 so that `player` never has to be re-found.
     gg_actor *p = &g->actor[0];

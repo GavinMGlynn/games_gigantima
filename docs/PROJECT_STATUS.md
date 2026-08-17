@@ -13,9 +13,10 @@ buried in a later clause. See `CLAUDE.md`.
 
 An engine, not yet a game: from a title screen you can start or resume a named
 journey, walk a generated continent, enter a town, go inside its houses, pick up
-what people have left lying about, eat it or carry it or set it down again, and
-watch eight townsfolk path around the buildings to keep daily schedules under a
-day/night cycle. Hold a torch and it lights the room. Pausing, saving and
+what people have left lying about, eat it or carry it or set it down again, ask
+the eight townsfolk about what they know and collect the words that unlock what
+the rest of them know, and watch them path around the buildings to keep daily
+schedules under a day/night cycle. Hold a torch and it lights the room. Pausing, saving and
 quitting are all on a menu, and every page works from a gamepad alone, naming
 included. There is **no story, no combat, no magic, no sound and no editor**.
 
@@ -413,6 +414,49 @@ world, "that will do" in a menu — and so has to be readable from either drain.
 
 *Verification: `the_pad_feeds_the_world_and_the_menus_separately`.*
 
+### Conversation
+
+Ultima's model, which is a **vocabulary rather than a dialogue tree**. Everyone
+starts knowing two words — NAME and JOB. A topic can be asked when you know one
+of its words. An answer may hand over a word you did not have. That is the whole
+mechanism; there are no flags, no branches and no script.
+
+The gating falls out of it, including the interesting case. Iolo teaches
+CARAVAN, and it is *Shamino and Nell* who have something to say about it — so a
+rumour crosses a town without anything in the code knowing that a rumour exists.
+A per-speaker flag system could not do that without being told to.
+
+**It is all in `assets/dialogue.txt`**, a line-based text format, because the
+people who will write these files are writing prose and a binary format would
+need a tool before a single word could be put in anybody's mouth. Indentation is
+decoration. Every complaint from the parser names the file and the line.
+
+A book that does not parse **loads nothing at all** — a half-loaded book puts
+half a conversation in somebody's mouth, which is worse than a silent town. A
+person with no entry still greets, so a town half-written reads as one whose
+people are quiet rather than as a broken one.
+
+Conversation **costs no time**, which is Ultima's own rule and the reason you
+can afford to ask everything. What is saved is the list of words learned — that
+is the entire story state. The conversation itself is not saved: it holds a
+pointer into the loaded book, and nobody wants to resume mid-sentence.
+
+The panel lists the words this person will answer to, out of the words you know,
+rather than asking you to type. That is what makes it work on a pad, and it is
+also more discoverable than Ultima's blank prompt ever was.
+
+*Verification: `a_topic_unlocks_only_after_the_word_is_learned` (the plan's
+own), `a_word_learned_from_one_person_opens_another`,
+`what_was_learned_survives_a_save`,
+`a_dialogue_file_that_does_not_parse_loads_nothing` (six malformed books and a
+missing one), `synonyms_ask_the_same_topic_and_show_one_label`,
+`the_vale_has_a_book_and_every_word_in_it_is_reachable` — which checks that no
+topic in the shipped book answers to a word nothing ever teaches, because that
+is a question no player could put. Three of these were checked by breaking the
+rule they pin: offering every topic regardless, teaching nothing, and keeping a
+half-parsed book. Plus `--shot` frames of the panel before and after a word is
+learned, with the new word visibly appearing in the list.*
+
 ### Things, and carrying them
 
 An **item** is a kind generated from the art by the same pass that bakes the
@@ -597,7 +641,7 @@ Named plainly, because a reader should not have to infer absence:
 | Magic | nothing at all |
 | Weapons and armour | nothing. The slot system takes any number of slots; a light is the only one anything fills, because there is no combat for a sword to affect |
 | Trade | nothing. Items carry a value in copper, and no one buys or sells |
-| Conversation | a greeting and a panel. No keywords, no topics, no branching |
+| Conversation beyond words | topics and a vocabulary, but nobody reacts to anything — no quests, no trade, no one who does something because you asked |
 | Sound | nothing. `ext/sdl_mixer` is pinned but not linked, and the options page says so where the volume rows would be |
 | Level editor | nothing. The map format exists for it |
 | Party | the avatar is alone |

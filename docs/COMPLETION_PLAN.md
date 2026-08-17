@@ -112,10 +112,16 @@ found, not when someone remembers.
       *Verification: an item picked off the ground appears in the pack and is
       gone from the map, and survives a save/load; and the pack tests, which
       were each checked by breaking the rule they pin and watching them fail.*
-- [ ] **Keyword conversation.** Ultima's topic system: ask about a word, learn
-      new words, some gated on flags. Dialogue in data, not C.
+- [x] **Keyword conversation.** Ultima's topic system: everyone starts knowing
+      two words, a topic can be asked when you know one of its words, and
+      answers hand over words you did not have. That one rule is the whole of
+      the gating — including across speakers, so a rumour heard from the
+      merchant is what makes the gatekeeper worth asking. Every word of it is in
+      `assets/dialogue.txt`; nothing is compiled in.
       *Verification: a conversation defined entirely in a data file, with a
-      topic that only unlocks after another has been asked.*
+      topic that only unlocks after another has been asked; a word learned from
+      one person opening another's topic; and a `--shot` frame of the panel
+      before and after a word is learned.*
 - [ ] **Party and companions.** Recruit, follow, formation, and their own stats.
       *Verification: a companion follows through a door without blocking the
       player, over a long walk.*

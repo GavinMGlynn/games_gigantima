@@ -1,0 +1,72 @@
+// gg_dialogue.h - what people say, and the words that unlock it.
+//
+// Ultima's conversation is a vocabulary, not a tree. You know some words; you
+// say one to somebody; if they have something to say about it they say it, and
+// what they say may teach you words you did not have. There is no branching
+// script anywhere - the "branches" are which words you have collected.
+//
+// That gives the gating for free. A topic is askable exactly when you know one
+// of its keywords, so a topic that teaches CARAVAN is the only thing that makes
+// anyone's CARAVAN topic reachable - including a different person's, which is
+// how a rumour travels across a town without a flag system to carry it.
+//
+// **This is data.** The game reads a file; nothing here is compiled in. The
+// path comes from the caller, because src/core must not know where assets live.
+#ifndef GG_DIALOGUE_H
+#define GG_DIALOGUE_H
+
+#include "core/gg_common.h"
+
+#define GG_WORD_MAX        20   // a keyword, with its terminator
+#define GG_LINE_MAX        88   // one line of speech
+#define GG_TOPIC_WORDS_MAX  3   // synonyms for one topic
+#define GG_TOPIC_LINES_MAX  3
+#define GG_TOPICS_MAX      10   // per person
+#define GG_SPEAKERS_MAX    16
+
+// The words everybody knows before they have learned anything. Ultima's own
+// two: they are what makes a first conversation possible at all.
+#define GG_WORD_NAME "name"
+#define GG_WORD_JOB  "job"
+
+typedef struct {
+    char word[GG_TOPIC_WORDS_MAX][GG_WORD_MAX];
+    int  words;                         // the first is what the panel shows
+    char say[GG_TOPIC_LINES_MAX][GG_LINE_MAX];
+    int  says;
+    char teach[GG_WORD_MAX];            // empty when it teaches nothing
+} gg_topic;
+
+typedef struct {
+    char name[32];
+    char greet[GG_LINE_MAX];
+    char bye[GG_LINE_MAX];
+    gg_topic topic[GG_TOPICS_MAX];
+    int  topics;
+} gg_speaker;
+
+// Loads the whole book. Held in one place rather than per game, because
+// dialogue is content shared by every save, and only *which words you know* is
+// state. Returns false and loads nothing if the file cannot be read or does not
+// parse; a partly-loaded book would put half a conversation in somebody's mouth.
+//
+// Every complaint names the file and the line, because the author of a dialogue
+// file is going to be somebody writing prose, not reading C.
+bool gg_dialogue_load(const char *path);
+
+// Throws the book away. Loading again does this first.
+void gg_dialogue_clear(void);
+
+// Who is loaded, for tests and for the editor.
+int gg_dialogue_speakers(void);
+
+// The speaker of that name, or nullptr. Names are matched exactly: a townsman
+// with no entry simply has nothing to say beyond a greeting, which is a
+// perfectly good state for a world still being written.
+const gg_speaker *gg_dialogue_find(const char *name);
+
+// The topic this speaker answers to `word`, or nullptr. Matches any synonym,
+// and ignores case, because the word came from a player.
+const gg_topic *gg_speaker_topic(const gg_speaker *s, const char *word);
+
+#endif // GG_DIALOGUE_H

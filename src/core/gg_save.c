@@ -206,6 +206,12 @@ bool gg_save_write(const gg_game *g, const char *base, const char *name) {
              gg_io_w32(io, (uint32_t)g->pack[i].count);
     for (int s = 0; ok && s < GG_SLOT_COUNT; s++)
         ok = gg_io_w32(io, (uint32_t)(g->equipped[s] + 1));   // biased: 0 is "nothing"
+    // The words learned. This is the story state: without it a resumed game
+    // has met everyone and been told nothing.
+    ok = ok && gg_io_w32(io, (uint32_t)g->knownn);
+    for (int i = 0; ok && i < g->knownn; i++)
+        ok = SDL_WriteIO(io, g->known[i], GG_WORD_MAX) == GG_WORD_MAX;
+
     ok = ok && gg_io_w32(io, (uint32_t)g->player);
     ok = ok && SDL_WriteIO(io, g->profile, sizeof g->profile) == sizeof g->profile;
 
@@ -287,6 +293,14 @@ bool gg_save_read(gg_game *g, const char *base, const char *name) {
         tmp.equipped[s] = (ok && held > 0 && (int)held <= tmp.packn)
                         ? (int)held - 1 : -1;
     }
+    uint32_t knownn = 0;
+    ok = ok && gg_io_r32(io, &knownn) && knownn <= GG_KNOWN_MAX;
+    for (uint32_t i = 0; ok && i < knownn; i++) {
+        ok = SDL_ReadIO(io, tmp.known[i], GG_WORD_MAX) == GG_WORD_MAX;
+        tmp.known[i][GG_WORD_MAX - 1] = '\0';
+    }
+    tmp.knownn = ok ? (int)knownn : 0;
+
     ok = ok && gg_io_r32(io, &player);
     ok = ok && SDL_ReadIO(io, tmp.profile, sizeof tmp.profile) == sizeof tmp.profile;
     tmp.profile[sizeof tmp.profile - 1] = '\0';
@@ -322,6 +336,17 @@ bool gg_save_read(gg_game *g, const char *base, const char *name) {
     gg_game_free(g);
     *g = tmp;
     gg_game_rebind_actors(g);
+
+    // A conversation is not resumed. It holds a pointer into the loaded book -
+    // which a file cannot carry - and nobody wants to come back to a game
+    // mid-sentence. The words learned survive, which is the part that matters.
+    g->mode = GG_MODE_PLAY;
+    g->talking_to = -1;
+    g->speaker = nullptr;
+    g->saids = 0;
+    g->askables = 0;
+    g->ask_cursor = 0;
+
     gg_log(g, "%s. Day %u, %s.", g->map.name, g->day, gg_game_place(g));
     return true;
 }

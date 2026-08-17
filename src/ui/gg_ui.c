@@ -179,18 +179,62 @@ void gg_ui_pack(const gg_game *g, SDL_Renderer *ren, SDL_Texture *items) {
 void gg_ui_converse(const gg_game *g, SDL_Renderer *ren) {
     if (g->talking_to < 0 || g->talking_to >= g->actors) return;
     const gg_actor *a = &g->actor[g->talking_to];
+    const int line = gg_font_height();
 
-    const SDL_FRect box = { 60, (float)(GG_VIEW_H - 150),
-                            (float)(GG_SCREEN_W - 120), 120 };
+    // Sized to what is actually being said and asked. A conversation is mostly
+    // two lines and four words; a fixed box for it is mostly empty box.
+    const int says = g->saids > 0 ? g->saids : 1;
+    const int words = g->askables;
+    const int height = 14 + line + 6 + says * line + 10 +
+                       (words ? line + words * line + 8 : 0) + line + 14;
+
+    const SDL_FRect box = { 60, (float)(GG_VIEW_H - height - 24),
+                            (float)(GG_SCREEN_W - 120), (float)height };
     panel(ren, box, 236);
 
-    int x = (int)box.x + 14, y = (int)box.y + 12;
-    gg_font_printf(ren, x, y, AMBER, "%s", a->name);
-    y += gg_font_height() + 4;
-    gg_font_printf(ren, x, y, INK, "\"%s\"",
-                   a->greeting ? a->greeting : "Hail.");
+    const int x = (int)box.x + 14;
+    int y = (int)box.y + 12;
 
-    gg_font_draw(ren, x, (int)(box.y + box.h) - gg_font_height() - 10, DIM,
-                 "(any key to take thy leave)");
+    gg_font_printf(ren, x, y, AMBER, "%s", a->name);
+    y += line + 6;
+
+    if (g->saids == 0) {
+        gg_font_draw(ren, x, y, INK, "\"Hail.\"");
+        y += line;
+    }
+    for (int i = 0; i < g->saids; i++) {
+        // Quoted on the first line and last only, so a three-line answer reads
+        // as one speech rather than three separate remarks.
+        gg_font_printf(ren, x, y, INK, "%s%s%s",
+                       i == 0 ? "\"" : " ", g->said[i],
+                       i == g->saids - 1 ? "\"" : "");
+        y += line;
+    }
+    y += 10;
+
+    // The words this person will answer to, out of the words the player knows.
+    if (words > 0) {
+        gg_font_draw(ren, x, y, DIM, "Ask about:");
+        y += line;
+        for (int i = 0; i < words; i++) {
+            const bool here = (i == g->ask_cursor);
+            if (here) {
+                SDL_SetRenderDrawColor(ren, 217, 145, 63, 45);
+                const SDL_FRect bar = { box.x + 8, (float)(y - 2),
+                                        box.w - 16, (float)line };
+                SDL_RenderFillRect(ren, &bar);
+            }
+            gg_font_printf(ren, x + 16, y, here ? AMBER : INK, "%s", g->askable[i]);
+            y += line;
+        }
+        y += 8;
+    } else {
+        gg_font_draw(ren, x, y, DIM, "Thou knowest no word this one will answer to.");
+        y += line;
+    }
+
+    gg_font_draw(ren, x, (int)(box.y + box.h) - line - 10, DIM,
+                 words > 0 ? "T or A to ask   Space or B to take thy leave"
+                           : "Space or B to take thy leave");
 }
 
