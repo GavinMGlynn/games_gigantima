@@ -9,6 +9,7 @@
 #define GG_ACTOR_NAME_MAX 24
 #define GG_SCHEDULE_MAX   6
 #define GG_ACTORS_MAX     256
+#define GG_ACTOR_NO_DEF   255
 
 // One entry of a daily routine: from `hour`, be at (x, y). Ultima VI's NPCs
 // were memorable because they were somewhere for a reason at every hour, so
@@ -33,8 +34,14 @@ typedef struct {
     gg_sched_entry sched[GG_SCHEDULE_MAX];
     uint8_t schedn;
 
+    // Which entry of the townsfolk table this actor was made from, or
+    // GG_ACTOR_NO_DEF. A save cannot write a pointer, so the greeting below is
+    // rebuilt from this on load rather than serialised - and when dialogue
+    // moves into map data this becomes the id it moves to.
+    uint8_t def;
+
     // Conversation. An NPC with no topics still greets, which is better than
-    // an NPC who cannot be spoken to at all.
+    // an NPC who cannot be spoken to at all. Not serialised; see `def`.
     const char *greeting;
 } gg_actor;
 

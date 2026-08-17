@@ -303,6 +303,7 @@ static void place_townsfolk(gg_game *g) {
         SDL_zerop(a);
         a->active = true;
         a->art = d->art;
+        a->def = (uint8_t)i;
         a->greeting = d->greeting;
         SDL_strlcpy(a->name, d->name, sizeof a->name);
 
@@ -363,6 +364,7 @@ static bool finish_new_game(gg_game *g, const char *profile) {
     SDL_zerop(p);
     p->active = true;
     p->art = GG_ACTOR_AVATAR;
+    p->def = GG_ACTOR_NO_DEF;
     p->facing = GG_FACE_DOWN;
     p->x = (int16_t)g->map.start_x;
     p->y = (int16_t)g->map.start_y;
@@ -376,6 +378,18 @@ static bool finish_new_game(gg_game *g, const char *profile) {
     gg_log(g, "%s. Day %u, %s.", g->map.name, g->day, gg_game_place(g));
     gg_log(g, "Thou art the Avatar. Seek the vale's troubles.");
     return true;
+}
+
+void gg_game_rebind_actors(gg_game *g) {
+    // Puts back what a save file cannot carry. The greeting is a pointer into
+    // a static table, so it is rebuilt from the actor's `def` index rather
+    // than written out - a pointer in a file is a pointer into the wrong
+    // process.
+    for (int i = 0; i < g->actors; i++) {
+        gg_actor *a = &g->actor[i];
+        a->greeting = (a->def < GG_COUNTOF(TOWNSFOLK)) ? TOWNSFOLK[a->def].greeting
+                                                       : nullptr;
+    }
 }
 
 bool gg_game_new(gg_game *g, uint32_t seed, const char *profile) {

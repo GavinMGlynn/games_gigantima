@@ -141,4 +141,13 @@ bool gg_map_generate(gg_map *m, int w, int h, uint32_t seed);
 bool gg_map_save(const gg_map *m, const char *path);
 bool gg_map_load(gg_map *m, const char *path);
 
+// The same, onto an already-open stream, so a save file can carry a whole map
+// inside it without the format being written twice and drifting apart.
+bool gg_map_write(const gg_map *m, SDL_IOStream *io);
+bool gg_map_read(gg_map *m, SDL_IOStream *io);
+
+// Little-endian fixed-width scalars, shared by every format this game writes.
+bool gg_io_w32(SDL_IOStream *io, uint32_t v);
+bool gg_io_r32(SDL_IOStream *io, uint32_t *v);
+
 #endif // GG_WORLD_H

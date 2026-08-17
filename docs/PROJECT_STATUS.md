@@ -13,8 +13,8 @@ buried in a later clause. See `CLAUDE.md`.
 
 An engine, not yet a game: you can walk a generated continent, enter a town, go
 inside its houses, and watch eight townsfolk path around the buildings to keep
-daily schedules under a day/night cycle. There is **no story, no combat, no
-magic, no usable inventory, no saving, no sound, no menus and no editor**.
+daily schedules under a day/night cycle. Games save and resume per named profile. There is **no story, no combat, no
+magic, no usable inventory, no sound, no menus and no editor**.
 
 ---
 
@@ -87,6 +87,43 @@ having a format does not exist.
 
 *Verification: `a_saved_map_reloads_byte_for_byte`,
 `loading_a_file_that_is_not_a_map_fails_cleanly`.*
+
+### Saving, and profiles
+
+A **profile** is a player: a name, and a directory of their own under the
+preferences path. Several people share a machine, and each finds their own
+world where they left it.
+
+A save carries the map, every actor with its schedule, the clock, the RNG state
+and what the avatar is carrying. Carrying the **RNG** is what makes a resumed
+game not merely look the same but *continue* the same — the world goes on
+making the decisions it would have.
+
+Two things it deliberately does not carry. A greeting is a pointer into a
+static table, so each actor stores the index it was built from and the pointer
+is rebuilt on load; a pointer in a file is a pointer into the wrong process.
+And the loader builds into a local, moving it into place only once every part
+has read cleanly, so a truncated file cannot leave a half-loaded world behind.
+
+**Profile names are an allow-list, not a deny-list.** A name becomes a
+directory name, and the ways a string can escape a directory are too numerous
+and too platform-specific to enumerate — `..`, separators of either slash,
+drive letters, trailing dots, reserved device names. Permitting letters,
+digits, space, `_`, `-` and `'` closes all of them at once.
+
+Resuming is the default: a player who names their profile and runs the game
+expects to be where they left off, so starting over is what `--new` is for. The
+game saves on the way out — but **never on a `--shot` run**, because a
+screenshot must not overwrite somebody's game. That exclusion left no way to
+exercise the save-on-exit path at all, which is what `--turns N` is for: it
+plays headlessly and leaves by the ordinary exit.
+
+A small header file sits beside each save so the profile picker can draw a row
+— name, day, time, turns, level, where they were — without loading a world.
+
+*Verification: the save tests listed in `COMPLETION_PLAN.md`, plus a CI smoke
+test that plays, quits and resumes through the real binary and checks it came
+back at the right turn.*
 
 ### Turns and the clock
 
@@ -375,7 +412,6 @@ Named plainly, because a reader should not have to infer absence:
 | Magic | nothing at all |
 | Inventory | a table of six counters shown in the HUD; nothing can be used, picked up or dropped |
 | Conversation | a greeting and a panel. No keywords, no topics, no branching |
-| Saving and profiles | nothing. `--profile` only names the avatar |
 | Sound | nothing. `ext/sdl_mixer` is pinned but not linked |
 | Title/menus/setup pages | a title screen with a prompt. No menus, no options, no profile pages |
 | Level editor | nothing. The map format exists for it |

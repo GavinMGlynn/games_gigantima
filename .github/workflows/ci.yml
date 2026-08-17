@@ -54,6 +54,22 @@ jobs:
           ./build/gigantima --play --seed 7 --shot smoke.bmp --shot-at 12
           test -s smoke.bmp || { echo "no frame was written"; exit 1; }
 
+      # Saving is the one thing the unit tests cannot finish: they exercise
+      # gg_save directly, but not the frontend deciding to resume, nor the exit
+      # path writing on the way out. This plays, quits, and plays again.
+      - name: Smoke test - save and resume
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_RENDER_DRIVER: software
+          SDL_AUDIODRIVER: dummy
+        run: |
+          ./build/gigantima --play --profile CI --new --seed 7 --turns 60
+          ./build/gigantima --play --profile CI --turns 120 | tee resume.log
+          grep -q "resumed CI" resume.log || {
+            echo "the second run did not resume the first"; exit 1; }
+          grep -q "turn 60" resume.log || {
+            echo "resumed at the wrong turn"; cat resume.log; exit 1; }
+
       - uses: actions/upload-artifact@v4
         with:
           name: linux-frame

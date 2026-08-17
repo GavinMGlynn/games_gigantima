@@ -80,12 +80,17 @@ by being the thing CI actually runs.
 | `L` | look at what you stand on |
 | `O` | open |
 | `Space` / `.` | wait a turn |
+| `F5` | save |
 | `F1` | debug window |
 | `F11` / `Alt+Enter` | fullscreen |
 | `Esc` | quit |
 
 A gamepad works for all of it, hot-plugged, with the sticks and the d-pad both
 driving movement.
+
+`--profile NAME` picks whose game this is. Each profile keeps its own world, and
+running again resumes it — the game saves on the way out, so `--new` is what you
+pass to start over.
 
 Walking into somebody talks to them, as Ultima VI did — the common case needs
 no key at all.
@@ -95,8 +100,8 @@ no key at all.
 ```
 gigantima [--profile NAME] [--seed N] [--play] [--debug]
           [--scale N] [--fullscreen] [--no-rumble]
-          [--map FILE.ggmap] [--at X,Y] [--time HH:MM]
-          [--shot FILE.bmp] [--shot-at TURN]
+          [--new] [--turns N] [--map FILE.ggmap]
+          [--at X,Y] [--time HH:MM] [--shot FILE.bmp] [--shot-at TURN]
 ```
 
 `--seed` makes a run reproducible: the world, the town layout and every random

@@ -144,13 +144,22 @@ item to tick the easy half is the same violation wearing a different shape.
 
 ## Phase 2 — A game, not an engine
 
-- [ ] **Save/load with named profiles.** Multiple players on one machine, each
-      with their own saves; a save carries the world, the actors, the clock,
-      inventory and progress, and resumes exactly. Versioned like the map
-      format, and rejecting a foreign file the same way.
-      *Verification: a round-trip test asserting a resumed game is
-      byte-identical to the one saved, and that a profile's saves are not
-      visible to another profile.*
+- [x] **Save/load with named profiles.** A profile is a player with a
+      directory of their own. A save carries the map, every actor, the clock,
+      the RNG and what the avatar is carrying, and resumes exactly - including
+      carrying on making the same decisions, because the RNG went with it.
+      Versioned, and refusing a foreign, truncated or corrupt file without
+      leaving a half-loaded world behind. Resuming is the default; `--new` is
+      what has to be asked for.
+      *Verification: `a_saved_game_resumes_exactly_where_it_was_left` (and that
+      it stays identical for 60 turns after),
+      `a_resumed_game_can_still_be_talked_to`,
+      `profiles_do_not_see_each_others_saves`,
+      `a_profile_name_cannot_steer_a_path`,
+      `a_save_that_is_not_ours_is_refused`,
+      `the_profile_list_reports_what_was_saved`; plus a CI smoke test that
+      plays, quits and resumes through the real binary. Detail in
+      `PROJECT_STATUS.md`.*
 - [ ] **Title screen, menus, setup and profile pages.** New game, continue,
       choose profile, options (scale, fullscreen, volume, rumble), quit.
       *Verification: every screen reachable and leavable by keyboard and by

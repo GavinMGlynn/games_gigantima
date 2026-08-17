@@ -104,6 +104,10 @@ bool gg_game_new_from_map(gg_game *g, const char *path, const char *profile);
 
 void gg_game_free(gg_game *g);
 
+// Restores what a save file cannot carry: the greeting pointers, rebuilt from
+// each actor's `def` index. Called by the save loader; harmless otherwise.
+void gg_game_rebind_actors(gg_game *g);
+
 // --- the turn loop ---------------------------------------------------------
 // Applies one player action. Everything else in the world moves as a
 // consequence of this call and at no other time.

@@ -13,6 +13,7 @@
 #include "gfx/gg_render.h"
 #include "gfx/gg_atlas.h"   // GG_EDGE_* piece indices
 #include "core/gg_path.h"
+#include "core/gg_save.h"
 
 #include <stdio.h>
 
@@ -185,6 +186,253 @@ static void loading_a_file_that_is_not_a_map_fails_cleanly(void) {
 
     CHECK(!gg_map_load(&m, gg_pref_file("test_no_such_file.ggmap")),
           "a missing file was accepted");
+}
+
+// ---------------------------------------------------------------------------
+// Saves and profiles
+// ---------------------------------------------------------------------------
+// Everything writes under a disposable directory in the pref path, so a test
+// run never touches a real player's games.
+static const char *save_base(void) { return gg_pref_file("testsaves/"); }
+
+static void wipe_saves(const char *name) {
+    gg_profile_delete(save_base(), name);
+}
+
+// Is one game the same as another, in every way a save is meant to carry?
+static bool games_match(const gg_game *a, const gg_game *b, const char **why) {
+    if (a->turn != b->turn)       { *why = "turn"; return false; }
+    if (a->minutes != b->minutes) { *why = "minutes"; return false; }
+    if (a->day != b->day)         { *why = "day"; return false; }
+    if (a->hp != b->hp || a->hp_max != b->hp_max) { *why = "health"; return false; }
+    if (a->level != b->level || a->exp != b->exp) { *why = "level"; return false; }
+    if (a->rng.s != b->rng.s)     { *why = "rng"; return false; }
+    if (a->player != b->player)   { *why = "player index"; return false; }
+    if (a->actors != b->actors)   { *why = "actor count"; return false; }
+    for (int i = 0; i < GG_ITEM_COUNT; i++)
+        if (a->item[i] != b->item[i]) { *why = "inventory"; return false; }
+    if (SDL_strcmp(a->profile, b->profile) != 0) { *why = "profile"; return false; }
+
+    for (int i = 0; i < a->actors; i++) {
+        const gg_actor *x = &a->actor[i], *y = &b->actor[i];
+        if (x->active != y->active || x->x != y->x || x->y != y->y ||
+            x->art != y->art || x->facing != y->facing || x->def != y->def ||
+            x->schedn != y->schedn || SDL_strcmp(x->name, y->name) != 0) {
+            *why = "an actor";
+            return false;
+        }
+        for (int k = 0; k < x->schedn; k++)
+            if (x->sched[k].hour != y->sched[k].hour ||
+                x->sched[k].x != y->sched[k].x || x->sched[k].y != y->sched[k].y) {
+                *why = "a schedule";
+                return false;
+            }
+    }
+
+    if (a->map.w != b->map.w || a->map.h != b->map.h) { *why = "map size"; return false; }
+    if (SDL_memcmp(a->map.cell, b->map.cell,
+                   (size_t)a->map.w * (size_t)a->map.h * sizeof *a->map.cell) != 0) {
+        *why = "map cells";
+        return false;
+    }
+    *why = "";
+    return true;
+}
+
+static void a_saved_game_resumes_exactly_where_it_was_left(void) {
+    const char *who = "Roundtrip";
+    wipe_saves(who);
+
+    gg_game a;
+    CHECK(gg_game_new(&a, 4242, who), "new game failed");
+    // Play a while, so the save is of a world in motion rather than a fresh
+    // one: the clock has turned, residents have walked, the RNG has advanced.
+    for (int t = 0; t < 250; t++) gg_game_act(&a, GG_ACT_WAIT);
+    a.item[GG_ITEM_GOLD] = 137;
+    a.hp = 21;
+
+    CHECK(gg_save_write(&a, save_base(), who), "save failed");
+
+    gg_game b;
+    SDL_zero(b);
+    CHECK(gg_save_read(&b, save_base(), who), "load failed");
+
+    const char *why = "";
+    CHECK(games_match(&a, &b, &why), "the resumed game differs in %s", why);
+
+    // And it must carry on the same: the RNG survived, so the same seed of
+    // decisions follows.
+    for (int t = 0; t < 60; t++) { gg_game_act(&a, GG_ACT_WAIT); gg_game_act(&b, GG_ACT_WAIT); }
+    CHECK(games_match(&a, &b, &why),
+          "the resumed game diverged after %s", why);
+
+    gg_game_free(&a);
+    gg_game_free(&b);
+    wipe_saves(who);
+}
+
+static void a_resumed_game_can_still_be_talked_to(void) {
+    // A greeting is a pointer into a static table, so it cannot be written to
+    // a file. If the rebind is ever dropped, every resident loads mute - and
+    // nothing else about the save would look wrong.
+    const char *who = "Rebind";
+    wipe_saves(who);
+
+    gg_game a;
+    CHECK(gg_game_new(&a, 11, who), "new game failed");
+    CHECK(gg_save_write(&a, save_base(), who), "save failed");
+
+    gg_game b;
+    SDL_zero(b);
+    CHECK(gg_save_read(&b, save_base(), who), "load failed");
+
+    int with_greeting = 0, residents = 0;
+    for (int i = 0; i < b.actors; i++) {
+        if (i == b.player || !b.actor[i].active) continue;
+        residents++;
+        if (b.actor[i].greeting && b.actor[i].greeting[0]) with_greeting++;
+    }
+    CHECK(residents > 0, "the loaded game has no residents");
+    CHECK(with_greeting == residents,
+          "%d of %d residents came back mute", residents - with_greeting, residents);
+
+    gg_game_free(&a);
+    gg_game_free(&b);
+    wipe_saves(who);
+}
+
+static void profiles_do_not_see_each_others_saves(void) {
+    wipe_saves("Alice");
+    wipe_saves("Bob");
+
+    gg_game a, b;
+    CHECK(gg_game_new(&a, 1, "Alice"), "new game failed");
+    CHECK(gg_game_new(&b, 2, "Bob"), "new game failed");
+    for (int t = 0; t < 30; t++) gg_game_act(&b, GG_ACT_WAIT);
+
+    CHECK(gg_save_write(&a, save_base(), "Alice"), "Alice's save failed");
+    CHECK(gg_save_write(&b, save_base(), "Bob"), "Bob's save failed");
+
+    gg_game loaded;
+    SDL_zero(loaded);
+    CHECK(gg_save_read(&loaded, save_base(), "Alice"), "could not load Alice");
+    CHECK(loaded.turn == a.turn,
+          "Alice loaded Bob's world: turn %u, expected %u", loaded.turn, a.turn);
+    CHECK(SDL_strcmp(loaded.profile, "Alice") == 0,
+          "Alice's save says it belongs to '%s'", loaded.profile);
+
+    // Deleting one must leave the other alone.
+    gg_profile_delete(save_base(), "Bob");
+    CHECK(!gg_save_exists(save_base(), "Bob"), "Bob's save survived deletion");
+    CHECK(gg_save_exists(save_base(), "Alice"), "Alice's save went with Bob's");
+
+    gg_game_free(&a);
+    gg_game_free(&b);
+    gg_game_free(&loaded);
+    wipe_saves("Alice");
+}
+
+static void a_profile_name_cannot_steer_a_path(void) {
+    // A profile name becomes a directory name. Every one of these is a way out
+    // of the directory it is supposed to stay in.
+    static const char *const BAD[] = {
+        "", " ", "..", ".", "../escape", "a/b", "a\\b", "a:b", " leading",
+        "trailing ", "nul\tchar", "star*", "quote\"", "pipe|",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",   // too long
+    };
+    for (size_t i = 0; i < GG_COUNTOF(BAD); i++)
+        CHECK(!gg_profile_name_ok(BAD[i]), "'%s' was accepted as a name", BAD[i]);
+
+    static const char *const GOOD[] = { "Gavin", "Lord British", "a", "x_1-2", "O'Neil" };
+    for (size_t i = 0; i < GG_COUNTOF(GOOD); i++)
+        CHECK(gg_profile_name_ok(GOOD[i]), "'%s' was rejected", GOOD[i]);
+
+    // And the path builder must refuse the bad ones rather than build one.
+    char buf[512];
+    CHECK(!gg_profile_dir(save_base(), "../escape", buf, sizeof buf),
+          "a traversing name produced a path");
+    CHECK(buf[0] == '\0', "a refused path was left half-written");
+}
+
+static void a_save_that_is_not_ours_is_refused(void) {
+    const char *who = "Garbage";
+    wipe_saves(who);
+
+    // Write nonsense where a save would be, by hand.
+    char dir[1024], path[1024];
+    CHECK(gg_profile_dir(save_base(), who, dir, sizeof dir), "dir failed");
+    SDL_CreateDirectory(dir);
+    SDL_snprintf(path, sizeof path, "%sworld.ggsave", dir);
+
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    CHECK(io != nullptr, "could not write the garbage file");
+    if (io) { SDL_WriteIO(io, "not a save file at all", 22); SDL_CloseIO(io); }
+
+    gg_game g;
+    SDL_zero(g);
+    CHECK(!gg_save_read(&g, save_base(), who), "garbage was accepted as a save");
+    CHECK(g.map.cell == nullptr, "a refused load left an allocation behind");
+
+    // A save truncated part way through is the other shape of this, and the
+    // one that would leave a half-built world if the loader built in place.
+    gg_game good;
+    CHECK(gg_game_new(&good, 5, who), "new game failed");
+    CHECK(gg_save_write(&good, save_base(), who), "save failed");
+
+    io = SDL_IOFromFile(path, "rb");
+    Sint64 size = io ? SDL_GetIOSize(io) : 0;
+    char *buf = (size > 0) ? SDL_malloc((size_t)size) : nullptr;
+    if (io && buf) SDL_ReadIO(io, buf, (size_t)size);
+    if (io) SDL_CloseIO(io);
+    CHECK(size > 64, "the save is implausibly small");
+
+    io = SDL_IOFromFile(path, "wb");
+    if (io && buf) { SDL_WriteIO(io, buf, (size_t)size / 2); SDL_CloseIO(io); }
+    SDL_free(buf);
+
+    SDL_zero(g);
+    CHECK(!gg_save_read(&g, save_base(), who), "a truncated save was accepted");
+    CHECK(g.map.cell == nullptr, "a truncated load left an allocation behind");
+
+    gg_game_free(&good);
+    wipe_saves(who);
+}
+
+static void the_profile_list_reports_what_was_saved(void) {
+    wipe_saves("Zed");
+    wipe_saves("Amy");
+
+    gg_game a, z;
+    CHECK(gg_game_new(&a, 3, "Amy"), "new game failed");
+    CHECK(gg_game_new(&z, 4, "Zed"), "new game failed");
+    for (int t = 0; t < 500; t++) gg_game_act(&z, GG_ACT_WAIT);  // Zed is further on
+
+    CHECK(gg_save_write(&a, save_base(), "Amy"), "save failed");
+    CHECK(gg_save_write(&z, save_base(), "Zed"), "save failed");
+
+    gg_profile list[GG_PROFILES_MAX];
+    const int n = gg_profile_list(save_base(), list, GG_PROFILES_MAX);
+    CHECK(n >= 2, "expected at least two profiles, got %d", n);
+
+    int found_amy = -1, found_zed = -1;
+    for (int i = 0; i < n; i++) {
+        if (SDL_strcmp(list[i].name, "Amy") == 0) found_amy = i;
+        if (SDL_strcmp(list[i].name, "Zed") == 0) found_zed = i;
+    }
+    CHECK(found_amy >= 0 && found_zed >= 0, "a saved profile is missing from the list");
+    if (found_zed >= 0) {
+        CHECK(list[found_zed].turns == z.turn, "Zed's turn count is wrong");
+        CHECK(list[found_zed].has_save, "Zed's row says there is no save");
+        CHECK(list[found_zed].place[0] != '\0', "Zed's row has no place");
+    }
+    // Sorted with the furthest-on first, so "continue" lands on the right row.
+    if (found_amy >= 0 && found_zed >= 0)
+        CHECK(found_zed < found_amy, "the list is not newest-first");
+
+    gg_game_free(&a);
+    gg_game_free(&z);
+    wipe_saves("Amy");
+    wipe_saves("Zed");
 }
 
 // ---------------------------------------------------------------------------
@@ -1383,6 +1631,13 @@ int main(void) {
     RUN(the_generated_start_tile_is_always_walkable);
     RUN(a_saved_map_reloads_byte_for_byte);
     RUN(loading_a_file_that_is_not_a_map_fails_cleanly);
+
+    RUN(a_profile_name_cannot_steer_a_path);
+    RUN(a_saved_game_resumes_exactly_where_it_was_left);
+    RUN(a_resumed_game_can_still_be_talked_to);
+    RUN(profiles_do_not_see_each_others_saves);
+    RUN(a_save_that_is_not_ours_is_refused);
+    RUN(the_profile_list_reports_what_was_saved);
 
     RUN(a_path_goes_around_a_wall);
     RUN(a_path_solves_a_serpentine_maze);

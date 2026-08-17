@@ -582,17 +582,40 @@ bool gg_map_generate(gg_map *m, int w, int h, uint32_t seed) {
 // it sits in memory because gg_cell is four bytes of uint8_t and therefore has
 // no layout to disagree about across the three supported platforms.
 // ---------------------------------------------------------------------------
-static bool w_u32(SDL_IOStream *io, uint32_t v) {
+bool gg_io_w32(SDL_IOStream *io, uint32_t v) {
     uint8_t b[4] = { (uint8_t)v, (uint8_t)(v >> 8), (uint8_t)(v >> 16), (uint8_t)(v >> 24) };
     return SDL_WriteIO(io, b, 4) == 4;
 }
 
-static bool r_u32(SDL_IOStream *io, uint32_t *v) {
+bool gg_io_r32(SDL_IOStream *io, uint32_t *v) {
     uint8_t b[4];
     if (SDL_ReadIO(io, b, 4) != 4) return false;
     *v = (uint32_t)b[0] | ((uint32_t)b[1] << 8) |
          ((uint32_t)b[2] << 16) | ((uint32_t)b[3] << 24);
     return true;
+}
+
+bool gg_map_write(const gg_map *m, SDL_IOStream *io) {
+    bool ok = SDL_WriteIO(io, GG_MAP_MAGIC, 8) == 8;
+    ok = ok && gg_io_w32(io, GG_MAP_VERSION);
+    ok = ok && gg_io_w32(io, (uint32_t)m->w);
+    ok = ok && gg_io_w32(io, (uint32_t)m->h);
+    ok = ok && gg_io_w32(io, m->seed);
+    ok = ok && gg_io_w32(io, (uint32_t)m->start_x);
+    ok = ok && gg_io_w32(io, (uint32_t)m->start_y);
+    ok = ok && SDL_WriteIO(io, m->name, GG_MAP_NAME_MAX) == GG_MAP_NAME_MAX;
+    ok = ok && gg_io_w32(io, (uint32_t)m->regions);
+    for (int i = 0; ok && i < m->regions; i++) {
+        const gg_region *r = &m->region[i];
+        ok = ok && SDL_WriteIO(io, r->name, GG_MAP_NAME_MAX) == GG_MAP_NAME_MAX;
+        ok = ok && gg_io_w32(io, (uint32_t)r->x) && gg_io_w32(io, (uint32_t)r->y);
+        ok = ok && gg_io_w32(io, (uint32_t)r->w) && gg_io_w32(io, (uint32_t)r->h);
+        ok = ok && gg_io_w32(io, r->kind);
+    }
+
+    const size_t bytes = (size_t)m->w * (size_t)m->h * sizeof *m->cell;
+    ok = ok && SDL_WriteIO(io, m->cell, bytes) == bytes;
+    return ok;
 }
 
 bool gg_map_save(const gg_map *m, const char *path) {
@@ -601,92 +624,62 @@ bool gg_map_save(const gg_map *m, const char *path) {
         SDL_Log("gigantima: cannot write %s: %s", path, SDL_GetError());
         return false;
     }
-
-    bool ok = SDL_WriteIO(io, GG_MAP_MAGIC, 8) == 8;
-    ok = ok && w_u32(io, GG_MAP_VERSION);
-    ok = ok && w_u32(io, (uint32_t)m->w);
-    ok = ok && w_u32(io, (uint32_t)m->h);
-    ok = ok && w_u32(io, m->seed);
-    ok = ok && w_u32(io, (uint32_t)m->start_x);
-    ok = ok && w_u32(io, (uint32_t)m->start_y);
-    ok = ok && SDL_WriteIO(io, m->name, GG_MAP_NAME_MAX) == GG_MAP_NAME_MAX;
-    ok = ok && w_u32(io, (uint32_t)m->regions);
-    for (int i = 0; ok && i < m->regions; i++) {
-        const gg_region *r = &m->region[i];
-        ok = ok && SDL_WriteIO(io, r->name, GG_MAP_NAME_MAX) == GG_MAP_NAME_MAX;
-        ok = ok && w_u32(io, (uint32_t)r->x) && w_u32(io, (uint32_t)r->y);
-        ok = ok && w_u32(io, (uint32_t)r->w) && w_u32(io, (uint32_t)r->h);
-        ok = ok && w_u32(io, r->kind);
-    }
-
-    const size_t bytes = (size_t)m->w * (size_t)m->h * sizeof *m->cell;
-    ok = ok && SDL_WriteIO(io, m->cell, bytes) == bytes;
-
+    const bool ok = gg_map_write(m, io);
     SDL_CloseIO(io);
     if (!ok) SDL_Log("gigantima: short write on %s", path);
     return ok;
 }
 
-bool gg_map_load(gg_map *m, const char *path) {
-    SDL_IOStream *io = SDL_IOFromFile(path, "rb");
-    if (!io) return false;
-
+bool gg_map_read(gg_map *m, SDL_IOStream *io) {
+    // Owns nothing: the caller opened the stream and the caller closes it.
+    // That is what lets a save file carry a map inside it and keep reading
+    // afterwards.
     char magic[8];
     uint32_t version = 0, w = 0, h = 0, regions = 0, sx = 0, sy = 0, seed = 0;
-    bool ok = SDL_ReadIO(io, magic, 8) == 8 &&
-              SDL_memcmp(magic, GG_MAP_MAGIC, 8) == 0;
-    if (!ok) {
-        SDL_Log("gigantima: %s is not a map file", path);
-        SDL_CloseIO(io);
+
+    if (SDL_ReadIO(io, magic, 8) != 8 || SDL_memcmp(magic, GG_MAP_MAGIC, 8) != 0) {
+        SDL_Log("gigantima: not a map - the magic does not match");
+        return false;
+    }
+    if (!gg_io_r32(io, &version) || version != GG_MAP_VERSION) {
+        SDL_Log("gigantima: map version %u, this build reads %d",
+                version, GG_MAP_VERSION);
         return false;
     }
 
-    ok = r_u32(io, &version) && version == GG_MAP_VERSION;
-    if (!ok) {
-        SDL_Log("gigantima: %s is map version %u, this build reads %d",
-                path, version, GG_MAP_VERSION);
-        SDL_CloseIO(io);
-        return false;
-    }
-
-    ok = r_u32(io, &w) && r_u32(io, &h) && r_u32(io, &seed) &&
-         r_u32(io, &sx) && r_u32(io, &sy);
+    bool ok = gg_io_r32(io, &w) && gg_io_r32(io, &h) && gg_io_r32(io, &seed) &&
+              gg_io_r32(io, &sx) && gg_io_r32(io, &sy);
     // Bound the dimensions before allocating: this file may not be ours.
     if (!ok || w == 0 || h == 0 || w > 4096 || h > 4096) {
-        SDL_Log("gigantima: %s has implausible dimensions %ux%u", path, w, h);
-        SDL_CloseIO(io);
+        SDL_Log("gigantima: map has implausible dimensions %ux%u", w, h);
         return false;
     }
 
-    if (!gg_map_alloc(m, (int)w, (int)h)) {
-        SDL_CloseIO(io);
-        return false;
-    }
+    if (!gg_map_alloc(m, (int)w, (int)h)) return false;
     m->seed = seed;
     m->start_x = (int)sx;
     m->start_y = (int)sy;
 
     ok = SDL_ReadIO(io, m->name, GG_MAP_NAME_MAX) == GG_MAP_NAME_MAX;
     m->name[GG_MAP_NAME_MAX - 1] = '\0';
-    ok = ok && r_u32(io, &regions) && regions <= GG_REGION_MAX;
+    ok = ok && gg_io_r32(io, &regions) && regions <= GG_REGION_MAX;
     m->regions = ok ? (int)regions : 0;
     for (int i = 0; ok && i < m->regions; i++) {
         gg_region *r = &m->region[i];
         uint32_t rx = 0, ry = 0, rw = 0, rh = 0, kind = 0;
         ok = SDL_ReadIO(io, r->name, GG_MAP_NAME_MAX) == GG_MAP_NAME_MAX;
         r->name[GG_MAP_NAME_MAX - 1] = '\0';
-        ok = ok && r_u32(io, &rx) && r_u32(io, &ry) &&
-             r_u32(io, &rw) && r_u32(io, &rh) && r_u32(io, &kind);
+        ok = ok && gg_io_r32(io, &rx) && gg_io_r32(io, &ry) &&
+             gg_io_r32(io, &rw) && gg_io_r32(io, &rh) && gg_io_r32(io, &kind);
         r->x = (int)rx; r->y = (int)ry; r->w = (int)rw; r->h = (int)rh;
         r->kind = (uint8_t)kind;
     }
 
     const size_t bytes = (size_t)m->w * (size_t)m->h * sizeof *m->cell;
     ok = ok && SDL_ReadIO(io, m->cell, bytes) == bytes;
-    SDL_CloseIO(io);
 
     if (!ok) {
-        SDL_Log("gigantima: %s is truncated", path);
+        SDL_Log("gigantima: the map is truncated");
         gg_map_free(m);
         return false;
     }
@@ -700,4 +693,13 @@ bool gg_map_load(gg_map *m, const char *path) {
             m->cell[i].prop = GG_NO_PROP;
     }
     return true;
+}
+
+bool gg_map_load(gg_map *m, const char *path) {
+    SDL_IOStream *io = SDL_IOFromFile(path, "rb");
+    if (!io) return false;
+    const bool ok = gg_map_read(m, io);
+    SDL_CloseIO(io);
+    if (!ok) SDL_Log("gigantima: %s could not be read as a map", path);
+    return ok;
 }

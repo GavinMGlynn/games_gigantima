@@ -19,6 +19,7 @@
 #include "platform/gg_input.h"
 #include "platform/gg_paths.h"
 #include "debug/gg_debug.h"
+#include "core/gg_save.h"
 
 #define WINDOW_SCALE 1
 
@@ -65,6 +66,17 @@ typedef struct {
     // means being able to get to night without walking there.
     int  clock_min;
     bool clock_set;
+
+    bool force_new;      // --new: start over even if this profile has a save
+
+    // --turns N plays N turns and quits, through the ordinary exit path - so
+    // it saves the way a real session does. --shot deliberately does not save,
+    // because a screenshot must never overwrite somebody's game, which left no
+    // way to exercise the save-on-exit path at all.
+    uint32_t turn_limit;
+    bool     turn_limit_set;
+    bool loaded;         // this session began by resuming a save
+    bool saved_on_exit;
 } gg_app;
 
 // ---------------------------------------------------------------------------
@@ -176,7 +188,8 @@ static void draw(gg_app *app) {
 static void usage(void) {
     SDL_Log("usage: gigantima [--profile NAME] [--seed N] [--play] [--debug]\n"
             "                 [--scale N] [--fullscreen] [--no-rumble]\n"
-            "                 [--map FILE.ggmap] [--at X,Y] [--time HH:MM]\n"
+            "                 [--new] [--turns N] [--map FILE.ggmap]\n"
+            "                 [--at X,Y] [--time HH:MM]\n"
             "                 [--shot FILE.bmp] [--shot-at TURN]");
 }
 
@@ -208,6 +221,11 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
             app->shot_path = argv[++i];
         } else if (SDL_strcmp(argv[i], "--shot-at") == 0 && i + 1 < argc) {
             app->shot_at = (uint32_t)SDL_atoi(argv[++i]);
+        } else if (SDL_strcmp(argv[i], "--turns") == 0 && i + 1 < argc) {
+            app->turn_limit = (uint32_t)SDL_atoi(argv[++i]);
+            app->turn_limit_set = true;
+        } else if (SDL_strcmp(argv[i], "--new") == 0) {
+            app->force_new = true;
         } else if (SDL_strcmp(argv[i], "--map") == 0 && i + 1 < argc) {
             app->map_path = argv[++i];
         } else if (SDL_strcmp(argv[i], "--time") == 0 && i + 1 < argc) {
@@ -284,9 +302,23 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     const uint32_t seed = seed_set ? app->seed
                                    : (uint32_t)SDL_GetPerformanceCounter();
     app->seed = seed;
-    const bool built = app->map_path
-        ? gg_game_new_from_map(&app->game, app->map_path, app->profile)
-        : gg_game_new(&app->game, seed, app->profile);
+    // Resume by default. A player who names their profile and runs the game
+    // expects to be where they left off; starting over is the thing that has
+    // to be asked for, not the thing that happens by accident.
+    bool built = false;
+    if (!app->force_new && !app->map_path &&
+        gg_save_exists(gg_pref_path(), app->profile)) {
+        built = gg_save_read(&app->game, gg_pref_path(), app->profile);
+        app->loaded = built;
+        if (!built)
+            SDL_Log("gigantima: %s has a save that could not be read; "
+                    "starting a new world", app->profile);
+    }
+    if (!built) {
+        built = app->map_path
+            ? gg_game_new_from_map(&app->game, app->map_path, app->profile)
+            : gg_game_new(&app->game, seed, app->profile);
+    }
     if (!built) {
         SDL_Log("gigantima: could not build a world%s%s",
                 app->map_path ? " from " : "", app->map_path ? app->map_path : "");
@@ -319,6 +351,10 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     SDL_Log("gigantima: map %dx%d, %d actors, start %d,%d",
             app->game.map.w, app->game.map.h, app->game.actors,
             app->game.map.start_x, app->game.map.start_y);
+    if (app->loaded)
+        SDL_Log("gigantima: resumed %s on day %u at %02d:%02d, turn %u",
+                app->game.profile, app->game.day, gg_game_hour(&app->game),
+                gg_game_minute(&app->game), app->game.turn);
     return SDL_APP_CONTINUE;
 }
 
@@ -349,6 +385,14 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
             return SDL_APP_SUCCESS;
         case SDL_SCANCODE_F11:
             toggle_fullscreen(app);
+            return SDL_APP_CONTINUE;
+        case SDL_SCANCODE_F5:
+            if (app->started) {
+                if (gg_save_write(&app->game, gg_pref_path(), app->game.profile))
+                    gg_log(&app->game, "Thy journey is recorded.");
+                else
+                    gg_log(&app->game, "The journey could not be recorded.");
+            }
             return SDL_APP_CONTINUE;
         case SDL_SCANCODE_F1:
             app->debug = !app->debug;
@@ -443,6 +487,19 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
         return ok ? SDL_APP_SUCCESS : SDL_APP_FAILURE;
     }
 
+    // Headless play: run the turns and leave by the front door, so everything
+    // that happens on a normal exit happens here too.
+    if (app->turn_limit_set) {
+        while (app->game.turn < app->turn_limit) {
+            const uint32_t before = app->game.turn;
+            gg_game_act(&app->game, GG_ACT_WAIT);
+            gg_game_animate(&app->game);
+            if (app->game.turn == before) break;   // cannot advance; do not spin
+        }
+        SDL_Log("gigantima: played to turn %u", app->game.turn);
+        return SDL_APP_SUCCESS;
+    }
+
     const uint64_t now = SDL_GetTicksNS();
     uint64_t delta = now - app->last_ns;
     app->last_ns = now;
@@ -479,6 +536,14 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result) {
         SDL_SetWindowBordered(app->win, true);
         SDL_SetWindowSize(app->win, app->pre_fs_w, app->pre_fs_h);
         SDL_SetWindowPosition(app->win, app->pre_fs_x, app->pre_fs_y);
+    }
+
+    // Save on the way out, so "pick it up later" needs no thought. Not for a
+    // capture run: that world was fast-forwarded by the shot loop and is not
+    // one anybody was playing.
+    if (app->started && !app->shot_path && app->game.map.cell) {
+        if (gg_save_write(&app->game, gg_pref_path(), app->game.profile))
+            SDL_Log("gigantima: saved %s on exit", app->game.profile);
     }
 
     gg_input_quit(&app->in);
