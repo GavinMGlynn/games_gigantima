@@ -67,7 +67,11 @@ static const gg_rect GG_ITEM_RECT[GG_ITEM_COUNT] = {
     [GG_ITEM_SILVER] = {  160,    0,  32,  32 },
     [GG_ITEM_HAMMER] = {  192,    0,  32,  32 },
     [GG_ITEM_STONE] = {  224,    0,  32,  32 },
-    [GG_ITEM_SHIELD] = {  256,    0,  32,  32 },
+    [GG_ITEM_GINSENG] = {  256,    0,  32,  32 },
+    [GG_ITEM_NIGHTSHADE] = {  288,    0,  32,  32 },
+    [GG_ITEM_BLOODMOSS] = {  320,    0,  32,  32 },
+    [GG_ITEM_ASH] = {  352,    0,  32,  32 },
+    [GG_ITEM_SHIELD] = {  384,    0,  32,  32 },
 };
 
 #define GG_ACTOR_FRAME   64

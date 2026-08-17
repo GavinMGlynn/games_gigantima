@@ -21,7 +21,9 @@
 #define GG_LINE_MAX        88   // one line of speech
 #define GG_TOPIC_WORDS_MAX  3   // synonyms for one topic
 #define GG_TOPIC_LINES_MAX  3
-#define GG_TOPICS_MAX      10   // per person
+// Per person. A mage who teaches a language legitimately has a great many:
+// Nystul alone answers to eight runes plus the ordinary courtesies.
+#define GG_TOPICS_MAX      16
 #define GG_SPEAKERS_MAX    16
 
 // The words everybody knows before they have learned anything. Ultima's own

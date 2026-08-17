@@ -266,6 +266,20 @@ ITEMS = [
     item("STONE",  f"{ORES}/Ore, Stone.png", 1, 2, 1, 1,
          "a throwing stone", "throwing stones", "stones",
          weight=30, slot=SLOT_WEAPON, damage=2, reach=5, value=1),
+    # Reagents. Nothing is done with them but spent - their whole purpose is
+    # to be the price of a spell, so they need no use, no reach and no slot.
+    item("GINSENG",    f"{FOOD}/Herbs & Spices.png",  0, 5, 1, 1,
+         "a ginseng root", "ginseng roots", "ginseng", weight=5, value=6),
+    item("NIGHTSHADE", f"{FOOD}/Herbs & Spices.png", 12, 7, 1, 1,
+         "a sprig of nightshade", "sprigs of nightshade", "nightshade",
+         weight=3, value=20),
+    item("BLOODMOSS",  f"{FOOD}/Herbs & Spices.png",  9, 0, 1, 1,
+         "a tuft of blood moss", "tufts of blood moss", "blood moss",
+         weight=3, value=10),
+    item("ASH",        f"{ORES}/Ore, Coal.png",       0, 2, 1, 1,
+         "a pinch of sulphurous ash", "pinches of sulphurous ash", "ash",
+         weight=2, value=4),
+
     item("SHIELD", "", 0, 2, 1, 1,
          "a wooden shield", "wooden shields", "shield",
          weight=500, stack=False, slot=SLOT_ARMOUR, guard=3, value=80,
@@ -1012,6 +1026,8 @@ def emit_ids(tiles, props, actors, items, path):
     o.append("")
     o.append("// A kind of carryable thing.")
     o.append("//")
+    o.append("//   id              the name a data file calls it by - GINSENG - as")
+    o.append("//                   opposed to the prose, which has spaces in it")
     o.append("//   one/many/short  how it reads in a sentence, and bare in a list")
     o.append("//   tiles_w/h       the sprite, in tiles, drawn from its bottom row")
     o.append("//   weight          in HUNDREDTHS OF A STONE - the unit that makes a")
@@ -1024,6 +1040,7 @@ def emit_ids(tiles, props, actors, items, path):
     o.append("//   reach           how many tiles away it strikes; 0 is arm's length,")
     o.append("//                   and anything further is thrown and left where it lands")
     o.append("typedef struct {")
+    o.append("    const char *id;")
     o.append("    const char *one, *many, *short_name;")
     o.append("    uint8_t  tiles_w, tiles_h;")
     o.append("    uint16_t weight;")
@@ -1038,6 +1055,14 @@ def emit_ids(tiles, props, actors, items, path):
     o.append("// Row order within an actor's block, matching LPC's Walk.png.")
     o.append("typedef enum { GG_FACE_UP, GG_FACE_LEFT, GG_FACE_DOWN, "
              "GG_FACE_RIGHT } gg_facing;")
+    o.append("")
+    o.append("// The largest radius any light may have. The renderer scans a box")
+    o.append("// this big around each cell looking for emitters, so a brighter one")
+    o.append("// would simply be clipped - this script refuses one rather than let")
+    o.append("// that happen. Emitted here rather than written in two files that")
+    o.append("// have to agree by hand, and here rather than in the renderer so the")
+    o.append("// simulation can bound a spell without reaching across the layer.")
+    o.append(f"#define GG_LIGHT_MAX_RADIUS {GG_LIGHT_MAX_RADIUS}")
     o.append("")
     o.append(f"#define GG_ACTOR_FRAMES  {WALK_FRAMES}")
     o.append(f"#define GG_ACTOR_DIRS    {DIRS}")
@@ -1089,6 +1114,7 @@ def emit_sizes(props, items, path):
         slots = ["GG_SLOT_NONE", "GG_SLOT_LIGHT",
                  "GG_SLOT_WEAPON", "GG_SLOT_ARMOUR"][slot]
         o.append(f"    [GG_ITEM_{name}] = {{")
+        o.append(f'        "{name}",')
         o.append(f'        "{one}", "{many}", "{short}",')
         o.append(f"        {wt}, {ht}, {weight}, {stack},")
         o.append(f"        {uses}, {heal}, {slots}, {light}, {value},")

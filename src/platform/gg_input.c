@@ -131,6 +131,8 @@ bool gg_input_event(gg_input *in, const SDL_Event *ev) {
             in->latched = GG_ACT_LOOK; return true;
         case SDL_GAMEPAD_BUTTON_NORTH:
             in->latched = GG_ACT_OPEN; in->nav_latched = GG_NAV_ERASE;  return true;
+        case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER:
+            in->latched = GG_ACT_CAST; return true;
         case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER:
             // The four face buttons are spoken for, and striking wants a
             // button of its own rather than a modifier.
@@ -166,6 +168,7 @@ bool gg_input_event(gg_input *in, const SDL_Event *ev) {
         // Ultima's own verbs, less the ones WASD has already claimed: D is
         // "walk right" here, so dropping is P for "put down" and equipping is
         // R for "ready", which is what Ultima called it anyway.
+        case SDL_SCANCODE_C:      in->latched = GG_ACT_CAST;  return true;
         case SDL_SCANCODE_F:      in->latched = GG_ACT_FIGHT; return true;
         case SDL_SCANCODE_G:      in->latched = GG_ACT_GET;   return true;
         case SDL_SCANCODE_I:      in->latched = GG_ACT_PACK;  return true;

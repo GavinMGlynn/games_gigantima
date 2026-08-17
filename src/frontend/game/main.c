@@ -22,6 +22,7 @@
 #include "core/gg_save.h"
 #include "core/gg_dialogue.h"
 #include "core/gg_combat.h"
+#include "core/gg_magic.h"
 #include "ui/gg_screens.h"
 #include "platform/gg_settings.h"
 
@@ -196,6 +197,8 @@ static void draw(gg_app *app) {
             gg_ui_converse(&app->game, app->ren);
         else if (app->game.mode == GG_MODE_PACK)
             gg_ui_pack(&app->game, app->ren, gg_render_items());
+        else if (app->game.mode == GG_MODE_SPELL)
+            gg_ui_spells(&app->game, app->ren);
     }
 
     if (app->screens.id != GG_SCREEN_PLAY)
@@ -479,6 +482,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     // than a failure, the same as a missing gamepad.
     if (!gg_dialogue_load(gg_asset_path("dialogue.txt")))
         SDL_Log("gigantima: no dialogue loaded; the town will be quiet");
+    if (!gg_magic_load(gg_asset_path("spells.txt")))
+        SDL_Log("gigantima: no spells loaded; nothing will answer to a word");
 
     gg_settings_load(&app->settings, gg_pref_file(GG_SETTINGS_FILE));
     if (app->settings.rumble == false) app->in.no_rumble = true;
@@ -505,6 +510,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
             { "talk",     GG_SCREEN_PLAY },
             { "party",    GG_SCREEN_PLAY },
             { "fight",    GG_SCREEN_PLAY },
+            { "spells",   GG_SCREEN_PLAY },
         };
         bool known = false;
         for (size_t k = 0; k < GG_COUNTOF(NAMED); k++)
@@ -757,6 +763,18 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
         if (app->screen_name && SDL_strcmp(app->screen_name, "pack") == 0)
             app->game.mode = GG_MODE_PACK;
 
+        // Learns every rune and takes a few reagents, so the book can be
+        // photographed with something in it. What it then shows is the
+        // ordinary book: only spells whose runes are known, and the prices
+        // coloured by what is actually in the pack.
+        if (app->screen_name && SDL_strcmp(app->screen_name, "spells") == 0) {
+            for (int i = 0; i < gg_magic_runes(); i++)
+                gg_learn(&app->game, gg_magic_rune(i)->word);
+            gg_pack_add(&app->game, GG_ITEM_GINSENG, 2);
+            gg_pack_add(&app->game, GG_ITEM_ASH, 1);
+            gg_game_act(&app->game, GG_ACT_CAST);
+        }
+
         // Puts two brigands within arm's reach and swings once, so a fight can
         // be photographed. Everything after the placing is the ordinary
         // simulation, so the frame shows a real exchange of blows.
@@ -884,6 +902,7 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result) {
     }
 
     gg_dialogue_clear();
+    gg_magic_clear();
     gg_input_quit(&app->in);
     gg_game_free(&app->game);
     debug_close(app);

@@ -1,0 +1,80 @@
+# The book of spells.
+#
+# A spell is a phrase, not an entry in a list. You can cast it when you know the
+# runes it is made of, and runes are learned the way every other word in this
+# game is learned: somebody tells you one. Ask Nystul.
+#
+#   rune WORD MEANING       declare a rune; must come before any spell using it
+#   spell WORD [WORD...]    a spell, named by the phrase that casts it
+#     name TEXT             what it is called in the book
+#     circle N              how deep a mage it wants, 1 to 8
+#     costs ITEM N [...]    reagents spent on every casting
+#     effect WHAT N [turns N] [reach N]
+#     say TEXT              what it reads like when it works
+#
+# The effects are light, heal and harm. Each one has to be visible in the world
+# - a spell whose result nobody can see is a control that does nothing.
+
+rune AN    negate
+rune IN    create
+rune LOR   light
+rune MANI  life
+rune VAS   great
+rune FLAM  flame
+rune NOX   poison
+
+spell IN LOR
+  name Light
+  circle 1
+  costs ash 1
+  effect light 5 turns 60
+  say A cold light gathers about thee and holds.
+
+spell VAS IN LOR
+  name Great Light
+  circle 3
+  costs ash 2 bloodmoss 1
+  effect light 7 turns 150
+  say The dark is driven back a long way, and stays back.
+
+spell MANI
+  name Heal
+  circle 1
+  costs ginseng 1
+  effect heal 10
+  say Thy hurts close over.
+
+spell VAS MANI
+  name Great Heal
+  circle 3
+  costs ginseng 2 bloodmoss 1
+  effect heal 25
+  say Warmth runs through thee and the pain is gone.
+
+spell IN FLAM
+  name Fire Bolt
+  circle 2
+  costs ash 1 bloodmoss 1
+  effect harm 8 reach 5
+  say A bolt of flame leaps from thy hand.
+
+spell VAS IN FLAM
+  name Great Fire
+  circle 4
+  costs ash 2 bloodmoss 1 nightshade 1
+  effect harm 18 reach 6
+  say Fire roars out and does not stop where thou meant it to.
+
+spell IN NOX
+  name Poison Bolt
+  circle 2
+  costs nightshade 1
+  effect harm 5 reach 4
+  say A green mist gathers and darts away from thee.
+
+spell AN NOX
+  name Cure
+  circle 2
+  costs ginseng 1 nightshade 1
+  effect heal 6
+  say The sickness goes out of thee.

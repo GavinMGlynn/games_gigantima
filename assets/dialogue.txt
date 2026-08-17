@@ -93,6 +93,35 @@ topic name
   say Nystul, of the tower that was, before the roof went.
 topic job magic
   say I read what is written above, and write down what little I understand.
+  say The words themselves I will teach thee, if thou wilt ask of the RUNES.
+  teach runes
+topic runes
+  say A spell is a phrase, not a trick. Learn the words and the spells follow.
+  say MANI is life, and IN is to make. Say them and see.
+  teach mani
+topic mani
+  say Life. Alone it closes a wound; after VAS it closes a great deal more.
+  teach in
+topic in
+  say To make. IN LOR makes light, and IN FLAM makes something less friendly.
+  teach lor
+topic lor
+  say Light. Thou hast the two thou needest for it now.
+  say Ask of VAS if thou wouldst have more of anything.
+  teach vas
+topic vas
+  say Great. It goes before another word and makes it more than it was.
+  say FLAM and NOX I will teach thee only if thou hast cause. Hast thou?
+  teach flam
+topic flam
+  say Flame. Have a care where thou pointest it.
+  teach nox
+topic nox
+  say Poison. AN NOX undoes it, which is the more useful of the two.
+  teach an
+topic an
+  say To undo. It is the first word a careful mage learns and the last one
+  say a careless one wishes he had.
 topic light
   say A cold light is not a fire and not a lamp. That leaves few things.
   say None of them are glad to be seen. Ask Gwenno of the NORTH.

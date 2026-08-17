@@ -12,12 +12,14 @@
 #include "core/gg_actor.h"
 #include "core/gg_path.h"
 #include "core/gg_dialogue.h"
+#include "core/gg_magic.h"
 
 typedef enum {
     GG_MODE_TITLE,       // title screen, before a world exists
     GG_MODE_PLAY,        // walking the world
     GG_MODE_CONVERSE,    // talking to somebody
     GG_MODE_PACK,        // looking through what you carry
+    GG_MODE_SPELL,       // choosing a spell to speak
     GG_MODE_GAMEOVER,
 } gg_mode;
 
@@ -40,6 +42,7 @@ typedef enum {
     // through the same door as a keypress - see the deterministic-replay item.
     GG_ACT_GET,
     GG_ACT_FIGHT,
+    GG_ACT_CAST,
     GG_ACT_PACK,
     GG_ACT_USE,
     GG_ACT_EQUIP,
@@ -147,6 +150,17 @@ typedef struct {
     int  askables;
     int  ask_cursor;
 
+    // --- magic -------------------------------------------------------------
+    // Which spell the book is open at. Which spells are *known* is not stored:
+    // it is derived from the runes in `known` above, because a spell you can
+    // speak is a spell whose words you have. That is the runic system, and it
+    // means the spellbook needs no state of its own.
+    int spell_cursor;
+
+    // A light of your own making, and how many turns of it are left. Kept apart
+    // from a held torch so that letting a spell lapse cannot put out a torch.
+    int light_turns, light_power;
+
     // Rolling message log, newest last.
     char log[GG_LOG_LINES][GG_LOG_WIDTH];
     int  logn;
@@ -243,6 +257,24 @@ void gg_conversation_refresh(gg_game *g);
 
 // Asks the word under the cursor. Does nothing outside a conversation.
 void gg_conversation_ask(gg_game *g);
+
+// --- magic -----------------------------------------------------------------
+// Does the player know every rune this spell is made of? That is the whole of
+// knowing a spell: there is no spellbook to be given, only words to collect.
+bool gg_spell_known(const gg_game *g, int spell);
+
+// Are the reagents in the pack? Separate from knowing it, because "thou hast
+// no ginseng" and "thou knowest no such words" are different problems and a
+// player should be told which one they have.
+bool gg_spell_afford(const gg_game *g, int spell);
+
+// Speaks it: spends the reagents and does the thing. Returns false, having
+// spent nothing, if it is not known, not affordable, or has nothing to aim at.
+bool gg_cast(gg_game *g, int spell);
+
+// The next spell in the book that is worth showing, from `from` inclusive, in
+// the direction `step`. Returns -1 when the book holds nothing known.
+int gg_spell_next(const gg_game *g, int from, int step);
 
 // --- the pack --------------------------------------------------------------
 // How many of a kind are carried, across every slot holding it.

@@ -11,15 +11,17 @@ buried in a later clause. See `CLAUDE.md`.
 
 ## In one line
 
-An engine, not yet a game: from a title screen you can start or resume a named
-journey, walk a generated continent, enter a town, go inside its houses, pick up
-what people have left lying about, eat it or carry it or set it down again, ask
-the eight townsfolk about what they know and collect the words that unlock what
-the rest of them know, and watch them path around the buildings to keep daily
-schedules under a day/night cycle — or take two of them along, walking in single
-file behind you, and find out what the brigands in the hills make of that. Hold a torch and it lights the room. Pausing, saving and
-quitting are all on a menu, and every page works from a gamepad alone, naming
-included. There is **no story, no combat, no magic, no sound and no editor**.
+An engine with most of a game in it. From a title screen you start or resume a
+named journey; walk a generated continent; go inside a town's houses; pick up
+what people have left lying about and eat it, carry it or set it down; ask the
+eight townsfolk what they know and collect the words that unlock what the rest
+of them know; take two of them along, walking in single file behind you; learn
+the runes that make a spell and gather the herbs that pay for it; and find out
+what the brigands in the hills make of all that. Hold a torch and it lights the
+room. Every page works from a gamepad alone, naming included.
+
+**There is no story, no sound and no editor.** Those are the three that keep
+this an engine: nothing here is *about* anything yet.
 
 ---
 
@@ -416,6 +418,52 @@ world, "that will do" in a menu — and so has to be readable from either drain.
 
 *Verification: `the_pad_feeds_the_world_and_the_menus_separately`.*
 
+### Magic
+
+Ultima's magic is a **language**, and this is built as one. A spell is a phrase
+— `IN LOR`, `VAS MANI` — and it can be cast when the runes it is made of are
+known. So the runes live in **exactly the same vocabulary the conversation
+system uses**, and are learned the same way: Nystul teaching MANI is the same
+mechanism as Iolo teaching CARAVAN, and magic needed no second one. There is no
+spellbook to be given and no list to add to — the words *are* the book, which is
+why the game stores a spell cursor and nothing else.
+
+**Reagents are ordinary items**, spent out of the ordinary pack. A spell you
+cannot afford is one whose herbs you have not gone and found, and they grow
+where they would grow: ginseng and nightshade under trees, blood moss on bare
+earth, sulphurous ash at the foot of the cliffs. Every reagent appears on every
+seed — measured over twelve of them, not hoped for.
+
+Three effects, and each has to be **visible in the world** or it is a control
+that does nothing: a light of your own for a number of turns, health back, and
+damage at a distance. The light is a second source rather than a replacement, so
+letting a spell lapse cannot put out the torch in your other hand.
+
+**Nothing is spent on a spell that does not go off.** Unknown words, too low a
+circle, missing reagents, nothing in range — each is refused before the price is
+paid, and each says *which* of those it was, because "thou hast not the
+reagents" sends a player to count their pack by hand.
+
+`assets/spells.txt` holds all of it, in the dialogue file's format because the
+same kind of person reads both. Every complaint from the parser names the file
+and the line, and a book that does not parse loads nothing at all.
+
+The spell panel shows the phrase, the name, the circle and the price, greying
+what cannot be cast and colouring a reagent you lack — so a player can see *why*
+a spell is out of reach without leaving the book.
+
+*Verification: `a_spell_from_a_file_costs_reagents_and_does_what_it_says` (the
+plan's own — the effect and the price both observed, and every refusal checked
+to spend nothing), `a_phrase_needs_every_rune_in_it`,
+`a_spell_of_light_lasts_its_turns_and_then_goes_out` (including that it does not
+put out a held torch),
+`a_bolt_needs_something_to_aim_at_and_spends_nothing_without_one`,
+`a_spell_file_that_does_not_parse_loads_nothing` (ten malformed books and a
+missing one), `every_spell_in_the_vale_can_be_learned_from_somebody` — which
+refuses a spell needing a rune nobody teaches, and a rune no spell uses —
+and `a_spell_of_light_survives_a_save`. Plus a `--shot` frame of the book, taken
+in CI.*
+
 ### Fighting
 
 Turn-based like everything else: it happens inside `gg_game_act` and nowhere
@@ -738,7 +786,7 @@ Named plainly, because a reader should not have to infer absence:
 | --- | --- |
 | Story, quests, journal | nothing at all |
 | Combat depth | blows, initiative, reach and loot exist; there are no skills, no criticals, no morale, no fleeing, and two kinds of foe |
-| Magic | nothing at all |
+| Magic beyond three effects | light, heal and harm. No summoning, no travel, no enchantment, no mana - reagents are the whole cost |
 | Arms | a hammer, a throwing stone and a shield. No swords: this art set has none that stand on their own |
 | Trade | nothing. Items carry a value in copper, and no one buys or sells |
 | Conversation beyond words | topics and a vocabulary, but nobody reacts to anything — no quests, no trade, no one who does something because you asked |

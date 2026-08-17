@@ -140,9 +140,16 @@ found, not when someone remembers.
       *Verification: a scripted encounter with a fixed seed resolving identically
       every run, five runs over, and a different seed producing a different
       fight — plus eight more on reach, walls, loot, bystanders and dying.*
-- [ ] **Magic.** Reagents, spellbook, a runic word system.
-      *Verification: a spell defined in data, cast, with its effect and its
-      reagent cost both observable.*
+- [x] **Magic.** A spell is a phrase — IN LOR, VAS MANI — and you can cast it
+      when you know the runes it is made of. So the runes are words in exactly
+      the same vocabulary conversation uses, learned the same way: Nystul
+      teaches them. Reagents are ordinary items spent out of the ordinary pack,
+      so a spell you cannot afford is one whose herbs you have not gone and
+      found. Every rune, spell, price and effect is in `assets/spells.txt`.
+      *Verification: a spell defined entirely in a data file, cast, with its
+      effect and its reagent cost both observable — and refused, spending
+      nothing, when the words, the circle, the reagents or the target are
+      missing.*
 - [ ] **Bestiary in data.** Creature stats, behaviour and loot tables as files.
       *Verification: a creature added with no code change.*
 - [ ] **Audio.** Music that follows the region and the time of day, ambience,

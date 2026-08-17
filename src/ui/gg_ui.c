@@ -2,6 +2,7 @@
 #include "ui/gg_ui.h"
 #include "gfx/gg_font.h"
 #include "gfx/gg_atlas.h"
+#include "core/gg_magic.h"
 
 // A parchment-and-ink palette, sampled to sit beside the LPC art rather than
 // fight it: the panel is the dark earth of the tileset, the rules are its
@@ -10,6 +11,10 @@ static const SDL_Color INK    = { 226, 216, 190, 255 };
 static const SDL_Color DIM    = { 150, 142, 120, 255 };
 static const SDL_Color AMBER  = { 217, 145,  63, 255 };
 static const SDL_Color BLOOD  = { 190,  72,  60, 255 };
+// A thing you cannot use, and a thing you have not got. Distinct, because
+// "beyond thy circle" and "thou hast no ginseng" are different problems.
+static const SDL_Color GREY_OUT = {  96,  92,  82, 255 };
+static const SDL_Color WANT     = { 186, 104,  84, 255 };
 
 static void panel(SDL_Renderer *ren, SDL_FRect r, uint8_t alpha) {
     SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
@@ -190,6 +195,82 @@ void gg_ui_pack(const gg_game *g, SDL_Renderer *ren, SDL_Texture *items) {
     const int fy = (int)(box.y + box.h) - line - 12;
     gg_font_draw(ren, x, fy, DIM,
                  "U or A use   R or Y ready   P or X set down   G take   I or B close");
+}
+
+void gg_ui_spells(const gg_game *g, SDL_Renderer *ren) {
+    const int line = gg_font_height();
+    const int row_h = 34;
+
+    // Only what is known, because the book is the answer to "what can I do".
+    int known = 0;
+    for (int i = 0; i < gg_magic_spells(); i++)
+        if (gg_spell_known(g, i)) known++;
+
+    const int rows = known > 0 ? known : 1;
+    const int height = gg_clampi((line + 8) + rows * row_h + (line + 30),
+                                 140, GG_VIEW_H - 60);
+    const SDL_FRect box = { 100, (float)((GG_VIEW_H - height) / 2),
+                            (float)(GG_SCREEN_W - 200), (float)height };
+    panel(ren, box, 238);
+
+    const int x = (int)box.x + 16;
+    int y = (int)box.y + 12;
+
+    gg_font_draw(ren, x, y, AMBER, "Words of power");
+    gg_font_printf(ren, x + 300, y, DIM, "%d known of %d", known,
+                   gg_magic_spells());
+    y += line + 8;
+
+    if (known == 0) {
+        gg_font_draw(ren, x, y, DIM, "Thou knowest no words at all. Ask a mage.");
+    }
+
+    int row = 0;
+    for (int i = 0; i < gg_magic_spells(); i++) {
+        if (!gg_spell_known(g, i)) continue;
+        const gg_spell *sp = gg_magic_spell(i);
+        const bool here = (i == g->spell_cursor);
+        const bool can = gg_spell_afford(g, i) &&
+                         gg_player_const(g)->level >= sp->circle;
+        const int ry = y + row * row_h;
+        row++;
+
+        if (here) {
+            SDL_SetRenderDrawColor(ren, 217, 145, 63, 45);
+            const SDL_FRect bar = { box.x + 8, (float)(ry - 4),
+                                    box.w - 16, (float)(row_h - 4) };
+            SDL_RenderFillRect(ren, &bar);
+        }
+
+        // The phrase first: it is the name of the thing, and the point of the
+        // whole system is that a player learns to read them.
+        char phrase[64] = { 0 };
+        for (int r = 0; r < sp->runes; r++) {
+            if (r) SDL_strlcat(phrase, " ", sizeof phrase);
+            SDL_strlcat(phrase, sp->rune[r], sizeof phrase);
+        }
+        gg_font_printf(ren, x, ry, here ? AMBER : (can ? INK : GREY_OUT),
+                       "%s", phrase);
+        gg_font_printf(ren, x + 150, ry, can ? INK : GREY_OUT, "%s", sp->name);
+        gg_font_printf(ren, x + 300, ry, DIM, "circle %u", sp->circle);
+
+        // And the price, with what is missing shown in the colour of a thing
+        // you have not got.
+        int px = x + 150;
+        for (int r = 0; r < sp->reagents; r++) {
+            const gg_item_def *d = &GG_ITEM[sp->reagent[r]];
+            const bool enough = gg_pack_count(g, (gg_item_id)sp->reagent[r]) >=
+                                sp->reagent_count[r];
+            char one[48];
+            SDL_snprintf(one, sizeof one, "%u %s", sp->reagent_count[r],
+                         d->short_name);
+            gg_font_draw(ren, px, ry + line - 2, enough ? DIM : WANT, one);
+            px += gg_font_width(one) + 12;
+        }
+    }
+
+    gg_font_draw(ren, x, (int)(box.y + box.h) - line - 12, DIM,
+                 "U or A to speak it   C or B to close the book");
 }
 
 void gg_ui_converse(const gg_game *g, SDL_Renderer *ren) {

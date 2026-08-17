@@ -77,6 +77,10 @@ typedef enum {
     GG_ITEM_SILVER,
     GG_ITEM_HAMMER,
     GG_ITEM_STONE,
+    GG_ITEM_GINSENG,
+    GG_ITEM_NIGHTSHADE,
+    GG_ITEM_BLOODMOSS,
+    GG_ITEM_ASH,
     GG_ITEM_SHIELD,
     GG_ITEM_COUNT
 } gg_item_id;
@@ -93,6 +97,8 @@ typedef enum {
 
 // A kind of carryable thing.
 //
+//   id              the name a data file calls it by - GINSENG - as
+//                   opposed to the prose, which has spaces in it
 //   one/many/short  how it reads in a sentence, and bare in a list
 //   tiles_w/h       the sprite, in tiles, drawn from its bottom row
 //   weight          in HUNDREDTHS OF A STONE - the unit that makes a
@@ -105,6 +111,7 @@ typedef enum {
 //   reach           how many tiles away it strikes; 0 is arm's length,
 //                   and anything further is thrown and left where it lands
 typedef struct {
+    const char *id;
     const char *one, *many, *short_name;
     uint8_t  tiles_w, tiles_h;
     uint16_t weight;
@@ -118,6 +125,14 @@ extern const gg_item_def GG_ITEM[GG_ITEM_COUNT];
 
 // Row order within an actor's block, matching LPC's Walk.png.
 typedef enum { GG_FACE_UP, GG_FACE_LEFT, GG_FACE_DOWN, GG_FACE_RIGHT } gg_facing;
+
+// The largest radius any light may have. The renderer scans a box
+// this big around each cell looking for emitters, so a brighter one
+// would simply be clipped - this script refuses one rather than let
+// that happen. Emitted here rather than written in two files that
+// have to agree by hand, and here rather than in the renderer so the
+// simulation can bound a spell without reaching across the layer.
+#define GG_LIGHT_MAX_RADIUS 6
 
 #define GG_ACTOR_FRAMES  8
 #define GG_ACTOR_DIRS    4

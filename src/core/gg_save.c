@@ -233,6 +233,9 @@ bool gg_save_write(const gg_game *g, const char *base, const char *name) {
     ok = ok && gg_io_w32(io, g->turn) && gg_io_w32(io, g->minutes) &&
                gg_io_w32(io, g->day);
     ok = ok && gg_io_w32(io, (uint32_t)g->exp);
+    // A light of one's own making, and how long it has left to burn.
+    ok = ok && gg_io_w32(io, (uint32_t)g->light_turns) &&
+               gg_io_w32(io, (uint32_t)g->light_power);
 
     // Where the Avatar has just been. Without it a resumed party has no
     // footprints to follow and bunches up on the first step.
@@ -309,6 +312,12 @@ bool gg_save_read(gg_game *g, const char *base, const char *name) {
     ok = ok && gg_io_r32(io, &tmp.turn) && gg_io_r32(io, &tmp.minutes) &&
                gg_io_r32(io, &tmp.day);
     ok = ok && gg_io_r32(io, &exp);
+    uint32_t light_turns = 0, light_power = 0;
+    ok = ok && gg_io_r32(io, &light_turns) && gg_io_r32(io, &light_power);
+    // Clamped: a spell brighter than the renderer scans for would simply be
+    // clipped, and this file may not be ours.
+    tmp.light_turns = ok ? (int)light_turns : 0;
+    tmp.light_power = ok ? gg_clampi((int)light_power, 0, GG_LIGHT_MAX_RADIUS) : 0;
 
     uint32_t trailn = 0;
     ok = ok && gg_io_r32(io, &trailn) && trailn <= GG_TRAIL_MAX;

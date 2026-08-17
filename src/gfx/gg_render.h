@@ -36,10 +36,7 @@ void gg_render_screen_to_tile(const gg_game *g, int sx, int sy, int *tx, int *ty
 // How far the avatar's own light reaches is not a constant any more: it comes
 // from whatever is held in the light slot - see gg_light_radius. A torch is a
 // thing in the world like a lamp on a table, and it lights the same way.
-// The largest radius any emitter may have. The renderer scans a box this big
-// around each cell looking for them, so a brighter one would simply be
-// clipped - tools/make_atlas.py refuses one rather than let that happen.
-#define GG_LIGHT_MAX_RADIUS    6
+// GG_LIGHT_MAX_RADIUS is generated into core/gg_ids.h - see the note there.
 
 // How lit the cell at (x, y) is, 0 to GG_LIGHT_FULL, given the sky's `day`
 // level. The brightest of the sky, the avatar's carried light, and every

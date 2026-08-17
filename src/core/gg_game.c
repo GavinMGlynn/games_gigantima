@@ -1,6 +1,7 @@
 // gg_game.c - the turn loop, the world clock, and the townsfolk who live by it.
 #include "core/gg_game.h"
 #include "core/gg_combat.h"
+#include "core/gg_magic.h"
 
 #include <stdarg.h>
 
@@ -187,6 +188,141 @@ void gg_conversation_ask(gg_game *g) {
 }
 
 // ---------------------------------------------------------------------------
+// Magic
+//
+// A spell is known when its runes are known. There is no spellbook to be
+// given and no list to be added to - the words are the book, and they are the
+// same words a conversation hands over, kept in the same place.
+// ---------------------------------------------------------------------------
+bool gg_spell_known(const gg_game *g, int spell) {
+    const gg_spell *s = gg_magic_spell(spell);
+    if (!s) return false;
+    for (int i = 0; i < s->runes; i++)
+        if (!gg_knows(g, s->rune[i])) return false;
+    return true;
+}
+
+bool gg_spell_afford(const gg_game *g, int spell) {
+    const gg_spell *s = gg_magic_spell(spell);
+    if (!s) return false;
+    for (int i = 0; i < s->reagents; i++)
+        if (gg_pack_count(g, (gg_item_id)s->reagent[i]) < s->reagent_count[i])
+            return false;
+    return true;
+}
+
+int gg_spell_next(const gg_game *g, int from, int step) {
+    const int n = gg_magic_spells();
+    if (n <= 0) return -1;
+
+    int at = from;
+    for (int tries = 0; tries < n; tries++) {
+        if (at >= 0 && at < n && gg_spell_known(g, at)) return at;
+        at += step ? step : 1;
+        if (at >= n) at = 0;
+        if (at < 0)  at = n - 1;
+    }
+    return -1;
+}
+
+// Takes the price out of the pack. Called only once everything else has been
+// checked, so it never has to put anything back.
+static void spend_reagents(gg_game *g, const gg_spell *s) {
+    for (int i = 0; i < s->reagents; i++) {
+        int want = s->reagent_count[i];
+        while (want > 0) {
+            const int slot = gg_pack_find(g, (gg_item_id)s->reagent[i]);
+            if (slot < 0) break;
+            const int took = gg_pack_take(g, slot, want);
+            if (took <= 0) break;
+            want -= took;
+        }
+    }
+}
+
+bool gg_cast(gg_game *g, int spell) {
+    const gg_spell *s = gg_magic_spell(spell);
+    if (!s) return false;
+
+    if (!gg_spell_known(g, spell)) {
+        gg_log(g, "Thou knowest not the words of %s.", s->name);
+        return false;
+    }
+    if (gg_player_const(g)->level < s->circle) {
+        gg_log(g, "%s is of the %d circle, and thou art not.", s->name, s->circle);
+        return false;
+    }
+    if (!gg_spell_afford(g, spell)) {
+        // Which reagent is missing, because "thou hast not the reagents" sends
+        // a player to count their pack by hand.
+        for (int i = 0; i < s->reagents; i++)
+            if (gg_pack_count(g, (gg_item_id)s->reagent[i]) < s->reagent_count[i]) {
+                gg_log(g, "Thou hast not the %s for %s.",
+                       GG_ITEM[s->reagent[i]].short_name, s->name);
+                break;
+            }
+        return false;
+    }
+
+    // Harm needs something to aim at, and that is checked *before* anything is
+    // spent - a spell that eats its reagents and fizzles is a spell nobody
+    // casts twice.
+    int target = -1;
+    if (s->effect == GG_SPELL_HARM) {
+        const gg_actor *p = gg_player_const(g);
+        int best_d = 0;
+        for (int i = 0; i < g->actors; i++) {
+            if (!gg_at_odds(g, g->player, i)) continue;
+            const int d = gg_dist_cheb(p->x, p->y, g->actor[i].x, g->actor[i].y);
+            if (d > s->reach) continue;
+            if (!gg_line_of_sight(g, p->x, p->y, g->actor[i].x, g->actor[i].y))
+                continue;
+            if (target < 0 || d < best_d) { target = i; best_d = d; }
+        }
+        if (target < 0) {
+            gg_log(g, "There is nothing within reach of %s.", s->name);
+            return false;
+        }
+    }
+
+    spend_reagents(g, s);
+    if (s->say[0]) gg_log(g, "%s", s->say);
+
+    switch (s->effect) {
+    case GG_SPELL_LIGHT:
+        g->light_power = s->power;
+        g->light_turns = s->turns;
+        break;
+
+    case GG_SPELL_HEAL: {
+        gg_actor *me = gg_player(g);
+        const int before = me->hp;
+        me->hp = (int16_t)gg_clampi(me->hp + s->power, 0, me->hp_max);
+        gg_log(g, "Thou art the better by %d.", me->hp - before);
+        break;
+    }
+
+    case GG_SPELL_HARM: {
+        gg_actor *foe = &g->actor[target];
+        foe->hp = (int16_t)(foe->hp - s->power);
+        gg_log(g, "%s takes %d.", foe->name, s->power);
+        if (foe->hp <= 0) {
+            // Through the ordinary killing, so what it was carrying falls the
+            // same way it would from a hammer blow.
+            foe->hp = 1;
+            gg_strike(g, g->player, target);
+            if (foe->hp > 0) { foe->hp = 0; gg_strike(g, g->player, target); }
+        }
+        break;
+    }
+
+    default:
+        break;
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------
 // The pack
 // ---------------------------------------------------------------------------
 int gg_pack_count(const gg_game *g, gg_item_id kind) {
@@ -265,14 +401,19 @@ int gg_pack_take(gg_game *g, int index, int count) {
 }
 
 int gg_light_radius(const gg_game *g) {
+    // An arm's length, so somebody who drops their last torch is in the dark
+    // rather than blind.
+    int best = 1;
+
     const int held = g->equipped[GG_SLOT_LIGHT];
     if (gg_pack_slot_ok(g, held)) {
         const int r = GG_ITEM[g->pack[held].kind].light;
-        if (r > 0) return r;
+        if (r > best) best = r;
     }
-    // Nothing held: an arm's length, so a player who drops their last torch is
-    // in the dark rather than blind.
-    return 1;
+    // A spell of light is a second source, not a replacement: letting one lapse
+    // must not put out the torch in your other hand.
+    if (g->light_turns > 0 && g->light_power > best) best = g->light_power;
+    return best;
 }
 
 // ---------------------------------------------------------------------------
@@ -363,6 +504,13 @@ static bool path_passable(void *vctx, int x, int y) {
 }
 static void world_turn(gg_game *g, int minutes) {
     g->turn++;
+
+    // A spell of light burns down by the turn, like a torch would if torches
+    // burned down. When it lapses it simply stops being the brightest thing.
+    if (g->light_turns > 0 && --g->light_turns == 0) {
+        g->light_power = 0;
+        gg_log(g, "Thy light gutters and goes out.");
+    }
     g->minutes += (uint32_t)minutes;
     while (g->minutes >= GG_MINUTES_PER_DAY) {
         g->minutes -= GG_MINUTES_PER_DAY;
@@ -755,6 +903,34 @@ void gg_game_act(gg_game *g, gg_action a) {
         return;
     }
 
+    // The book is open: the directions run down it and choosing speaks. Only
+    // spells whose runes are known are in it at all, so the list is the answer
+    // to "what can I do", not a catalogue of what somebody else can.
+    if (g->mode == GG_MODE_SPELL) {
+        int dx, dy;
+        if (gg_action_delta(a, &dx, &dy)) {
+            if (dy) {
+                const int step = dy > 0 ? 1 : -1;
+                const int next = gg_spell_next(g, g->spell_cursor + step, step);
+                if (next >= 0) g->spell_cursor = next;
+            }
+            return;
+        }
+        switch (a) {
+        case GG_ACT_CAST: case GG_ACT_WAIT: case GG_ACT_OPEN:
+            g->mode = GG_MODE_PLAY;
+            break;
+        case GG_ACT_USE: case GG_ACT_TALK: case GG_ACT_FIGHT:
+            // Casting always costs the turn, whether or not it worked: the
+            // words were spoken either way.
+            if (gg_cast(g, g->spell_cursor)) g->mode = GG_MODE_PLAY;
+            world_turn(g, GG_MINUTES_PER_TURN);
+            break;
+        default: break;
+        }
+        return;
+    }
+
     // The pack is open: the directions steer its cursor instead of the avatar,
     // and the verbs act on whatever the cursor is on. Time still passes when
     // something actually happens - eating is a turn - but scrolling is free.
@@ -794,6 +970,17 @@ void gg_game_act(gg_game *g, gg_action a) {
     case GG_ACT_OPEN: do_open(g); break;
     case GG_ACT_GET:  do_get(g); break;
     case GG_ACT_FIGHT: do_fight(g); break;
+
+    case GG_ACT_CAST: {
+        const int first = gg_spell_next(g, g->spell_cursor, 1);
+        if (first < 0) {
+            gg_log(g, "Thou knowest no words of power at all.");
+            break;
+        }
+        g->spell_cursor = first;
+        g->mode = GG_MODE_SPELL;
+        break;
+    }
 
     case GG_ACT_PACK:
         g->mode = GG_MODE_PACK;

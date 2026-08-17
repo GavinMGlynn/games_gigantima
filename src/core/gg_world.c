@@ -490,21 +490,42 @@ static void scatter_windfall(gg_map *m, gg_rng *rng, int count) {
         const gg_cell *c = gg_map_at_const(m, x, y);
         if (!c || (c->flags & GG_CELL_INDOORS)) continue;
 
-        // A tree next door makes it a windfall; a road makes it lost change.
-        bool wooded = false;
-        for (int oy = -1; oy <= 1 && !wooded; oy++)
-            for (int ox = -1; ox <= 1 && !wooded; ox++) {
+        // What is next door decides what grows here. Checked on the
+        // *neighbours* rather than the cell itself for the rock, because ash
+        // gathers at the foot of a cliff and a cliff cannot be stood on - the
+        // first version put it on the mountain and it never appeared at all.
+        bool wooded = false, by_rock = false;
+        for (int oy = -1; oy <= 1; oy++)
+            for (int ox = -1; ox <= 1; ox++) {
                 const gg_cell *n = gg_map_at_const(m, x + ox, y + oy);
-                if (n && GG_HAS_PROP(n)) {
+                if (!n) continue;
+                if (GG_HAS_PROP(n)) {
                     const gg_prop_id p = GG_PROP_OF(n);
-                    wooded = (p >= GG_PROP_TREE_OAK && p <= GG_PROP_TREE_BARE);
+                    if (p >= GG_PROP_TREE_OAK && p <= GG_PROP_TREE_BARE)
+                        wooded = true;
                 }
+                if (n->terrain == GG_TILE_MOUNTAIN || n->terrain == GG_TILE_CLIFF)
+                    by_rock = true;
             }
 
-        if (wooded)
-            gg_ground_drop(m, x, y, GG_ITEM_APPLE, gg_rand_range(rng, 1, 2));
-        else if (c->terrain == GG_TILE_ROAD)
+        // Reagents grow where they would grow: ginseng and nightshade in the
+        // shade of trees, blood moss on bare ground. They have to be findable
+        // or every spell in the book is a spell nobody can afford twice.
+        static const uint8_t UNDER_TREES[] = {
+            GG_ITEM_APPLE, GG_ITEM_APPLE, GG_ITEM_GINSENG, GG_ITEM_NIGHTSHADE,
+        };
+        if (wooded) {
+            const int k = gg_rand_belowi(rng, (int)GG_COUNTOF(UNDER_TREES));
+            gg_ground_drop(m, x, y, (gg_item_id)UNDER_TREES[k],
+                           gg_rand_range(rng, 1, 2));
+        } else if (c->terrain == GG_TILE_ROAD) {
             gg_ground_drop(m, x, y, GG_ITEM_GOLD, gg_rand_range(rng, 1, 6));
+        } else if (by_rock) {
+            gg_ground_drop(m, x, y, GG_ITEM_ASH, gg_rand_range(rng, 1, 3));
+        } else if (c->terrain == GG_TILE_DIRT || c->terrain == GG_TILE_SAND ||
+                   c->terrain == GG_TILE_EARTH_DARK) {
+            gg_ground_drop(m, x, y, GG_ITEM_BLOODMOSS, gg_rand_range(rng, 1, 2));
+        }
     }
 }
 
@@ -622,7 +643,7 @@ bool gg_map_generate(gg_map *m, int w, int h, uint32_t seed) {
 
     scatter_forest(m, &rng, w * h / 900);
     scatter_undergrowth(m, &rng, w * h / 220);
-    scatter_windfall(m, &rng, w * h / 260);
+    scatter_windfall(m, &rng, w * h / 90);
 
     const int tw = 34, th = 26;
     const int tx = gg_clampi(w / 2 - tw / 2, 2, w - tw - 2);

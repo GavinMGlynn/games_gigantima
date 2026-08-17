@@ -16,6 +16,7 @@
 #include "core/gg_save.h"
 #include "core/gg_dialogue.h"
 #include "core/gg_combat.h"
+#include "core/gg_magic.h"
 #include "ui/gg_menu.h"
 #include "ui/gg_screens.h"
 #include "platform/gg_settings.h"
@@ -3586,6 +3587,359 @@ static void the_avatar_dying_ends_the_game_rather_than_the_world(void) {
 }
 
 // ---------------------------------------------------------------------------
+// Magic
+// ---------------------------------------------------------------------------
+static const char *write_spells(const char *text) {
+    const char *path = gg_pref_file("test_spells.txt");
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    CHECK(io != nullptr, "could not write a spell file");
+    if (io) {
+        const size_t n = SDL_strlen(text);
+        CHECK(SDL_WriteIO(io, text, n) == n, "short write on the spell file");
+        SDL_CloseIO(io);
+    }
+    return path;
+}
+
+// The plan's own verification: a spell defined entirely in a data file, cast,
+// with its effect and its reagent cost both observable.
+static void a_spell_from_a_file_costs_reagents_and_does_what_it_says(void) {
+    const char *path = write_spells(
+        "rune MANI life\n"
+        "spell MANI\n"
+        "  name Heal\n"
+        "  circle 1\n"
+        "  costs GINSENG 2\n"
+        "  effect heal 10\n"
+        "  say Thy hurts close over.\n");
+    CHECK(gg_magic_load(path), "the spell file did not load");
+    CHECK(gg_magic_spells() == 1, "expected one spell, got %d", gg_magic_spells());
+    CHECK(gg_magic_runes() == 1, "expected one rune, got %d", gg_magic_runes());
+
+    gg_game g;
+    CHECK(gg_game_new(&g, 41, "Mage"), "new game failed");
+    gg_player(&g)->hp = 5;
+
+    // Not known: the rune has not been learned, so the words cannot be spoken
+    // however plainly they are written in the file.
+    CHECK(!gg_knows(&g, "MANI"), "a new game already knows MANI");
+    CHECK(!gg_spell_known(&g, 0), "an unlearned spell counts as known");
+    CHECK(!gg_cast(&g, 0), "an unlearned spell was cast");
+    CHECK(gg_player_const(&g)->hp == 5, "an unlearned spell healed anyway");
+
+    // Known, but unaffordable. Both halves of the price are checked, and the
+    // reagents must not be spent when the spell does not go off.
+    gg_learn(&g, "MANI");
+    CHECK(gg_spell_known(&g, 0), "the rune was learned but the spell is not known");
+    CHECK(!gg_spell_afford(&g, 0), "afforded a spell with no reagents at all");
+    CHECK(!gg_cast(&g, 0), "a spell was cast with nothing to pay for it");
+    CHECK(gg_player_const(&g)->hp == 5, "an unpaid spell healed anyway");
+
+    // One root is not two.
+    CHECK(gg_pack_add(&g, GG_ITEM_GINSENG, 1) == 1, "could not take ginseng");
+    CHECK(!gg_spell_afford(&g, 0), "one root paid for a spell that wants two");
+    CHECK(!gg_cast(&g, 0), "a spell went off half paid");
+    CHECK(gg_pack_count(&g, GG_ITEM_GINSENG) == 1,
+          "a refused spell spent the reagents anyway");
+
+    // Now it works, and both the effect and the price are visible.
+    CHECK(gg_pack_add(&g, GG_ITEM_GINSENG, 1) == 1, "could not take more ginseng");
+    const int before_hp = gg_player_const(&g)->hp;
+    const int before_reagents = gg_pack_count(&g, GG_ITEM_GINSENG);
+    CHECK(before_reagents == 2, "expected two roots, have %d", before_reagents);
+
+    CHECK(gg_cast(&g, 0), "the spell would not be cast");
+    CHECK(gg_player_const(&g)->hp == before_hp + 10,
+          "healing took health from %d to %d, expected %d", before_hp,
+          gg_player_const(&g)->hp, before_hp + 10);
+    CHECK(gg_pack_count(&g, GG_ITEM_GINSENG) == 0,
+          "casting left %d roots, expected none",
+          gg_pack_count(&g, GG_ITEM_GINSENG));
+
+    gg_game_free(&g);
+    gg_magic_clear();
+    SDL_RemovePath(path);
+}
+
+// The runic system: a spell is castable when its *words* are, and a phrase of
+// two runes needs both.
+static void a_phrase_needs_every_rune_in_it(void) {
+    const char *path = write_spells(
+        "rune VAS great\n"
+        "rune MANI life\n"
+        "spell MANI\n"
+        "  name Heal\n"
+        "  circle 1\n"
+        "  costs GINSENG 1\n"
+        "  effect heal 5\n"
+        "spell VAS MANI\n"
+        "  name Great Heal\n"
+        "  circle 1\n"
+        "  costs GINSENG 1\n"
+        "  effect heal 20\n");
+    CHECK(gg_magic_load(path), "the spell file did not load");
+
+    gg_game g;
+    CHECK(gg_game_new(&g, 42, "Runes"), "new game failed");
+
+    gg_learn(&g, "MANI");
+    CHECK(gg_spell_known(&g, 0), "MANI alone does not cast MANI");
+    CHECK(!gg_spell_known(&g, 1), "VAS MANI was castable without VAS");
+
+    gg_learn(&g, "VAS");
+    CHECK(gg_spell_known(&g, 1), "both runes known but the phrase is not");
+
+    // The book lists what is known and nothing else, so a player is never
+    // shown a spell they cannot speak.
+    gg_game h;
+    CHECK(gg_game_new(&h, 42, "Empty"), "second new game failed");
+    CHECK(gg_spell_next(&h, 0, 1) < 0,
+          "the book offered a spell to somebody who knows no runes");
+    gg_learn(&h, "MANI");
+    CHECK(gg_spell_next(&h, 0, 1) == 0, "the book did not offer the known spell");
+
+    gg_game_free(&h);
+    gg_game_free(&g);
+    gg_magic_clear();
+    SDL_RemovePath(path);
+}
+
+static void a_spell_of_light_lasts_its_turns_and_then_goes_out(void) {
+    const char *path = write_spells(
+        "rune IN create\n"
+        "rune LOR light\n"
+        "spell IN LOR\n"
+        "  name Light\n"
+        "  circle 1\n"
+        "  costs ASH 1\n"
+        "  effect light 6 turns 5\n");
+    CHECK(gg_magic_load(path), "the spell file did not load");
+
+    gg_game g;
+    CHECK(gg_game_new(&g, 43, "Lamp"), "new game failed");
+    // Nothing in hand, so the only light is the one that gets cast.
+    g.packn = 0;
+    for (int s = 0; s < GG_SLOT_COUNT; s++) g.equipped[s] = -1;
+    gg_learn(&g, "IN");
+    gg_learn(&g, "LOR");
+    gg_pack_add(&g, GG_ITEM_ASH, 1);
+
+    CHECK(gg_light_radius(&g) == 1, "empty hands already light six tiles");
+    CHECK(gg_cast(&g, 0), "the light would not be cast");
+    CHECK(gg_light_radius(&g) == 6, "the spell lit %d tiles, expected 6",
+          gg_light_radius(&g));
+
+    // It burns down by the turn and then stops being the brightest thing.
+    for (int i = 0; i < 4; i++) gg_game_act(&g, GG_ACT_WAIT);
+    CHECK(gg_light_radius(&g) == 6, "the light went out early");
+    gg_game_act(&g, GG_ACT_WAIT);
+    CHECK(gg_light_radius(&g) == 1, "the light outlasted its turns");
+
+    // And a torch in hand is not put out when a spell lapses.
+    gg_pack_add(&g, GG_ITEM_ASH, 1);
+    gg_pack_add(&g, GG_ITEM_TORCH, 1);
+    g.pack_cursor = gg_pack_find(&g, GG_ITEM_TORCH);
+    g.mode = GG_MODE_PACK;
+    gg_game_act(&g, GG_ACT_EQUIP);
+    g.mode = GG_MODE_PLAY;
+    const int torch = GG_ITEM[GG_ITEM_TORCH].light;
+    CHECK(gg_light_radius(&g) == torch, "the torch is not lighting anything");
+
+    CHECK(gg_cast(&g, 0), "the light would not be cast a second time");
+    CHECK(gg_light_radius(&g) == 6, "the spell did not outshine the torch");
+    for (int i = 0; i < 6; i++) gg_game_act(&g, GG_ACT_WAIT);
+    CHECK(gg_light_radius(&g) == torch,
+          "the spell lapsing put the torch out too (%d)", gg_light_radius(&g));
+
+    gg_game_free(&g);
+    gg_magic_clear();
+    SDL_RemovePath(path);
+}
+
+static void a_bolt_needs_something_to_aim_at_and_spends_nothing_without_one(void) {
+    const char *path = write_spells(
+        "rune IN create\n"
+        "rune FLAM flame\n"
+        "spell IN FLAM\n"
+        "  name Fire Bolt\n"
+        "  circle 1\n"
+        "  costs ASH 1\n"
+        "  effect harm 6 reach 4\n");
+    CHECK(gg_magic_load(path), "the spell file did not load");
+
+    gg_game g;
+    int cx = 0, cy = 0;
+    CHECK(set_up_encounter(&g, 44, &cx, &cy), "setup failed");
+    gg_learn(&g, "IN");
+    gg_learn(&g, "FLAM");
+    gg_pack_add(&g, GG_ITEM_ASH, 3);
+
+    // Nothing to aim at: refused, and nothing spent.
+    const int had = gg_pack_count(&g, GG_ITEM_ASH);
+    CHECK(!gg_cast(&g, 0), "a bolt was cast at nothing");
+    CHECK(gg_pack_count(&g, GG_ITEM_ASH) == had,
+          "a bolt with no target still burned the ash");
+
+    // Out of reach is the same answer.
+    const int far_foe = gg_spawn_foe(&g, GG_ACTOR_BRIGAND, cx + 7, cy);
+    CHECK(far_foe >= 0, "no distant brigand");
+    g.actor[far_foe].hp = g.actor[far_foe].hp_max = 90;
+    CHECK(!gg_cast(&g, 0), "a bolt reached further than it says it does");
+    CHECK(gg_pack_count(&g, GG_ITEM_ASH) == had, "a refused bolt spent ash");
+
+    // In reach: it lands, and it costs.
+    const int near_foe = gg_spawn_foe(&g, GG_ACTOR_BRIGAND, cx + 3, cy);
+    CHECK(near_foe >= 0, "no near brigand");
+    g.actor[near_foe].hp = g.actor[near_foe].hp_max = 90;
+
+    const int before = g.actor[near_foe].hp;
+    CHECK(gg_cast(&g, 0), "the bolt would not be cast");
+    CHECK(g.actor[near_foe].hp == before - 6,
+          "the bolt took %d, expected 6", before - g.actor[near_foe].hp);
+    CHECK(gg_pack_count(&g, GG_ITEM_ASH) == had - 1, "the bolt cost no ash");
+
+    gg_game_free(&g);
+    gg_magic_clear();
+    SDL_RemovePath(path);
+}
+
+// A spell file that does not parse must load nothing at all, the same rule the
+// dialogue book follows and for the same reason.
+static void a_spell_file_that_does_not_parse_loads_nothing(void) {
+    static const char *const BAD[] = {
+        "spell MANI\n  name Heal\n",                       // rune never declared
+        "rune MANI life\nname Heal\n",                     // before any spell
+        "rune MANI life\nspell MANI\n  circle 1\n"
+            "  effect heal 4\n",                           // no name
+        "rune MANI life\nspell MANI\n  name Heal\n",       // does nothing
+        "rune MANI life\nspell MANI\n  name Heal\n"
+            "  effect heal 0\n",                           // does nothing, loudly
+        "rune MANI life\nspell MANI\n  name Heal\n"
+            "  effect wibble 4\n",                         // no such effect
+        "rune IN create\nspell IN\n  name Light\n"
+            "  effect light 4\n",                          // a light with no time
+        "rune IN create\nspell IN\n  name Bolt\n"
+            "  effect harm 4\n",                           // harm with no reach
+        "rune MANI life\nspell MANI\n  name Heal\n"
+            "  costs UNOBTAINIUM 1\n  effect heal 4\n",    // no such reagent
+        "rune MANI life\nspell MANI\n  name Heal\n"
+            "  circle 99\n  effect heal 4\n",              // no such circle
+    };
+    for (size_t i = 0; i < GG_COUNTOF(BAD); i++) {
+        const char *path = write_spells(BAD[i]);
+        CHECK(!gg_magic_load(path), "bad spell file %zu loaded anyway", i);
+        CHECK(gg_magic_spells() == 0,
+              "bad spell file %zu left %d spells behind", i, gg_magic_spells());
+        SDL_RemovePath(path);
+    }
+    CHECK(!gg_magic_load(gg_pref_file("test_no_such_spells.txt")),
+          "a missing spell file reported success");
+}
+
+// The shipped book, and the runes that unlock it: every rune a spell needs has
+// to be one somebody in the vale will actually teach, or the spell is written
+// for nobody.
+static void every_spell_in_the_vale_can_be_learned_from_somebody(void) {
+    CHECK(gg_dialogue_load(gg_asset_path("dialogue.txt")), "no dialogue");
+    CHECK(gg_magic_load(gg_asset_path("spells.txt")), "no spells");
+    CHECK(gg_magic_spells() > 0, "the vale has no spells");
+
+    // Collect every word anybody teaches, plus the two everyone starts with.
+    char taught[GG_KNOWN_MAX][GG_WORD_MAX];
+    int n = 0;
+    SDL_strlcpy(taught[n++], GG_WORD_NAME, GG_WORD_MAX);
+    SDL_strlcpy(taught[n++], GG_WORD_JOB, GG_WORD_MAX);
+
+    static const char *const WHO[] = {
+        "Iolo", "Shamino", "Nell", "Dupre", "Katrina", "Nystul", "Gwenno",
+        "Chuckles",
+    };
+    for (size_t w = 0; w < GG_COUNTOF(WHO); w++) {
+        const gg_speaker *s = gg_dialogue_find(WHO[w]);
+        if (!s) continue;
+        for (int t = 0; t < s->topics; t++) {
+            if (!s->topic[t].teach[0]) continue;
+            bool have = false;
+            for (int i = 0; i < n; i++)
+                if (SDL_strcasecmp(taught[i], s->topic[t].teach) == 0) have = true;
+            if (!have && n < GG_KNOWN_MAX)
+                SDL_strlcpy(taught[n++], s->topic[t].teach, GG_WORD_MAX);
+        }
+    }
+
+    for (int i = 0; i < gg_magic_spells(); i++) {
+        const gg_spell *sp = gg_magic_spell(i);
+        for (int r = 0; r < sp->runes; r++) {
+            bool teachable = false;
+            for (int k = 0; k < n; k++)
+                if (SDL_strcasecmp(taught[k], sp->rune[r]) == 0) teachable = true;
+            CHECK(teachable,
+                  "'%s' needs the rune %s, which nobody in the vale teaches",
+                  sp->name, sp->rune[r]);
+        }
+        // And every reagent it wants has to be a thing that exists to be found.
+        for (int k = 0; k < sp->reagents; k++)
+            CHECK(sp->reagent[k] < GG_ITEM_COUNT,
+                  "'%s' wants a reagent that is not an item", sp->name);
+    }
+
+    // Every rune declared should mean something and be used by some spell -
+    // a rune nobody casts with is a word taught for nothing.
+    for (int r = 0; r < gg_magic_runes(); r++) {
+        const gg_rune *ru = gg_magic_rune(r);
+        CHECK(ru->meaning[0] != '\0', "the rune %s means nothing", ru->word);
+        bool used = false;
+        for (int i = 0; i < gg_magic_spells() && !used; i++) {
+            const gg_spell *sp = gg_magic_spell(i);
+            for (int k = 0; k < sp->runes; k++)
+                if (SDL_strcasecmp(sp->rune[k], ru->word) == 0) used = true;
+        }
+        CHECK(used, "the rune %s is in no spell at all", ru->word);
+    }
+
+    gg_magic_clear();
+    gg_dialogue_clear();
+}
+
+static void a_spell_of_light_survives_a_save(void) {
+    const char *who = "Lightbearer";
+    wipe_saves(who);
+
+    const char *path = write_spells(
+        "rune IN create\nrune LOR light\n"
+        "spell IN LOR\n  name Light\n  circle 1\n  costs ASH 1\n"
+        "  effect light 6 turns 40\n");
+    CHECK(gg_magic_load(path), "the spell file did not load");
+
+    gg_game a;
+    CHECK(gg_game_new(&a, 45, who), "new game failed");
+    a.packn = 0;
+    for (int s = 0; s < GG_SLOT_COUNT; s++) a.equipped[s] = -1;
+    gg_learn(&a, "IN");
+    gg_learn(&a, "LOR");
+    gg_pack_add(&a, GG_ITEM_ASH, 1);
+    CHECK(gg_cast(&a, 0), "the light would not be cast");
+    CHECK(a.light_turns > 0, "the light is not burning");
+
+    CHECK(gg_save_write(&a, save_base(), who), "save failed");
+    gg_game b;
+    SDL_zero(b);
+    CHECK(gg_save_read(&b, save_base(), who), "load failed");
+
+    CHECK(b.light_turns == a.light_turns, "the light came back with %d turns, "
+          "expected %d", b.light_turns, a.light_turns);
+    CHECK(gg_light_radius(&b) == gg_light_radius(&a),
+          "the resumed game is lit differently");
+    CHECK(gg_knows(&b, "LOR"), "the runes were forgotten");
+
+    gg_game_free(&b);
+    gg_game_free(&a);
+    gg_magic_clear();
+    SDL_RemovePath(path);
+    wipe_saves(who);
+}
+
+// ---------------------------------------------------------------------------
 // Content tables
 // ---------------------------------------------------------------------------
 static void every_terrain_and_item_has_a_name(void) {
@@ -3757,6 +4111,14 @@ int main(void) {
     RUN(what_falls_leaves_what_it_carried);
     RUN(a_townsperson_is_never_caught_in_a_fight);
     RUN(the_avatar_dying_ends_the_game_rather_than_the_world);
+
+    RUN(a_spell_from_a_file_costs_reagents_and_does_what_it_says);
+    RUN(a_phrase_needs_every_rune_in_it);
+    RUN(a_spell_of_light_lasts_its_turns_and_then_goes_out);
+    RUN(a_bolt_needs_something_to_aim_at_and_spends_nothing_without_one);
+    RUN(a_spell_file_that_does_not_parse_loads_nothing);
+    RUN(every_spell_in_the_vale_can_be_learned_from_somebody);
+    RUN(a_spell_of_light_survives_a_save);
 
     RUN(every_terrain_and_item_has_a_name);
     RUN(every_prop_has_a_plausible_footprint);

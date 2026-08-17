@@ -9,8 +9,8 @@ An Ultima VI-style seamless-world RPG in C23 and SDL3.
 > and terrain, a town of houses you can walk into, townsfolk who path around the
 > buildings to keep daily schedules, a world clock with lit rooms at night, and
 > things you can pick up, carry, eat and set down again, companions who walk
-> with you and brigands who do not. There is no story, no magic, no sound and no
-> editor yet. `docs/PROJECT_STATUS.md` is the single source of truth for what
+> with you, brigands who do not, and a magic you cast by learning the words for
+> it. There is no story, no sound and no editor yet. `docs/PROJECT_STATUS.md` is the single source of truth for what
 > works; `docs/COMPLETION_PLAN.md` is the road to the rest. Nothing here claims
 > more than it has earned.
 
@@ -80,6 +80,7 @@ by being the thing CI actually runs.
 | `T` | talk to whoever you face, and ask about the word under the cursor |
 | `L` | look at what you stand on |
 | `O` | open |
+| `C` | open the book of spells |
 | `F` | strike what thou facest, or throw a readied stone |
 | `G` | take what is underfoot |
 | `I` | what thou carriest |
@@ -92,7 +93,7 @@ by being the thing CI actually runs.
 
 A gamepad works for all of it, hot-plugged, with the sticks and the d-pad both
 driving movement: **A** talks, **B** waits, **X** looks, **Y** opens, **Back**
-opens the pack, **RB** strikes, and **Start** pauses. Inside the pack those same four face
+opens the pack, **LB** the spell book, **RB** strikes, and **Start** pauses. Inside the pack those same four face
 buttons carry the pack's verbs instead — **A** uses, **Y** readies, **X** sets
 down, **B** closes.
 
@@ -124,6 +125,12 @@ single file, stepping where you stepped so the line files through a doorway one
 at a time. Walk into one and you swap places rather than talk. The same word
 that asked them along sends them home.
 
+Magic is a **language**. A spell is a phrase — `IN LOR`, `VAS MANI` — and you can
+cast it when you know the runes it is made of, which are words in the same
+vocabulary the conversations use: ask Nystul about the RUNES. Reagents are
+ordinary things you carry, and they grow where they would grow — ginseng under
+trees, ash at the foot of the cliffs. It is all in `assets/spells.txt`.
+
 Conversation is a **vocabulary, not a dialogue tree**. Everyone starts knowing
 two words, NAME and JOB; a topic can be asked when you know one of its words,
 and answers hand over words you did not have. So a rumour heard from the
@@ -151,7 +158,7 @@ window, writes a single frame and exits, which is how CI checks that the game
 can still find and draw its own art — it photographs whatever the other flags
 select, so `--shot` alone gets the title screen and `--debug --shot` gets the
 debug view; `--screen NAME` opens a named page — `title`, `profiles`, `name`,
-`options`, `play`, `pause`, `pack`, `talk`, `party` or `fight` — so each one can be photographed in turn.
+`options`, `play`, `pause`, `pack`, `talk`, `party`, `fight` or `spells` — so each one can be photographed in turn.
 `--at X,Y` and `--time HH:MM` put the avatar somewhere specific at a specific
 hour, because verifying a change to how water is drawn means getting to water,
 and checking that a lit room differs from the street at night means getting to
@@ -169,7 +176,7 @@ src/platform/   asset and save paths, keyboard and gamepad
 src/debug/      the debug window
 src/frontend/   main.c per executable
 tools/          the art baker and the sheet-scanning tool it was built with
-assets/         the atlases, and dialogue.txt - what people say
+assets/         the atlases, dialogue.txt and spells.txt - the content
 ext/            pinned submodules — see ext/README.md
 docs/           the completion plan and the project status
 ```

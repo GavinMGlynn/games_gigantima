@@ -16,11 +16,12 @@
 #define GG_SAVE_MAGIC   "GGSAVE\0\0"
 // Version 4. Each version so far has moved something that was nowhere into the
 // file: the pack, then the words learned, then each actor's stats and who walks
-// with you, and now what each of them fights with and what they leave behind.
+// with you, then what each of them fights with and what they leave behind, and
+// now any light the Avatar has conjured and how long it has left.
 // There is no migration between any of them - guessing at a section that was
 // never written would resume somebody into a world that is not the one they
 // left, and every version so far has existed for days rather than years.
-#define GG_SAVE_VERSION 4
+#define GG_SAVE_VERSION 5
 
 #define GG_PROFILE_NAME_MAX 32
 #define GG_PROFILES_MAX     64
