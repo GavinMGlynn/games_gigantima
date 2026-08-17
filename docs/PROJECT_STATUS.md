@@ -11,19 +11,31 @@ buried in a later clause. See `CLAUDE.md`.
 
 ## In one line
 
-An engine with most of a game in it. From a title screen you start or resume a
-named journey; walk a generated continent; go inside a town's houses; pick up
-what people have left lying about and eat it, carry it or set it down; ask the
-eight townsfolk what they know and collect the words that unlock what the rest
-of them know; take two of them along, walking in single file behind you; learn
-the runes that make a spell and gather the herbs that pay for it; and find out
-what the brigands in the hills make of all that. Hold a torch and it lights the
-room, and the world has a voice - footfalls, blows, and a tune that follows the
-region and the hour. Every page works from a gamepad alone, naming included.
+A game, with an engine under it. From a title screen you start or resume a named
+journey; walk the vale or a generated continent; go inside a town's houses; pick
+up what people have left lying about and eat it, carry it or set it down; ask the
+eight townsfolk what they know and collect the words that unlock what the rest of
+them know; take two of them along, walking in single file behind you; learn the
+runes that make a spell and gather the herbs that pay for it; and find out what
+the brigands in the hills make of all that. Hold a torch and it lights the room,
+and the world has a voice - footfalls, blows, and a tune that follows the region
+and the hour.
 
-**There is no story worth the name.** The machine for one works and four small
-quests run on it, but they are a demonstration rather than a plot. That is the
-one thing still keeping this an engine.
+**And there is a story to finish.** A caravan out of the north never arrived; the
+vale tells you why one person at a time, arms whoever asks, and sends you up a
+road with brigands on it to a ring of standing stones. Bring the silver home and
+the game says so and ends. It is playable start to finish, and the game plays it
+through itself on every CI run.
+
+Every page and every verb works from a gamepad alone, naming included; the text
+can be doubled in size; every key can be moved; a session can be recorded and
+played back to the same world to the bit; and it packages for Linux, Windows and
+macOS as something a person downloads and runs.
+
+**What is missing is more of it**, rather than a part that does not work: one
+storyline and three small quests, three kinds of creature and a fourth that ends
+the story, two maps, and no levelling. See the table of known gaps at the bottom
+- everything in it is a thing not built yet rather than a thing half built.
 
 ---
 
@@ -1298,18 +1310,23 @@ carry the version and the platform, because four artifacts called
 Binaries are stripped: the debug info was two thirds of the download, and a bug
 report here is a seed, a turn count and a replay file rather than a stack trace.
 
-**What is finished and what is not.** The Linux tarball is done and checked. The
-Windows installer and the macOS bundles are configured, and their jobs written,
-and **neither has ever been built** — there is no runner for either here. Until
-`.github/workflows/package.yml` has run, that half of the item is a plan.
+**The installer is run, not merely built.** `find_program(makensis)` came back
+empty on the Windows runner — which has NSIS and does not put it on the PATH —
+so the first packaging run produced a zip, no installer, and reported success.
+The job now makes sure NSIS is there, checks both files exist rather than
+trusting that they do, installs the result silently into `C:\Gigantima`, and
+plays the game out of where it installed itself. "An installer was produced" and
+"an installer installs a game that runs" are different claims.
 
-*Verification: the Linux package built with `cpack`, unpacked into a directory
-with no source tree in it, and played from `/` with `GIGANTIMA_ASSETS` unset —
-40 turns of a generated world, and the whole storyline through `--screen
-ending`, and the editor opening a shipped map. 5.1 MB packed, 9.1 MB unpacked,
-and four shared libraries: libc, libm, the loader and the vDSO. The same
-unpack-and-play check is what the packaging job runs on each platform, which is
-what makes "runs on a clean machine" a thing CI says rather than a hope.*
+*Verification: `.github/workflows/package.yml` builds all three and, on each
+platform, unpacks its own package somewhere else and plays forty turns from
+there with the source tree out of reach and `GIGANTIMA_ASSETS` unset — and on
+Windows also from the installed copy. Artifacts: a 6.0 MB Linux tarball, a 4.9
+MB Windows zip beside a 4.1 MB NSIS 3.12 installer, and a 7.5 MB macOS disk
+image of two arm64 `.app` bundles; all five checked against their SHA-256s. The
+Linux one was also unpacked here and played from `/` — 40 turns of a generated
+world, the whole storyline through `--screen ending`, and the editor opening a
+shipped map, on four shared libraries: libc, libm, the loader and the vDSO.*
 
 ### Replay
 

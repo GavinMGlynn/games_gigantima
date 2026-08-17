@@ -244,14 +244,17 @@ that is reachable while content is C, so the editor comes before the content.
       fight — recorded in the real game and replayed to an identical state hash,
       as a CI smoke test. Checked by removing one action from a recording and by
       changing its seed, both of which come back as a divergence.*
-- [ ] **Packaging** per platform. **The Windows installer and the macOS bundles
-      have been configured and never built** — there is no runner here for
-      either, and until CI has produced them this item is not done. The Linux
-      tarball is finished: `cpack` builds it, it holds both executables, the art
-      and the licence, and it plays from wherever it is unpacked.
-      *Verification: a package unpacked somewhere else and played from there
-      with the source tree out of reach — done for Linux, awaiting a CI run for
-      Windows and macOS.*
+- [x] **Packaging** per platform: a tarball on Linux, a zip *and* an NSIS
+      installer on Windows, and a disk image of two `.app` bundles on macOS —
+      each holding both executables, the art and the licence, and each working
+      from wherever it is put with no install step and nothing set in the
+      environment.
+      *Verification: CI builds all three and, on each platform, unpacks its own
+      package somewhere else and plays forty turns from there with the source
+      tree out of reach. The Windows installer is then run silently and the
+      game played out of where it installed itself, because "an installer was
+      produced" and "an installer installs a game that runs" are different
+      claims. Artifacts checked against their SHA-256s.*
 - [x] **Controller-only playability.** Every verb the game has is reachable
       with a pad: the face buttons and shoulders carry the world's, the pack
       gives three of them its own meanings while it is open, and the two
