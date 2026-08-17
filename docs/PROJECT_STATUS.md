@@ -466,6 +466,19 @@ themselves; the LPC sheets are 3×3 blob rings, so a plausible-looking pick
 lands on a tile with a hole or an edge baked in, which is invisible in one tile
 and glaring in a field.
 
+Object picks are measured too, and the bar was raised after it let something
+through. The baker used to require only that a prop's anchor cell was "not
+entirely transparent" — and `TORCH_WALL` passed that with **nine texels**, the
+tip of a flame whose shaft and bracket sit on the row below. It baked, shipped
+and was invisible. The check is now a coverage one: the anchor cell must be at
+least 5% drawn. Every real prop clears 10% (cattails are the sparsest), so the
+threshold accuses nothing genuine while a speck cannot pass.
+
+The two generated tables are also checked against each other at run time —
+`a_props_atlas_rect_matches_the_size_it_declares` — because a prop's geometry
+lands in `gg_ids.c` and its atlas rectangle in `gg_atlas.h`, and a stale pair on
+disk would draw a sprite at the wrong size with nothing complaining.
+
 Attribution is generated, not transcribed: `assets/CREDITS.md` reproduces the
 `Credits.txt` of every source directory the bake drew from, so it cannot drift
 from the art it describes. That is a licence condition of OGA-BY, not

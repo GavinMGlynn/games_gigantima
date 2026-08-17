@@ -206,7 +206,11 @@ PROPS = [
     # Things that give light. The radius is the whole of it - see gg_render.c
     # for how an emitter reaches only cells on its own side of a wall.
     prop("LAMP",         f"{SMALL}/Lighting, Table.png", 0, 0, 1, 2, light=4),
-    prop("TORCH_WALL",   f"{WALLITEM}/Lighting, Wall.png", 2, 0, 1, 1, light=4),
+    # Two tiles tall, like the lamp: the torch's shaft and bracket are on the
+    # lower row and only the tip of its flame licks up into the upper one.
+    # Taking the upper row alone - which this did - bakes nine texels of flame
+    # tip and nothing else, and the check below now refuses that.
+    prop("TORCH_WALL",   f"{WALLITEM}/Lighting, Wall.png", 2, 0, 1, 2, light=4),
     prop("CAMPFIRE",     f"{SMALL}/Fire, Camp.png", 1, 1, 1, 1, light=5),
 
     prop("HOUSE_BRICK_A",  f"{HOUSES}/Brick House A.png",   0, 0, 8, 7,
@@ -623,13 +627,20 @@ def build_props():
         anchor_x = fx + (fw - 1) // 2
         anchor_y = fy + fh - 1
 
-        # The anchor cell must actually have something drawn on it, or the
-        # sprite is hanging off its own footprint.
+        # The anchor cell must have a real amount drawn on it, not merely a
+        # texel. "Not entirely transparent" was the old test, and TORCH_WALL
+        # passed it with nine texels of flame tip - 0.9% of the cell - so the
+        # torch was baked, shipped and invisible. Every genuine prop clears 10%
+        # (cattails are the sparsest), so the bar sits at 5%: low enough to
+        # accuse nothing real, high enough that a speck cannot pass.
         cell = img.crop((anchor_x * TILE, anchor_y * TILE,
                          (anchor_x + 1) * TILE, (anchor_y + 1) * TILE))
-        if not cell.getchannel("A").getextrema()[1]:
-            sys.exit(f"prop {name}: nothing is drawn at the anchor cell "
-                     f"({anchor_x},{anchor_y}) - the footprint is misplaced")
+        drawn = sum(1 for a in cell.getchannel("A").get_flattened_data() if a > 16)
+        percent = 100 * drawn // (TILE * TILE)
+        if percent < 5:
+            sys.exit(f"prop {name}: only {percent}% of the anchor cell "
+                     f"({anchor_x},{anchor_y}) is drawn - the pick or the "
+                     f"footprint is wrong")
 
         x, y, w, h = packer.add(name, img)
         entries.append((name, x, y, w, h, wt, ht, anchor_x, anchor_y,

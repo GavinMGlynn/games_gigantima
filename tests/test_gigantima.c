@@ -2224,6 +2224,26 @@ static void every_prop_has_a_plausible_footprint(void) {
     }
 }
 
+// The baker writes a prop's geometry into gg_ids.c and its atlas rectangle into
+// gg_atlas.h, and nothing until now checked that the two agreed. They are
+// generated in the same pass from the same declaration, so a disagreement means
+// the pair on disk came from different runs - a stale generated file, which is
+// exactly the failure that leaves a sprite drawn at the wrong size.
+static void a_props_atlas_rect_matches_the_size_it_declares(void) {
+    for (int i = 0; i < GG_PROP_COUNT; i++) {
+        const gg_prop_size *s = &GG_PROP_SIZE[i];
+        const gg_rect *r = &GG_PROP_RECT[i];
+
+        CHECK(r->w == s->tiles_w * GG_TILE,
+              "prop %d is %u tiles wide but its atlas rect is %d px",
+              i, s->tiles_w, r->w);
+        CHECK(r->h == s->tiles_h * GG_TILE,
+              "prop %d is %u tiles tall but its atlas rect is %d px",
+              i, s->tiles_h, r->h);
+        CHECK(r->x >= 0 && r->y >= 0, "prop %d has a negative atlas origin", i);
+    }
+}
+
 // ---------------------------------------------------------------------------
 int main(void) {
     // The simulation must not need video; prove it by never initialising it.
@@ -2321,6 +2341,7 @@ int main(void) {
 
     RUN(every_terrain_and_item_has_a_name);
     RUN(every_prop_has_a_plausible_footprint);
+    RUN(a_props_atlas_rect_matches_the_size_it_declares);
 
     SDL_Log("%s", "");
     SDL_Log("%d checks, %d failures", g_checks, g_failures);

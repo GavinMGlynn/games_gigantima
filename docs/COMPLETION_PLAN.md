@@ -195,3 +195,12 @@ Recorded here as they turn up, so they are not rediscovered:
 - Options was reachable from the title *and* from the pause menu, and backed out
   to the title from both — dropping a player out of a game with unsaved turns
   behind them. **A screen with two ways in needs to remember which one it was.**
+- The warning sets have to agree across compilers. GCC and Clang were passed
+  `-Wno-unused-parameter` while MSVC's `/W4 /WX` makes the same thing fatal, so
+  a dead parameter built clean on every developer machine and failed only in CI,
+  on the one platform nobody builds locally. **A warning enabled on one compiler
+  and suppressed on another is a remote lint nobody can run.**
+- "Not entirely transparent" is not a measurement. The wall torch passed the
+  baker's art check with nine texels — the tip of a flame, the rest of the torch
+  being on the row below — and baked to an invisible sprite. **A check on art
+  has to be a coverage figure, not a yes/no.**
