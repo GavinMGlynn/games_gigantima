@@ -228,7 +228,7 @@ static int keys_rows(const gg_screens *s) {
     return rest < KEYS_PER_PAGE ? rest : KEYS_PER_PAGE;
 }
 
-bool gg_screens_bind(gg_screens *s, gg_settings *set, int scancode) {
+bool gg_screens_bind(gg_screens *s, gg_settings *set, SDL_Scancode scancode) {
     if (s->id != GG_SCREEN_KEYS || s->binding < 0) return false;
 
     const gg_action a = BINDABLE[s->binding];

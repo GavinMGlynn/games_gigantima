@@ -302,6 +302,41 @@ jobs:
       - name: Unit tests
         run: ctest --test-dir build --output-on-failure
 
+  # Clang, on Linux, where it costs two minutes rather than a macOS runner.
+  #
+  # GCC and Clang do not warn about the same things: an implicit conversion
+  # that changes signedness is fatal under Clang's -Wsign-conversion and
+  # invisible under GCC's, so a clean build here used to mean nothing until the
+  # macOS job said otherwise, at the far end of the matrix. The same lesson as
+  # the MSVC one in COMPLETION_PLAN.md: a warning that fires on one compiler
+  # and not another is a lint somebody has to be able to run.
+  clang:
+    name: Linux x86_64 (Clang)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with: { submodules: false }
+      - name: Checkout build submodules
+        run: git submodule update --init --depth 1 $CI_SUBMODULES
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang ninja-build \
+            libx11-dev libxext-dev libxrandr-dev libxi-dev libxcursor-dev \
+            libxfixes-dev libxss-dev libxtst-dev libxkbcommon-dev libdecor-0-dev \
+            libwayland-dev wayland-protocols \
+            libgl-dev libegl-dev libpulse-dev libasound2-dev \
+            libdbus-1-dev libudev-dev libusb-1.0-0-dev
+
+      - name: Configure
+        run: cmake -B build -G Ninja -DCMAKE_C_COMPILER=clang
+                   -DCMAKE_BUILD_TYPE=RelWithDebInfo -DGIGANTIMA_WERROR=ON
+      - name: Build
+        run: cmake --build build -j
+      - name: Unit tests
+        run: ctest --test-dir build --output-on-failure
+
   windows:
     name: Windows x64 (MSVC)
     runs-on: windows-latest

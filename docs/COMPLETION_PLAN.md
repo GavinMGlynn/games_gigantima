@@ -334,3 +334,17 @@ Recorded here as they turn up, so they are not rediscovered:
 - Experience is counted, saved, and spends on nothing: there is no levelling. The
   Avatar is level one at the end of the story as at the start, and what makes the
   fight winnable is what the road hands over rather than what it teaches.
+- **A carriage return is not a keyword.** A Windows checkout converts text files
+  to CRLF, and a blank line in one is a line holding `\r` — which the content
+  parsers read as a keyword and refused the whole file for. Every content file
+  was unreadable on Windows, and the tests only found it when they started
+  loading the shipped content. **Any line-based parser has this bug until it is
+  written not to.**
+- GCC and Clang do not warn about the same things either: an implicit conversion
+  that changes signedness is fatal under Clang and invisible under GCC, so a
+  build that was clean here failed on the macOS runner at the far end of the
+  matrix. There is now a Clang job on Linux, where it costs two minutes.
+- `find_program` with no hints found no NSIS on the Windows runner — which has
+  it, and does not put it on the PATH — so the packaging job quietly produced a
+  zip and no installer and reported success. **A packaging step has to check
+  that the files it promised exist.**

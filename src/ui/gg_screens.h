@@ -96,7 +96,7 @@ void gg_screens_move(gg_screens *s, int dx, int dy);
 // whichever action was chosen and stops waiting. `SDL_SCANCODE_ESCAPE` cancels
 // instead, so a player who changes their mind is not stuck. Returns true if
 // the settings changed, which is when they need writing out again.
-bool gg_screens_bind(gg_screens *s, gg_settings *set, int scancode);
+bool gg_screens_bind(gg_screens *s, gg_settings *set, SDL_Scancode scancode);
 
 // Left or right on a row that holds a value: cycles it. Rows that are not
 // values ignore this, so nudging a stick sideways can never leave a screen or
