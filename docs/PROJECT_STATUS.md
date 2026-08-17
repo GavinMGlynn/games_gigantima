@@ -105,10 +105,14 @@ A failed crossing **changes nothing**. The new map is read before the old one is
 let go, so a way out pointing at a map that is not there leaves the world
 exactly as it was and still playable.
 
-The book's residents belong to a **generated** town. An authored map is the
-whole of who lives in it, including when the answer is nobody — without that
-distinction the first crossing brought eight townsfolk along and stood them on a
-hillside, which is what the screenshot showed.
+**A person in the book lives in a named place.** `home Britain`, and their
+hours are offsets from that place's centre; a map with a region of that name is
+where those offsets mean something and is peopled by them, and a map without one
+has never heard of them. That is what keeps Britain off the hillside at the
+standing stones — the first crossing brought eight townsfolk along and stood them
+there, which is what the screenshot showed — and what keeps it out of the next
+town somebody authors. A map that names somebody itself keeps its own version of
+them: the vale's Iolo stands at his stall, not at an offset from the square.
 
 *Verification: `walking_between_two_maps_takes_everything_with_you` (the plan's
 own, over two maps authored through the editor's own operations, checking the

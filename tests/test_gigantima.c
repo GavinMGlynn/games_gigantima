@@ -4766,6 +4766,7 @@ static void who_lives_in_the_town_comes_out_of_the_book(void) {
     const char *path = write_dialogue(
         "person Wilkin\n"
         "art ELDER\n"
+        "home Britain\n"
         "at 06 -3 -3\n"
         "at 12 3 -3\n"
         "at 18 3 3\n"
@@ -4844,6 +4845,7 @@ static void somebody_who_lives_here_needs_a_day(void) {
     const char *path = write_dialogue(
         "person Idle\n"
         "art GUARD\n"
+        "home Britain\n"
         "greet I have nowhere to be.\n"
         "topic name\n"
         "  say Idle.\n");
@@ -4856,6 +4858,7 @@ static void somebody_who_lives_here_needs_a_day(void) {
     const char *bad = write_dialogue(
         "person Half\n"
         "art GUARD\n"
+        "home Britain\n"
         "at 06 -3\n"
         "greet Half a day.\n"
         "topic name\n"
@@ -5125,6 +5128,63 @@ static void a_quest_file_that_does_not_parse_loads_nothing(void) {
 }
 
 // The shipped story has to be one the vale can actually tell.
+// The vale ships with one person in the map file and seven more in the book,
+// and the story is unwalkable unless all eight are standing in it: Iolo teaches
+// CARAVAN, and it is Shamino, Nell, Nystul and Gwenno who carry it onward.
+static void the_vale_is_peopled_by_the_book(void) {
+    CHECK(gg_dialogue_load(gg_asset_path("dialogue.txt")), "no book");
+
+    gg_game g;
+    CHECK(gg_game_new_from_map(&g, gg_asset_path("maps/vale.ggmap"), "Villager"),
+          "the vale would not open");
+
+    // Everybody the book says lives in Britain is here, once.
+    int residents = 0;
+    for (int i = 0; i < gg_dialogue_speakers(); i++) {
+        const gg_speaker *d = gg_dialogue_speaker(i);
+        if (!d || !d->lives) continue;
+        residents++;
+        int here = 0;
+        for (int k = 0; k < g.actors; k++)
+            if (g.actor[k].active && SDL_strcmp(g.actor[k].name, d->name) == 0) here++;
+        CHECK(here == 1, "the vale holds %d of %s, expected one", here, d->name);
+    }
+    CHECK(residents >= 8, "the book has %d residents, expected the vale's eight",
+          residents);
+
+    // Iolo is the map's own, not the book's copy of him: the map knows where
+    // his stall is and the book only knows how far it is from the square.
+    int iolo = -1;
+    for (int i = 0; i < g.actors; i++)
+        if (SDL_strcmp(g.actor[i].name, "Iolo") == 0) iolo = i;
+    CHECK(iolo > 0, "Iolo is not in the vale");
+    if (iolo > 0)
+        CHECK(g.actor[iolo].x == 42 && g.actor[iolo].y == 44,
+              "Iolo is at %d,%d, not where the map put him",
+              g.actor[iolo].x, g.actor[iolo].y);
+
+    // And they are standing somewhere real, not inside the scenery.
+    for (int i = 0; i < g.actors; i++)
+        if (g.actor[i].active)
+            CHECK(gg_map_walkable(&g.map, g.actor[i].x, g.actor[i].y),
+                  "%s is standing inside something at %d,%d", g.actor[i].name,
+                  g.actor[i].x, g.actor[i].y);
+
+    // The standing stones have no Britain in them and so have none of Britain's
+    // people - the rule that keeps a town from following you over a hill.
+    gg_game s;
+    CHECK(gg_game_new_from_map(&s, gg_asset_path("maps/stones.ggmap"), "Walker"),
+          "the stones would not open");
+    for (int i = 0; i < s.actors; i++)
+        if (i != s.player && s.actor[i].active)
+            CHECK(gg_dialogue_find(s.actor[i].name) == nullptr,
+                  "%s followed the book out to the standing stones",
+                  s.actor[i].name);
+    gg_game_free(&s);
+    gg_game_free(&g);
+    restore_dialogue();
+}
+
 static void the_vale_has_a_story_that_can_be_reached(void) {
     CHECK(gg_dialogue_load(gg_asset_path("dialogue.txt")), "no dialogue");
     CHECK(gg_quests_load(gg_asset_path("quests.txt")), "no quests");
@@ -5850,6 +5910,7 @@ int main(void) {
     RUN(one_quest_can_open_another);
     RUN(killing_things_moves_a_quest_on);
     RUN(a_quest_file_that_does_not_parse_loads_nothing);
+    RUN(the_vale_is_peopled_by_the_book);
     RUN(the_vale_has_a_story_that_can_be_reached);
 
     RUN(walking_between_two_maps_takes_everything_with_you);

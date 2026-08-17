@@ -203,9 +203,7 @@ that is reachable while content is C, so the editor comes before the content.
 - [x] **World of many maps** with linked transitions, while keeping each map
       seamless internally. A map carries ways out — a tile, a map to go to, and
       where to arrive — placed in the editor. The vale and the standing stones
-      ship as two authored maps with a road between them. **A map you leave
-      forgets what you did there**; carrying every visited map is the item
-      below.
+      ship as two authored maps with a road between them.
       *Verification: walking between two authored maps preserves party, clock,
       inventory, words learned, quest progress and the RNG — and a way out that
       leads nowhere leaves the world exactly as it was.*

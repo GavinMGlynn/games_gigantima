@@ -1166,17 +1166,19 @@ void gg_game_animate(gg_game *g) {
 //
 // Nothing in this file knows anybody's name.
 // ---------------------------------------------------------------------------
-static void place_townsfolk(gg_game *g) {
-    // Anchor everyone on the town's centre so the schedule offsets land inside
-    // the walls wherever the generator put the town.
-    int cx = g->map.start_x, cy = g->map.start_y;
-    for (int i = 0; i < g->map.regions; i++) {
-        if (g->map.region[i].kind == GG_REGION_TOWN) {
-            cx = g->map.region[i].x + g->map.region[i].w / 2;
-            cy = g->map.region[i].y + g->map.region[i].h / 2;
-            break;
+// The centre of the region called `place`, or false if this map has no such
+// place. Every resident's day is written as offsets from it.
+static bool place_centre(const gg_game *g, const char *place, int *cx, int *cy) {
+    for (int i = 0; i < g->map.regions; i++)
+        if (SDL_strcasecmp(g->map.region[i].name, place) == 0) {
+            *cx = g->map.region[i].x + g->map.region[i].w / 2;
+            *cy = g->map.region[i].y + g->map.region[i].h / 2;
+            return true;
         }
-    }
+    return false;
+}
+
+static void place_townsfolk(gg_game *g) {
 
     for (int i = 0; i < gg_dialogue_speakers() && g->actors < GG_ACTORS_MAX; i++) {
         const gg_speaker *d = gg_dialogue_speaker(i);
@@ -1184,6 +1186,18 @@ static void place_townsfolk(gg_game *g) {
         // which is how a person can exist to be talked to in an authored map
         // without the generator putting a copy of them in every town.
         if (!d || !d->lives) continue;
+
+        // Not if the map placed them itself. An authored map's version of
+        // somebody is the authoritative one - it knows where their house is,
+        // which the book's offsets from the square only approximate.
+        bool already = false;
+        for (int k = 0; k < g->actors; k++)
+            if (SDL_strcmp(g->actor[k].name, d->name) == 0) already = true;
+        if (already) continue;
+
+        // And not unless this map is where they live.
+        int cx = 0, cy = 0;
+        if (!place_centre(g, d->home, &cx, &cy)) continue;
 
         gg_actor *a = &g->actor[g->actors];
         SDL_zerop(a);
@@ -1240,15 +1254,20 @@ static const char *leaf_of(const char *path) {
     return slash ? slash + 1 : path;
 }
 
-// Whoever lives in the map that is loaded.
+// Whoever lives in the map that is loaded: the people it names, and then the
+// book's residents whose home is a place this map actually has.
 //
-// `book_may_supply` is true only for a *generated* world. The book's residents
-// belong to the town the generator builds; an authored map is the whole of who
-// lives in it, including when the answer is nobody. Without that distinction,
-// walking into an empty authored map brought eight townsfolk along and stood
-// them on a hillside - which is what the first crossing actually did.
-static void populate_from_map(gg_game *g, bool book_may_supply) {
-    if (g->map.actors > 0) {
+// **A person lives somewhere by name.** The book says "home Britain" and gives
+// their hours as offsets from it; a map with a region called Britain is where
+// those hours mean something, and a map without one has never heard of them.
+// Without that rule the first crossing brought eight townsfolk along and stood
+// them on a hillside - and, later, moved the whole of Britain into the next
+// town somebody authored.
+//
+// The map's own people come first and win: an authored map knows where
+// somebody's house is, which the book's offsets only approximate.
+static void populate_from_map(gg_game *g) {
+    {
         for (int i = 0; i < g->map.actors && g->actors < GG_ACTORS_MAX; i++) {
             const gg_map_actor *m = &g->map.actor[i];
             gg_actor *a = &g->actor[g->actors++];
@@ -1269,9 +1288,9 @@ static void populate_from_map(gg_game *g, bool book_may_supply) {
             for (int k = 0; k < m->schedn && k < GG_SCHEDULE_MAX; k++)
                 a->sched[k] = m->sched[k];
         }
-    } else if (book_may_supply) {
-        place_townsfolk(g);
     }
+
+    place_townsfolk(g);
 }
 
 // Everything a new game needs once its map exists, however the map got there.
@@ -1330,7 +1349,7 @@ static bool finish_new_game(gg_game *g, const char *profile) {
     g->player = 0;
     g->actors = 1;
 
-    populate_from_map(g, g->generated);
+    populate_from_map(g);
 
     // Trouble in the wilderness, well away from the town gate. How many of
     // what comes out of the bestiary - nothing here knows a brigand from a
@@ -1594,7 +1613,7 @@ bool gg_game_travel(gg_game *g, const char *path, int x, int y) {
         for (int i = 0; i < taken.whos && g->actors < GG_ACTORS_MAX; i++)
             g->actor[g->actors++] = taken.who[i];
     } else {
-        populate_from_map(g, false);
+        populate_from_map(g);
     }
     SDL_free(taken.who);
 

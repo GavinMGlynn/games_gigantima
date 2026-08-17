@@ -330,6 +330,78 @@ static bool screen_act(gg_app *app, gg_screen_result r) {
 // ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------
+// One step of a scripted walk toward a tile, for the staged screens below.
+//
+// The world these walk through is a living one - somebody is standing on the
+// road, a brigand has noticed you - so a plain "act north until it stops
+// working" walks two tiles and gives up, which is what it did the first time
+// the vale had people in it. Walking into somebody is a conversation and
+// walking into a brigand is a blow, both of which are ordinary play; this only
+// has to notice which happened and keep going.
+//
+// Toward a tile rather than in a direction, because a walk that sidesteps
+// something has to come back to its line afterwards: the first version drifted
+// one tile east going round a townsperson and then walked straight past the
+// gate it was aiming at. Returns false when it truly cannot move.
+static bool step_toward(gg_app *app, int tx, int ty) {
+    gg_game *g = &app->game;
+
+    // Out of anything the last step opened. A conversation swallows the
+    // direction keys, so a walk that walked into somebody would steer their
+    // topic list from here on.
+    if (g->mode == GG_MODE_CONVERSE) gg_game_act(g, GG_ACT_WAIT);
+    if (g->mode != GG_MODE_PLAY) return false;
+
+    const int px = gg_player_const(g)->x, py = gg_player_const(g)->y;
+    const int dx = tx > px ? 1 : (tx < px ? -1 : 0);
+    const int dy = ty > py ? 1 : (ty < py ? -1 : 0);
+    if (!dx && !dy) return false;                 // already there
+
+    // The way wanted, then either half of it: a diagonal is a real move in
+    // this world, so going round somebody costs the same one turn.
+    static const gg_action BY[3][3] = {
+        { GG_ACT_NW, GG_ACT_N, GG_ACT_NE },
+        { GG_ACT_W,  GG_ACT_WAIT, GG_ACT_E },
+        { GG_ACT_SW, GG_ACT_S, GG_ACT_SE },
+    };
+    const gg_action want[3] = {
+        BY[dy + 1][dx + 1],
+        BY[1][dx + 1],
+        BY[dy + 1][1],
+    };
+
+    for (int i = 0; i < 3; i++) {
+        if (want[i] == GG_ACT_WAIT) continue;
+        const uint32_t was = g->turn;
+        gg_game_act(g, want[i]);
+        gg_game_animate(g);
+        if (g->mode == GG_MODE_CONVERSE) {
+            gg_game_act(g, GG_ACT_WAIT);          // greeted somebody; walk on
+            continue;
+        }
+        // A turn passed: either a step was taken or a blow was struck, and
+        // both are progress.
+        if (g->turn != was) return true;
+    }
+
+    // Nothing worked. One turn of standing still, so whoever is in the way has
+    // a chance to move on.
+    const uint32_t was = g->turn;
+    gg_game_act(g, GG_ACT_WAIT);
+    gg_game_animate(g);
+    return g->turn != was;
+}
+
+// Walks to the first way out of the map underfoot. Returns false if there is
+// none, or if it could not be reached.
+static bool walk_to_the_way_out(gg_app *app) {
+    if (app->game.map.portals < 1) return false;
+    const int tx = app->game.map.portal[0].x, ty = app->game.map.portal[0].y;
+    for (int i = 0; i < 400 && !app->game.want_travel; i++)
+        if (!step_toward(app, tx, ty)) break;
+    return app->game.want_travel;
+}
+
 static void usage(void) {
     SDL_Log("usage: gigantima [--profile NAME] [--seed N] [--play] [--debug]\n"
             "                 [--scale N] [--fullscreen] [--no-rumble]\n"
@@ -448,6 +520,21 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
 
     gg_input_init(&app->in, no_rumble);
 
+    // The content, **before** the world: who lives in it comes out of the book
+    // and what haunts it comes out of the bestiary, so a world built while
+    // those are still empty is a world with nobody and nothing in it. A world
+    // with no book still runs - everybody greets and nobody has anything more
+    // to add - so a missing file is a log line rather than a failure, the same
+    // as a missing gamepad.
+    if (!gg_dialogue_load(gg_asset_path("dialogue.txt")))
+        SDL_Log("gigantima: no dialogue loaded; the town will be quiet");
+    if (!gg_magic_load(gg_asset_path("spells.txt")))
+        SDL_Log("gigantima: no spells loaded; nothing will answer to a word");
+    if (!gg_bestiary_load(gg_asset_path("bestiary.txt")))
+        SDL_Log("gigantima: no bestiary loaded; the hills will be empty");
+    if (!gg_quests_load(gg_asset_path("quests.txt")))
+        SDL_Log("gigantima: no quests loaded; nothing will be asked of anybody");
+
     const uint32_t seed = seed_set ? app->seed
                                    : (uint32_t)SDL_GetPerformanceCounter();
     app->seed = seed;
@@ -488,18 +575,6 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
         SDL_Log("gigantima: avatar placed at %d,%d%s", p->x, p->y,
                 gg_map_walkable(&app->game.map, p->x, p->y) ? "" : " (in terrain)");
     }
-
-    // The book of what people say. A world with no book still runs - everybody
-    // greets and nobody has anything more to add - so this is a log line rather
-    // than a failure, the same as a missing gamepad.
-    if (!gg_dialogue_load(gg_asset_path("dialogue.txt")))
-        SDL_Log("gigantima: no dialogue loaded; the town will be quiet");
-    if (!gg_magic_load(gg_asset_path("spells.txt")))
-        SDL_Log("gigantima: no spells loaded; nothing will answer to a word");
-    if (!gg_bestiary_load(gg_asset_path("bestiary.txt")))
-        SDL_Log("gigantima: no bestiary loaded; the hills will be empty");
-    if (!gg_quests_load(gg_asset_path("quests.txt")))
-        SDL_Log("gigantima: no quests loaded; nothing will be asked of anybody");
 
     // A silent game is a playable one, so a device that will not open is a log
     // line and not a failure - the same call the gamepad gets.
@@ -820,16 +895,11 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
         if (app->screen_name && SDL_strcmp(app->screen_name, "pack") == 0)
             app->game.mode = GG_MODE_PACK;
 
-        // Walks north up the road until the way out is stepped on, so a
-        // crossing can be photographed. The walk is the ordinary one and the
-        // crossing is the ordinary crossing; only the direction is chosen.
+        // Walks to the way out and steps on it, so a crossing can be
+        // photographed. The walk is the ordinary one and the crossing is the
+        // ordinary crossing; only the destination is chosen.
         if (app->screen_name && SDL_strcmp(app->screen_name, "travel") == 0) {
-            for (int i = 0; i < 80 && !app->game.want_travel; i++) {
-                const uint32_t was = app->game.turn;
-                gg_game_act(&app->game, GG_ACT_N);
-                if (app->game.turn == was) break;
-            }
-            if (app->game.want_travel) {
+            if (walk_to_the_way_out(app)) {
                 char leaf[GG_MAP_NAME_MAX + 8];
                 SDL_snprintf(leaf, sizeof leaf, "maps/%s", app->game.travel_to);
                 if (gg_game_travel(&app->game, gg_asset_path(leaf),
@@ -847,16 +917,10 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
         if (app->screen_name && SDL_strcmp(app->screen_name, "return") == 0) {
             int dx = -1, dy = -1;
 
-            // North to the way out, then south to the way back: the ordinary
-            // walk and the ordinary crossing, twice.
-            static const gg_action WAY[2] = { GG_ACT_N, GG_ACT_S };
+            // Out to the way out, and then to the way back: the ordinary walk
+            // and the ordinary crossing, twice.
             for (int leg = 0; leg < 2; leg++) {
-                for (int i = 0; i < 120 && !app->game.want_travel; i++) {
-                    const uint32_t was = app->game.turn;
-                    gg_game_act(&app->game, WAY[leg]);
-                    if (app->game.turn == was) break;   // blocked; do not spin
-                }
-                if (!app->game.want_travel) {
+                if (!walk_to_the_way_out(app)) {
                     SDL_Log("gigantima: leg %d found no way out", leg + 1);
                     break;
                 }

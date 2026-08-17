@@ -65,6 +65,13 @@ typedef struct {
     gg_sched_entry sched[GG_SCHEDULE_MAX];
     int  schedn;
     bool lives;                                // has an art: the world places them
+
+    // The place they live, which is a region name a map may or may not have -
+    // "Britain" for everyone in the vale. A map with a region of that name is
+    // peopled by them, around its centre; a map without one has never heard of
+    // them. That is what keeps the vale's eight out of the next town's square
+    // and off the hillside at the standing stones.
+    char home[GG_PLACE_MAX];
 } gg_speaker;
 
 // Loads the whole book. Held in one place rather than per game, because

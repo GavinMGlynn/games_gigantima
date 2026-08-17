@@ -162,6 +162,14 @@ bool gg_dialogue_load(const char *path) {
             who->art = (uint8_t)art;
             who->lives = true;
             topic = nullptr;
+        } else if (word_eq(key, "home")) {
+            if (!*rest) {
+                complain(path, lineno, "a home with no place");
+                ok = false;
+                break;
+            }
+            SDL_strlcpy(who->home, rest, sizeof who->home);
+            topic = nullptr;
         } else if (word_eq(key, "at")) {
             if (who->schedn >= GG_SCHEDULE_MAX) {
                 complain(path, lineno, "more hours than a day has room for");
@@ -275,6 +283,14 @@ bool gg_dialogue_load(const char *path) {
         // to prevent.
         if (g_speaker[i].lives && g_speaker[i].schedn == 0) {
             SDL_Log("gigantima: %s: %s has a sprite but no day to keep",
+                    path, g_speaker[i].name);
+            ok = false;
+        }
+        // And somewhere to keep it. Their hours are offsets from a place's
+        // centre, so a resident with no place is a person the world is told to
+        // put down and not told where.
+        if (g_speaker[i].lives && !g_speaker[i].home[0]) {
+            SDL_Log("gigantima: %s: %s has a sprite but no home to live in",
                     path, g_speaker[i].name);
             ok = false;
         }

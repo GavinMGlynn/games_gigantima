@@ -5,7 +5,8 @@
 #
 #   person NAME        starts a block: everything about one person
 #   art    ID          which sprite they wear - and that the world places them
-#   at     HH DX DY    at this hour, be this far from the town square
+#   home   PLACE       the region they live in; a map with one gets them
+#   at     HH DX DY    at this hour, be this far from that place's centre
 #   greet  TEXT        what they say when you walk up to them
 #   topic  WORD [WORD] a thing they will talk about, and its synonyms
 #     say  TEXT        a line of the answer; up to three
@@ -13,11 +14,15 @@
 #     joins            asking this takes them with thee
 #   bye    TEXT        what they say as you leave
 #
-# The offsets in `at` are from the town square, not tiles on the map: the
-# generator puts the town somewhere different every seed, so an absolute
+# The offsets in `at` are from the centre of their `home`, not tiles on the map:
+# the generator puts the town somewhere different every seed, so an absolute
 # position would land these people in a field. A map authored in the editor
-# records absolute positions instead, and a map that names anybody is the whole
-# of who lives there.
+# records absolute positions instead, and a map that names somebody itself keeps
+# its own version of them rather than the book's.
+#
+# Everyone here lives in Britain, which is the region the generator's town is
+# called and the region the vale ships with - so these eight are in both. A map
+# with no region of that name has never heard of them.
 #
 # Everyone begins knowing NAME and JOB and nothing else. Every other word in
 # this file has to be taught by some topic, or nobody can ever ask it - which is
@@ -26,6 +31,7 @@
 
 person Iolo
 art MERCHANT
+home Britain
 at 06 -6 -4
 at 12 0 -6
 at 18 6 -4
@@ -45,6 +51,7 @@ bye Come back when thou hast coin, Avatar.
 
 person Shamino
 art GUARD
+home Britain
 at 05 0 8
 at 11 8 0
 at 17 0 -8
@@ -64,6 +71,7 @@ bye Keep thy blade keen.
 
 person Nell
 art ELDER
+home Britain
 at 08 -2 -2
 at 14 2 -2
 at 19 -6 6
@@ -86,6 +94,7 @@ bye Mind thy step in the dark, child.
 
 person Dupre
 art GUARD
+home Britain
 at 07 8 2
 at 13 -8 2
 at 19 2 8
@@ -106,6 +115,7 @@ bye Mind how thou goest.
 
 person Katrina
 art HEALER
+home Britain
 at 06 -8 0
 at 12 -2 4
 at 20 -8 0
@@ -122,6 +132,7 @@ bye Go carefully, Avatar.
 
 person Nystul
 art MAGE
+home Britain
 at 09 4 -6
 at 15 4 4
 at 21 -4 6
@@ -170,6 +181,7 @@ bye Look up more often, Avatar.
 
 person Gwenno
 art HEALER
+home Britain
 at 07 6 6
 at 12 -4 6
 at 18 6 -2
@@ -193,6 +205,7 @@ bye Fare thee well. Go north, if thou hast courage.
 
 person Chuckles
 art MERCHANT
+home Britain
 at 10 0 0
 at 14 -6 0
 at 18 6 6

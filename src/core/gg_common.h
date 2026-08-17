@@ -134,6 +134,9 @@ static inline int gg_dist_cheb(int ax, int ay, int bx, int by) {
 // their days, and gg_world.h is below gg_actor.h - putting them there made the
 // two headers include each other, which is a compile error wearing a design
 // mistake's clothes.
+// A place: a region's name, and the town a person says they live in.
+#define GG_PLACE_MAX      48
+
 #define GG_ACTOR_NAME_MAX 24
 #define GG_SCHEDULE_MAX   6
 
