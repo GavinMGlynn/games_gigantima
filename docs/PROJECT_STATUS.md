@@ -150,6 +150,39 @@ tile, which had the avatar playing the first half of the cycle over and over.
 and the CI smoke test, which renders a frame headless and fails if the game
 cannot find its own art.*
 
+### Shorelines
+
+Water is autotiled. Three edge sets are baked — a grass bank, a beach, and the
+shallow-to-deep drop-off — and the renderer picks one of each set's nine pieces
+from the four orthogonal neighbours. The set is chosen per cell from the
+neighbouring terrain, so one shore of a lake can be beach and the far side
+grass; both sets share an identical water centre, so they meet invisibly.
+
+Which piece to draw is **not** stored in the map. It is derived at draw time,
+so the editor will be able to paint water as water and have the coast re-shape
+itself around an edited cell with no bookkeeping.
+
+The generated water is smoothed first, by two cellular passes with asymmetric
+thresholds — four neighbours to stay wet, six to flood. That is not cosmetic:
+every single-tile spur the ellipse jitter leaves needs a concave corner piece,
+and **the LPC sheets carry none**, so each one would render as a square notch.
+Equal thresholds were tried first and oscillate, the same cells flipping every
+pass.
+
+**Concave corners are the known gap.** A coast that wraps around a promontory
+falls back to the interior fill and shows a square step. Smoothing makes this
+rare on generated lakes; a hand-authored coastline will hit it. Named in the
+plan.
+
+Land-to-land boundaries — grass against sand, dirt, desert — are **not**
+autotiled and still meet with a hard edge. Only water is done.
+
+*Verification: `a_square_lake_selects_all_nine_edge_pieces` (all nine pieces of
+a square lake, each exactly once), `water_at_the_map_edge_draws_no_shoreline_against_nothing`,
+`deep_water_is_never_adjacent_to_land` (25 seeds — the deep set has no
+land-boundary art, so this must never happen), `the_coastline_has_no_isolated_puddles`
+(25 seeds).*
+
 ### Input
 
 Keyboard and gamepad, read every frame and merged, so either can be used at any
@@ -225,7 +258,7 @@ Named plainly, because a reader should not have to infer absence:
 | Title/menus/setup pages | a title screen with a prompt. No menus, no options, no profile pages |
 | Level editor | nothing. The map format exists for it |
 | Buildings | rectangles of wall with a door. No roofs, windows, interiors or furniture |
-| Shorelines | flat tiles butted together; no autotiling, so water meets land with a hard edge |
+| Land-to-land transitions | grass meets sand and desert with a hard edge; only water is autotiled |
 | Indoor lighting | the light quad covers the whole view; `GG_CELL_INDOORS` is set but unused |
 | Pathfinding | greedy stepping only |
 | Party | the avatar is alone |
@@ -243,6 +276,12 @@ Deliberate, documented, with the cost to close:
   Closing it needs a light model — emitters, radius, and a per-tile blend.
 - **Buildings as flat rectangles.** The LPC Structure sheets carry roofs,
   windows and doorframes in 3×3 arrangements this project has not decoded yet.
+- **No concave shoreline corners.** No art exists for them in the LPC sheets;
+  the interior fill stands in, and smoothing keeps generated coasts clear of
+  the cases that would show it.
+- **Roads stop at water** rather than bridging it. Paving the water was what
+  put a brown causeway across the middle of the lake; a bridge prop is the
+  proper fix.
 - **`GG_TILE_MOUNTAIN` doubles as masonry.** The pale cobble reads as stone
   wall against the dark interior, which is why it was chosen over the striated
   cliff face — but it is a terrain tile standing in for a structure tile.

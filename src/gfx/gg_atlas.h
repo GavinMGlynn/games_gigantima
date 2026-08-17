@@ -57,6 +57,32 @@ static const gg_rect GG_ACTOR_RECT[GG_ACTOR_COUNT] = {
     [GG_ACTOR_ELDER] = {    0, 1280,  64,  64 },
 };
 
+// --- edge sets: 3x3 blob rings, in atlas_edges.png ---
+// Index order, which is what gg_render computes from a neighbour mask:
+//     0 NW  1 N  2 NE / 3 W  4 C  5 E / 6 SW  7 S  8 SE
+typedef enum {
+    GG_EDGE_WATER_GRASS,
+    GG_EDGE_WATER_SAND,
+    GG_EDGE_WATER_DEEP,
+    GG_EDGE_COUNT
+} gg_edge_id;
+
+#define GG_EDGE_NW 0
+#define GG_EDGE_N  1
+#define GG_EDGE_NE 2
+#define GG_EDGE_W  3
+#define GG_EDGE_C  4
+#define GG_EDGE_E  5
+#define GG_EDGE_SW 6
+#define GG_EDGE_S  7
+#define GG_EDGE_SE 8
+
+static const gg_rect GG_EDGE_RECT[GG_EDGE_COUNT][9] = {
+    [GG_EDGE_WATER_GRASS] = { {    0,    0,  32,  32 }, {   32,    0,  32,  32 }, {   64,    0,  32,  32 }, {    0,   32,  32,  32 }, {   32,   32,  32,  32 }, {   64,   32,  32,  32 }, {    0,   64,  32,  32 }, {   32,   64,  32,  32 }, {   64,   64,  32,  32 } },
+    [GG_EDGE_WATER_SAND] = { {    0,   96,  32,  32 }, {   32,   96,  32,  32 }, {   64,   96,  32,  32 }, {    0,  128,  32,  32 }, {   32,  128,  32,  32 }, {   64,  128,  32,  32 }, {    0,  160,  32,  32 }, {   32,  160,  32,  32 }, {   64,  160,  32,  32 } },
+    [GG_EDGE_WATER_DEEP] = { {    0,  192,  32,  32 }, {   32,  192,  32,  32 }, {   64,  192,  32,  32 }, {    0,  224,  32,  32 }, {   32,  224,  32,  32 }, {   64,  224,  32,  32 }, {    0,  256,  32,  32 }, {   32,  256,  32,  32 }, {   64,  256,  32,  32 } },
+};
+
 // --- font: fixed cells, proportional advances ---
 #define GG_FONT_FIRST   32
 #define GG_FONT_LAST    126

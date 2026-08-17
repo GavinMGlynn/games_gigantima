@@ -75,6 +75,41 @@ TILES = [
 
 
 # ---------------------------------------------------------------------------
+# Edge sets - the 3x3 blob rings that make a shoreline look drawn rather than
+# stamped.
+#
+# An LPC Revised terrain block is a field of one terrain with a pool of another
+# cut into it: the eight outer cells carry the boundary at each orientation and
+# the centre is the pool's interior. So a block is exactly a 3x3 autotile, and
+# the index order below is the order the renderer computes from a neighbour
+# mask:
+#
+#     0 NW   1 N   2 NE
+#     3 W    4 C   5 E
+#     6 SW   7 S   8 SE
+#
+# `col`/`row` is the block's top-left cell. Verified by eye against a magnified
+# render of each candidate block before being written down - the sheet also
+# contains hole variants whose centre is transparent, which look identical in a
+# thumbnail and are not what is wanted here.
+#
+# **These sheets carry no concave corners.** A water cell with land on a single
+# diagonal has no piece to draw and falls back to the interior fill, leaving a
+# square notch. Generated lakes are convex so it rarely shows; hand-authored
+# coastlines will need the missing pieces drawn. Recorded in the plan.
+# Both sets share an identical water centre - (42,133,152) in each - so a lake
+# can change its bank part way round without the water itself changing colour.
+EDGES = [
+    # name              sheet      col row
+    ("WATER_GRASS",     TERRAIN,     0, 10),
+    ("WATER_SAND",      TERRAIN,     0, 20),
+    # Shallow water outside, deep water inside, with a soft gradient between -
+    # so the drop-off reads as depth rather than as two flat blues meeting.
+    ("WATER_DEEP",      TERRAIN,     0, 23),
+]
+
+
+# ---------------------------------------------------------------------------
 # Props - scenery larger than a tile, drawn over the terrain and sorted by the
 # row its base sits on, so the player walks behind a tree's canopy.
 #
@@ -238,6 +273,32 @@ def build_tiles():
         x, y = (i % cols) * TILE, (i // cols) * TILE
         out.paste(tile, (x, y))
         entries.append((name, x, y, TILE, TILE))
+    return out, entries
+
+
+def build_edges():
+    """One 3x3 block per row, so a set's nine cells are contiguous and the
+    renderer can index them arithmetically."""
+    out = Image.new("RGBA", (3 * TILE, 3 * TILE * len(EDGES)), (0, 0, 0, 0))
+    entries = []
+    cache = {}
+    for i, (name, rel, c, r) in enumerate(EDGES):
+        if rel not in cache:
+            cache[rel] = sheet(rel)
+        block = cache[rel].crop((c * TILE, r * TILE,
+                                 (c + 3) * TILE, (r + 3) * TILE))
+
+        # The centre must be the pool's interior, not a hole: the sheet carries
+        # hole variants of every block, they look the same in a thumbnail, and
+        # picking one leaves the water see-through in play.
+        centre = block.crop((TILE, TILE, TILE * 2, TILE * 2))
+        if centre.getchannel("A").getextrema()[0] != 255:
+            sys.exit(f"edge set {name} at {rel} ({c},{r}) has a transparent "
+                     f"centre - that is the hole variant, not the fill")
+
+        y = i * 3 * TILE
+        out.paste(block, (0, y))
+        entries.append((name, 0, y))
     return out, entries
 
 
@@ -411,7 +472,7 @@ def emit_sizes(props, path):
         f.write("\n".join(o) + "\n")
 
 
-def emit_atlas(tiles, props, actors, font_meta, path):
+def emit_atlas(tiles, props, actors, edges, font_meta, path):
     first, last, cw, ch, fcols, adv = font_meta
     o = [banner("gg_atlas.h", "Where every sprite sits inside the four atlas "
                               "textures in assets/."),
@@ -437,6 +498,33 @@ def emit_atlas(tiles, props, actors, font_meta, path):
     o.append("static const gg_rect GG_ACTOR_RECT[GG_ACTOR_COUNT] = {")
     for name, x, y, w, h in actors:
         o.append(f"    [GG_ACTOR_{name}] = {{ {x:4d}, {y:4d}, {w:3d}, {h:3d} }},")
+    o.append("};")
+    o.append("")
+
+    o.append("// --- edge sets: 3x3 blob rings, in atlas_edges.png ---")
+    o.append("// Index order, which is what gg_render computes from a neighbour mask:")
+    o.append("//     0 NW  1 N  2 NE / 3 W  4 C  5 E / 6 SW  7 S  8 SE")
+    o.append("typedef enum {")
+    for name, *_ in edges:
+        o.append(f"    GG_EDGE_{name},")
+    o.append("    GG_EDGE_COUNT")
+    o.append("} gg_edge_id;")
+    o.append("")
+    o.append("#define GG_EDGE_NW 0")
+    o.append("#define GG_EDGE_N  1")
+    o.append("#define GG_EDGE_NE 2")
+    o.append("#define GG_EDGE_W  3")
+    o.append("#define GG_EDGE_C  4")
+    o.append("#define GG_EDGE_E  5")
+    o.append("#define GG_EDGE_SW 6")
+    o.append("#define GG_EDGE_S  7")
+    o.append("#define GG_EDGE_SE 8")
+    o.append("")
+    o.append("static const gg_rect GG_EDGE_RECT[GG_EDGE_COUNT][9] = {")
+    for name, x, y in edges:
+        cells = ", ".join(f"{{ {x + (i % 3) * TILE:4d}, {y + (i // 3) * TILE:4d}, "
+                          f"{TILE:3d}, {TILE:3d} }}" for i in range(9))
+        o.append(f"    [GG_EDGE_{name}] = {{ {cells} }},")
     o.append("};")
     o.append("")
 
@@ -467,6 +555,7 @@ def emit_credits(path):
     """
     used = sorted({os.path.dirname(rel) for _n, rel, *_ in TILES} |
                   {os.path.dirname(rel) for _n, rel, *_ in PROPS} |
+                  {os.path.dirname(rel) for _n, rel, *_ in EDGES} |
                   {"Characters"})
     parts = [
         "# Art credits\n",
@@ -499,6 +588,10 @@ def main():
     tiles_img.save(os.path.join(ASSETS, "atlas_tiles.png"))
     print(f"  tiles   {tiles_img.size[0]:4d}x{tiles_img.size[1]:<4d} {len(tiles):3d} entries")
 
+    edges_img, edges = build_edges()
+    edges_img.save(os.path.join(ASSETS, "atlas_edges.png"))
+    print(f"  edges   {edges_img.size[0]:4d}x{edges_img.size[1]:<4d} {len(edges):3d} sets")
+
     props_img, props = build_props()
     props_img.save(os.path.join(ASSETS, "atlas_props.png"))
     print(f"  props   {props_img.size[0]:4d}x{props_img.size[1]:<4d} {len(props):3d} entries")
@@ -515,7 +608,8 @@ def main():
     src = os.path.join(ROOT, "src")
     emit_ids(tiles, props, actors, os.path.join(src, "core", "gg_ids.h"))
     emit_sizes(props, os.path.join(src, "core", "gg_ids.c"))
-    emit_atlas(tiles, props, actors, font_meta, os.path.join(src, "gfx", "gg_atlas.h"))
+    emit_atlas(tiles, props, actors, edges, font_meta,
+               os.path.join(src, "gfx", "gg_atlas.h"))
     emit_credits(os.path.join(ASSETS, "CREDITS.md"))
     print("  wrote src/core/gg_ids.{h,c}, src/gfx/gg_atlas.h, assets/CREDITS.md")
 

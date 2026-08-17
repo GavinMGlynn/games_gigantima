@@ -17,7 +17,7 @@
 
 #include <SDL3_image/SDL_image.h>
 
-static SDL_Texture *g_tiles, *g_props, *g_actors;
+static SDL_Texture *g_tiles, *g_props, *g_actors, *g_edges;
 static SDL_Renderer *g_ren;
 
 static SDL_Texture *load(SDL_Renderer *ren, const char *name) {
@@ -37,17 +37,83 @@ bool gg_render_init(SDL_Renderer *ren) {
 
     g_ren = ren;
     g_tiles  = load(ren, "atlas_tiles.png");
+    g_edges  = load(ren, "atlas_edges.png");
     g_props  = load(ren, "atlas_props.png");
     g_actors = load(ren, "atlas_actors.png");
-    return g_tiles && g_props && g_actors;
+    return g_tiles && g_edges && g_props && g_actors;
 }
 
 void gg_render_quit(void) {
     SDL_DestroyTexture(g_tiles);
+    SDL_DestroyTexture(g_edges);
     SDL_DestroyTexture(g_props);
     SDL_DestroyTexture(g_actors);
-    g_tiles = g_props = g_actors = nullptr;
+    g_tiles = g_edges = g_props = g_actors = nullptr;
     g_ren = nullptr;
+}
+
+// ---------------------------------------------------------------------------
+// Shoreline autotiling
+//
+// Water is stored as one terrain id; which of the nine pieces gets drawn is
+// decided here, from the four orthogonal neighbours. Keeping this in the
+// renderer rather than baking edge ids into the map is what lets the editor
+// paint water as water and lets a single edited cell re-shape the coast around
+// it with no bookkeeping.
+// ---------------------------------------------------------------------------
+// "Is the cell at (x, y) the same body as the one being drawn?" Off-map counts
+// as the same, so a lake running to the map edge does not draw itself a
+// shoreline against nothing.
+typedef bool (*gg_same_fn)(const gg_cell *c);
+
+static bool same_water(const gg_cell *c) {
+    return c->terrain == GG_TILE_WATER || c->terrain == GG_TILE_WATER_DEEP;
+}
+
+static bool same_deep(const gg_cell *c) {
+    return c->terrain == GG_TILE_WATER_DEEP;
+}
+
+static bool matches(const gg_map *m, int x, int y, gg_same_fn same) {
+    const gg_cell *c = gg_map_at_const(m, x, y);
+    return c ? same(c) : true;
+}
+
+// Which of the nine pieces, given where the boundary is. Returns GG_EDGE_C
+// when the cell is surrounded, which is also the fallback for the concave case
+// the LPC sheets carry no art for - see the note in tools/make_atlas.py.
+static int edge_piece(const gg_map *m, int x, int y, gg_same_fn same) {
+    const bool n = !matches(m, x, y - 1, same), s = !matches(m, x, y + 1, same);
+    const bool w = !matches(m, x - 1, y, same), e = !matches(m, x + 1, y, same);
+
+    if (n && w) return GG_EDGE_NW;
+    if (n && e) return GG_EDGE_NE;
+    if (s && w) return GG_EDGE_SW;
+    if (s && e) return GG_EDGE_SE;
+    if (n) return GG_EDGE_N;
+    if (s) return GG_EDGE_S;
+    if (w) return GG_EDGE_W;
+    if (e) return GG_EDGE_E;
+    return GG_EDGE_C;
+}
+
+int gg_render_water_piece(const gg_map *m, int x, int y) {
+    return edge_piece(m, x, y, same_water);
+}
+
+// Sand and desert get the beach set, everything else the grass set. Decided
+// per cell rather than per lake, so one shore can be beach and the far side
+// grass - both sets share an identical water centre, so they meet invisibly.
+static gg_edge_id edge_set(const gg_map *m, int x, int y) {
+    static const int DX[4] = { 0, 0, -1, 1 };
+    static const int DY[4] = { -1, 1, 0, 0 };
+    for (int i = 0; i < 4; i++) {
+        const gg_cell *c = gg_map_at_const(m, x + DX[i], y + DY[i]);
+        if (!c) continue;
+        if (c->terrain == GG_TILE_SAND || c->terrain == GG_TILE_DESERT)
+            return GG_EDGE_WATER_SAND;
+    }
+    return GG_EDGE_WATER_GRASS;
 }
 
 // ---------------------------------------------------------------------------
@@ -131,14 +197,32 @@ void gg_render_world(const gg_game *g, SDL_Renderer *ren) {
         for (int vx = 0; vx <= GG_VIEW_TILES_X; vx++) {
             const int wx = cam_tx + vx, wy = cam_ty + vy;
             const gg_cell *c = gg_map_at_const(&g->map, wx, wy);
-            const gg_rect *r = &GG_TILE_RECT[c ? c->terrain : GG_TILE_WATER_DEEP];
+
+            // Shallow water picks a shoreline piece; everything else, deep
+            // water included, is a flat fill. Deep water is excluded because
+            // it only ever borders shallow water, never land.
+            SDL_Texture *tex = g_tiles;
+            const gg_rect *r;
+            if (c && c->terrain == GG_TILE_WATER) {
+                tex = g_edges;
+                r = &GG_EDGE_RECT[edge_set(&g->map, wx, wy)]
+                                 [edge_piece(&g->map, wx, wy, same_water)];
+            } else if (c && c->terrain == GG_TILE_WATER_DEEP) {
+                // Deep water only ever borders shallow, never land, so it gets
+                // its own set and its own predicate.
+                tex = g_edges;
+                r = &GG_EDGE_RECT[GG_EDGE_WATER_DEEP]
+                                 [edge_piece(&g->map, wx, wy, same_deep)];
+            } else {
+                r = &GG_TILE_RECT[c ? c->terrain : GG_TILE_WATER_DEEP];
+            }
 
             const SDL_FRect src = { (float)r->x, (float)r->y,
                                     (float)r->w, (float)r->h };
             const SDL_FRect dst = { (float)(vx * GG_TILE - off_x),
                                     (float)(vy * GG_TILE - off_y),
                                     (float)GG_TILE, (float)GG_TILE };
-            SDL_RenderTexture(ren, g_tiles, &src, &dst);
+            SDL_RenderTexture(ren, tex, &src, &dst);
         }
     }
 

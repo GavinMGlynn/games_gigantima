@@ -11,6 +11,7 @@
 #include "core/gg_world.h"
 #include "platform/gg_paths.h"
 #include "gfx/gg_render.h"
+#include "gfx/gg_atlas.h"   // GG_EDGE_* piece indices
 
 #include <stdio.h>
 
@@ -470,6 +471,101 @@ static void the_camera_clamps_to_the_map_edges(void) {
 }
 
 // ---------------------------------------------------------------------------
+// Shorelines
+// ---------------------------------------------------------------------------
+// A 5x5 map of grass with a 3x3 lake in the middle. Every one of the nine
+// pieces should be selected exactly once, which is the whole autotile contract
+// in one picture.
+static void a_square_lake_selects_all_nine_edge_pieces(void) {
+    gg_map m;
+    CHECK(gg_map_alloc(&m, 5, 5), "alloc failed");
+    for (int i = 0; i < 25; i++) m.cell[i].terrain = GG_TILE_GRASS;
+    for (int y = 1; y <= 3; y++)
+        for (int x = 1; x <= 3; x++)
+            m.cell[y * 5 + x].terrain = GG_TILE_WATER;
+
+    static const int WANT[3][3] = {
+        { GG_EDGE_NW, GG_EDGE_N, GG_EDGE_NE },
+        { GG_EDGE_W,  GG_EDGE_C, GG_EDGE_E  },
+        { GG_EDGE_SW, GG_EDGE_S, GG_EDGE_SE },
+    };
+    for (int j = 0; j < 3; j++)
+        for (int i = 0; i < 3; i++) {
+            const int got = gg_render_water_piece(&m, 1 + i, 1 + j);
+            CHECK(got == WANT[j][i], "at %d,%d wanted piece %d, got %d",
+                  1 + i, 1 + j, WANT[j][i], got);
+        }
+    gg_map_free(&m);
+}
+
+static void water_at_the_map_edge_draws_no_shoreline_against_nothing(void) {
+    // Off-map counts as water, so a lake running off the edge keeps its
+    // interior fill there rather than drawing a beach against the void.
+    gg_map m;
+    CHECK(gg_map_alloc(&m, 4, 4), "alloc failed");
+    for (int i = 0; i < 16; i++) m.cell[i].terrain = GG_TILE_WATER;
+
+    CHECK(gg_render_water_piece(&m, 0, 0) == GG_EDGE_C,
+          "the top-left corner of an all-water map should be interior");
+    CHECK(gg_render_water_piece(&m, 3, 3) == GG_EDGE_C,
+          "the bottom-right corner of an all-water map should be interior");
+    gg_map_free(&m);
+}
+
+static void deep_water_is_never_adjacent_to_land(void) {
+    // The deep set has no land boundary art at all - it is drawn as deep water
+    // inside shallow. If the generator ever puts deep water against grass, the
+    // drop-off renders as a hard square edge.
+    for (uint32_t seed = 1; seed <= 25; seed++) {
+        gg_map m;
+        CHECK(gg_map_generate(&m, 160, 128, seed), "generate failed");
+        bool bad = false;
+        for (int y = 0; y < m.h && !bad; y++)
+            for (int x = 0; x < m.w && !bad; x++) {
+                if (gg_map_at_const(&m, x, y)->terrain != GG_TILE_WATER_DEEP)
+                    continue;
+                static const int DX[4] = { 0, 0, -1, 1 };
+                static const int DY[4] = { -1, 1, 0, 0 };
+                for (int k = 0; k < 4; k++) {
+                    const gg_cell *n = gg_map_at_const(&m, x + DX[k], y + DY[k]);
+                    if (n && !(n->flags & GG_CELL_WATER)) {
+                        CHECK(false, "seed %u: deep water at %d,%d touches %s",
+                              seed, x, y, GG_TERRAIN[n->terrain].name);
+                        bad = true;
+                        break;
+                    }
+                }
+            }
+        gg_map_free(&m);
+    }
+}
+
+static void the_coastline_has_no_isolated_puddles(void) {
+    // Smoothing exists to remove the single-tile spurs and notches the ellipse
+    // jitter leaves, because each one needs a concave corner piece the LPC
+    // sheets do not carry and so renders as a square step.
+    for (uint32_t seed = 1; seed <= 25; seed++) {
+        gg_map m;
+        CHECK(gg_map_generate(&m, 160, 128, seed), "generate failed");
+        for (int y = 0; y < m.h; y++)
+            for (int x = 0; x < m.w; x++) {
+                if (!(gg_map_at_const(&m, x, y)->flags & GG_CELL_WATER)) continue;
+                int wet = 0;
+                for (int dy = -1; dy <= 1; dy++)
+                    for (int dx = -1; dx <= 1; dx++) {
+                        if (!dx && !dy) continue;
+                        const gg_cell *n = gg_map_at_const(&m, x + dx, y + dy);
+                        if (n && (n->flags & GG_CELL_WATER)) wet++;
+                    }
+                CHECK(wet >= 2, "seed %u: water at %d,%d has only %d wet "
+                      "neighbours - that is a puddle, not a lake",
+                      seed, x, y, wet);
+            }
+        gg_map_free(&m);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Content tables
 // ---------------------------------------------------------------------------
 static void every_terrain_and_item_has_a_name(void) {
@@ -526,6 +622,11 @@ int main(void) {
 
     RUN(the_camera_moves_in_sub_tile_steps_while_walking);
     RUN(the_camera_clamps_to_the_map_edges);
+
+    RUN(a_square_lake_selects_all_nine_edge_pieces);
+    RUN(water_at_the_map_edge_draws_no_shoreline_against_nothing);
+    RUN(deep_water_is_never_adjacent_to_land);
+    RUN(the_coastline_has_no_isolated_puddles);
 
     RUN(every_terrain_and_item_has_a_name);
     RUN(every_prop_has_a_plausible_footprint);

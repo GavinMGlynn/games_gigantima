@@ -65,12 +65,28 @@ item to tick the easy half is the same violation wearing a different shape.
 - [x] Debug window with map overview, clock and townsfolk roster.
       *Verification: `--debug` and F1; the roster shows each NPC's distance from
       its scheduled position.*
-- [ ] **Autotiled shorelines and terrain transitions.** The LPC terrain sheets
-      are 3×3 blob rings and only their fill centres are used today, so water
-      meets land with a hard edge. Needs the ring layout decoded per terrain
-      pair and a neighbour-mask lookup in the renderer.
-      *Verification: a generated lake renders with no straight-line boundary
-      between water and sand, checked on a `--shot` frame.*
+- [x] **Autotiled shorelines.** Three edge sets — grass bank, beach, and the
+      shallow-to-deep drop-off — selected per cell from a neighbour mask, plus
+      cellular smoothing of the generated water so the coast has no single-tile
+      spurs for the missing concave pieces to expose.
+      *Verification: `a_square_lake_selects_all_nine_edge_pieces`,
+      `water_at_the_map_edge_draws_no_shoreline_against_nothing`,
+      `deep_water_is_never_adjacent_to_land`,
+      `the_coastline_has_no_isolated_puddles`; and a `--shot` frame of the lake.
+      Detail in `PROJECT_STATUS.md`.*
+- [ ] **Concave shoreline corners.** The LPC sheets carry no inner-corner
+      pieces, so a coast that wraps around a promontory falls back to the
+      interior fill and shows a square notch. Smoothing hides it on generated
+      lakes; a hand-authored coastline will not be so lucky. Needs the four
+      pieces drawn, or composited from the existing ring at bake time.
+      *Verification: a map with a deliberate one-tile promontory renders with
+      no square notch.*
+- [ ] **Land-to-land transitions.** Grass still meets sand, dirt and desert
+      with a hard edge; only water is autotiled. The same machinery applies,
+      but it needs an edge set per terrain pair and a precedence order so two
+      abutting transitions do not both claim the same cell.
+      *Verification: a `--shot` frame of the desert boundary with no
+      straight-line edge.*
 - [ ] **Real buildings.** Walls, roofs, windows, doorframes and interior floors
       from the LPC Structure sheets, replacing the current rectangles of
       `GG_TILE_MOUNTAIN`. *Verification: a town frame in which buildings read

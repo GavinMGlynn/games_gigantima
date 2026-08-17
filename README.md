@@ -94,13 +94,16 @@ no key at all.
 ```
 gigantima [--profile NAME] [--seed N] [--play] [--debug]
           [--scale N] [--fullscreen] [--no-rumble]
-          [--shot FILE.bmp] [--shot-at TURN]
+          [--at X,Y] [--shot FILE.bmp] [--shot-at TURN]
 ```
 
 `--seed` makes a run reproducible: the world, the town layout and every random
 decision come from that one number. `--shot` runs the world forward with no
 window, writes a single frame and exits, which is how CI checks that the game
-can still find and draw its own art.
+can still find and draw its own art — it photographs whatever the other flags
+select, so `--shot` alone gets the title screen and `--debug --shot` gets the
+debug view. `--at X,Y` drops the avatar somewhere specific, because verifying a
+change to how water is drawn means getting to water.
 
 ## Layout
 

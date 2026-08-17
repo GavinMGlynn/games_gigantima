@@ -52,6 +52,12 @@ typedef struct {
 
     uint32_t    seed;
     const char *profile;
+
+    // --at X,Y drops the avatar somewhere specific. A development flag, and an
+    // earned one: verifying a change to how water is drawn means getting to
+    // water, and walking there by hand is not a workflow.
+    int  at_x, at_y;
+    bool at_set;
 } gg_app;
 
 // ---------------------------------------------------------------------------
@@ -163,7 +169,7 @@ static void draw(gg_app *app) {
 static void usage(void) {
     SDL_Log("usage: gigantima [--profile NAME] [--seed N] [--play] [--debug]\n"
             "                 [--scale N] [--fullscreen] [--no-rumble]\n"
-            "                 [--shot FILE.bmp] [--shot-at TURN]");
+            "                 [--at X,Y] [--shot FILE.bmp] [--shot-at TURN]");
 }
 
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
@@ -194,6 +200,13 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
             app->shot_path = argv[++i];
         } else if (SDL_strcmp(argv[i], "--shot-at") == 0 && i + 1 < argc) {
             app->shot_at = (uint32_t)SDL_atoi(argv[++i]);
+        } else if (SDL_strcmp(argv[i], "--at") == 0 && i + 1 < argc) {
+            if (SDL_sscanf(argv[++i], "%d,%d", &app->at_x, &app->at_y) == 2) {
+                app->at_set = true;
+            } else {
+                SDL_Log("gigantima: --at wants X,Y (no spaces), got '%s'", argv[i]);
+                return SDL_APP_FAILURE;
+            }
         } else if (SDL_strcmp(argv[i], "--scale") == 0 && i + 1 < argc) {
             scale = gg_clampi(SDL_atoi(argv[++i]), 1, 4);
         } else if (SDL_strcmp(argv[i], "--debug") == 0) {
@@ -254,6 +267,15 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     if (!gg_game_new(&app->game, seed, app->profile)) {
         SDL_Log("gigantima: could not build a world");
         return SDL_APP_FAILURE;
+    }
+
+    if (app->at_set) {
+        gg_actor *p = gg_player(&app->game);
+        p->x = (int16_t)gg_clampi(app->at_x, 0, app->game.map.w - 1);
+        p->y = (int16_t)gg_clampi(app->at_y, 0, app->game.map.h - 1);
+        p->step = 0;
+        SDL_Log("gigantima: avatar placed at %d,%d%s", p->x, p->y,
+                gg_map_walkable(&app->game.map, p->x, p->y) ? "" : " (in terrain)");
     }
 
     if (want_fs) toggle_fullscreen(app);

@@ -116,6 +116,57 @@ static void blob(gg_map *m, gg_rng *rng, int cx, int cy, int rx, int ry,
     }
 }
 
+// Cellular smoothing of the water body.
+//
+// The ellipse jitter that keeps a lake from looking stamped also leaves
+// single-tile spurs and notches, and every one of those needs a concave corner
+// piece the LPC sheets do not carry - so they render as square steps and the
+// coast reads as a staircase. Two passes of "join the majority" removes them
+// while leaving the overall outline wandering.
+//
+// Thresholds are asymmetric on purpose: 4 to drown, 6 to dry. Equal thresholds
+// oscillate, with the same cells flipping every pass and the lake never
+// settling.
+static void smooth_region(gg_map *m, int passes, gg_tile_id target,
+                          gg_tile_id outside) {
+    for (int pass = 0; pass < passes; pass++) {
+        // Decide against the previous state, then apply, or a cell's fate
+        // would depend on the scan order of its neighbours.
+        uint8_t *want = SDL_calloc((size_t)m->w * (size_t)m->h, 1);
+        if (!want) return;
+
+        for (int y = 0; y < m->h; y++) {
+            for (int x = 0; x < m->w; x++) {
+                const gg_cell *c = gg_map_at_const(m, x, y);
+                int in = 0;
+                for (int dy = -1; dy <= 1; dy++) {
+                    for (int dx = -1; dx <= 1; dx++) {
+                        if (!dx && !dy) continue;
+                        const gg_cell *n = gg_map_at_const(m, x + dx, y + dy);
+                        // Off-map counts as outside, so a region near the edge
+                        // is pulled back from it rather than smeared along it.
+                        if (n && n->terrain == target) in++;
+                    }
+                }
+                const bool is_in = c->terrain == target;
+                want[(size_t)y * (size_t)m->w + (size_t)x] =
+                    (uint8_t)(is_in ? (in >= 4) : (in >= 6));
+            }
+        }
+
+        for (int y = 0; y < m->h; y++) {
+            for (int x = 0; x < m->w; x++) {
+                const bool in = want[(size_t)y * (size_t)m->w + (size_t)x] != 0;
+                gg_cell *c = gg_map_at(m, x, y);
+                if (in == (c->terrain == target)) continue;
+                set_terrain(m, x, y, in ? target : outside);
+                if (in) c->prop = GG_NO_PROP;
+            }
+        }
+        SDL_free(want);
+    }
+}
+
 static void scatter_forest(gg_map *m, gg_rng *rng, int count) {
     static const gg_prop_id KINDS[] = {
         GG_PROP_TREE_OAK, GG_PROP_TREE_ELM, GG_PROP_TREE_TALL,
@@ -190,10 +241,12 @@ static void carve_road(gg_map *m, gg_rng *rng, int x0, int y0, int x1, int y1) {
     int guard = (m->w + m->h) * 4;              // cannot loop forever
     while ((x != x1 || y != y1) && guard-- > 0) {
         gg_cell *c = gg_map_at(m, x, y);
-        if (c && !(c->flags & GG_CELL_BLOCKED)) {
+        // Skip water rather than paving it. Filling the cell in was what put a
+        // brown causeway straight across the middle of the lake - a road has
+        // to stop at the shore until there is a bridge to carry it.
+        if (c && !(c->flags & GG_CELL_BLOCKED) && !(c->flags & GG_CELL_WATER)) {
             c->terrain = GG_TILE_ROAD;
             c->prop = GG_NO_PROP;
-            c->flags &= (uint8_t)~GG_CELL_WATER;
         }
         // Step toward the target, favouring the longer axis, with an
         // occasional sidestep so the road bends.
@@ -310,8 +363,13 @@ bool gg_map_generate(gg_map *m, int w, int h, uint32_t seed) {
         }
     }
 
+    // Smooth the shallow outline before the deep pool is cut, so the deep
+    // water is not re-flooded by a pass that does not know about it; then
+    // smooth the deep pool against the shallow it sits in.
     blob(m, &rng, w / 2, h / 4, 11, 7, GG_TILE_WATER);
+    smooth_region(m, 2, GG_TILE_WATER, GG_TILE_GRASS);
     blob(m, &rng, w / 2, h / 4, 6, 3, GG_TILE_WATER_DEEP);
+    smooth_region(m, 2, GG_TILE_WATER_DEEP, GG_TILE_WATER);
     // A sand rim around the lake, laid before the shoreline dressing so the
     // reeds land on beach rather than on grass.
     for (int y = 1; y < h - 1; y++) {
@@ -336,7 +394,11 @@ bool gg_map_generate(gg_map *m, int w, int h, uint32_t seed) {
     const int ty = gg_clampi(h * 2 / 3, 2, h - th - 2);
     build_town(m, &rng, tx, ty, tw, th);
 
-    carve_road(m, &rng, tx + tw / 2, 1, tx + tw / 2, ty);
+    // The lake sits due north of the town, so a road run straight up from the
+    // gate walks into it. Aim the northern road off to one side of the lake
+    // instead; the road still leaves town northward and still reaches the map
+    // edge, and it no longer has to be stopped by water half way.
+    carve_road(m, &rng, tx + tw / 2, ty, w / 5, 1);
     carve_road(m, &rng, tx + tw / 2, ty + th - 1, w - 10, h - 6);
 
     dress_shoreline(m, &rng);

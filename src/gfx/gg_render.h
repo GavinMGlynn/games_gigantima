@@ -26,4 +26,11 @@ void gg_render_camera(const gg_game *g, int *cam_px, int *cam_py);
 // Screen pixel -> world tile, using the same camera the last draw used.
 void gg_render_screen_to_tile(const gg_game *g, int sx, int sy, int *tx, int *ty);
 
+// Which of an edge set's nine pieces a water cell resolves to, as
+// GG_EDGE_NW .. GG_EDGE_SE. Exposed because it is pure logic over the map with
+// no texture involved, and it is where a shoreline bug would actually live -
+// a wrong index there is a one-tile artifact that is easy to miss by eye and
+// trivial to catch in a test.
+int gg_render_water_piece(const gg_map *m, int x, int y);
+
 #endif // GG_RENDER_H
