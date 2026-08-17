@@ -28,7 +28,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-14 ninja-build \
             libx11-dev libxext-dev libxrandr-dev libxi-dev libxcursor-dev \
-            libxfixes-dev libxss-dev libxkbcommon-dev libdecor-0-dev \
+            libxfixes-dev libxss-dev libxtst-dev libxkbcommon-dev libdecor-0-dev \
             libwayland-dev wayland-protocols \
             libgl-dev libegl-dev libpulse-dev libasound2-dev \
             libdbus-1-dev libudev-dev libusb-1.0-0-dev
@@ -62,14 +62,16 @@ jobs:
   rocky:
     name: Linux x86_64 (GCC 14, RHEL family)
     runs-on: ubuntu-latest
-    container: rockylinux:10
+    # `rockylinux:10` is not a real Docker Hub tag - the image lives
+    # under the org-scoped name. The failure reads "manifest unknown".
+    container: rockylinux/rockylinux:10
     steps:
       - name: Install dependencies
         run: |
           dnf install -y --setopt=install_weak_deps=False \
             gcc cmake ninja-build git \
             libX11-devel libXext-devel libXrandr-devel libXcursor-devel \
-            libXi-devel libXfixes-devel libXScrnSaver-devel \
+            libXi-devel libXfixes-devel libXScrnSaver-devel libXtst-devel \
             wayland-devel wayland-protocols-devel libxkbcommon-devel \
             mesa-libGL-devel mesa-libEGL-devel \
             pulseaudio-libs-devel alsa-lib-devel \
@@ -143,7 +145,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-14 ninja-build \
             libx11-dev libxext-dev libxrandr-dev libxi-dev libxcursor-dev \
-            libxfixes-dev libxss-dev libxkbcommon-dev libdecor-0-dev \
+            libxfixes-dev libxss-dev libxtst-dev libxkbcommon-dev libdecor-0-dev \
             libwayland-dev wayland-protocols \
             libgl-dev libegl-dev libpulse-dev libasound2-dev \
             libdbus-1-dev libudev-dev libusb-1.0-0-dev

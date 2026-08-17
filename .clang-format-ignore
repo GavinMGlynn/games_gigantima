@@ -1,0 +1,3 @@
+# Vendored code is never reformatted: a diff against upstream that is mostly
+# whitespace makes the real changes invisible, and there are none here anyway.
+ext/**
