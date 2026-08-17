@@ -31,11 +31,30 @@ void gg_debug_quit(SDL_Renderer *ren) {
     g_map_w = g_map_h = 0;
 }
 
-// Flat colours per terrain: this view is for reading shape, so it wants
-// contrast between classes, not fidelity to the art.
+// Flat colours per cell: this view is for reading shape, so it wants contrast
+// between classes, not fidelity to the art.
+//
+// Props are coloured too, not just terrain. Without them the overview showed a
+// featureless green field with a town in it - the woodland that covers much of
+// the map was invisible, which made the generator look far emptier than it is.
 static uint32_t terrain_colour(const gg_cell *c) {
     if (c->flags & GG_CELL_BLOCKED) return 0xFF503C28u;   // masonry
     if (c->flags & GG_CELL_DOOR)    return 0xFF00D0FFu;
+
+    if (GG_HAS_PROP(c)) {
+        switch (GG_PROP_OF(c)) {
+        case GG_PROP_TREE_OAK:  case GG_PROP_TREE_ELM:
+        case GG_PROP_TREE_TALL: case GG_PROP_TREE_BARE:
+            return 0xFF1E5218u;                           // broadleaf canopy
+        case GG_PROP_TREE_PINE: case GG_PROP_TREE_FIR:
+            return 0xFF13351Fu;                           // conifer, darker
+        case GG_PROP_LILYPAD:   case GG_PROP_REEDS:
+        case GG_PROP_CATTAILS:
+            return 0xFF2E7A6Bu;                           // wetland margin
+        default:
+            return 0xFF356B24u;                           // scrub
+        }
+    }
     switch (c->terrain) {
     case GG_TILE_WATER:      return 0xFF298497u;
     case GG_TILE_WATER_DEEP: return 0xFF17384Fu;

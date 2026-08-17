@@ -372,9 +372,22 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
         if (app->started && app->game.turn < app->shot_at)
             SDL_Log("gigantima: capture stalled at turn %u of %u",
                     app->game.turn, app->shot_at);
-        draw(app);
-        const bool ok = save_shot(app->ren, app->shot_path);
-        SDL_Log("gigantima: wrote %s at turn %u", app->shot_path, app->game.turn);
+        // With --debug, capture the debug window rather than the game: that is
+        // the view you wanted a picture of, and it is otherwise unreachable
+        // from a headless run. Same convention as gavaga.
+        SDL_Renderer *target = app->ren;
+        if (app->debug) {
+            debug_open(app);
+            if (app->dbg_ren) {
+                gg_debug_draw(&app->game, app->dbg_ren, app->seed);
+                target = app->dbg_ren;
+            }
+        }
+        if (target == app->ren) draw(app);
+
+        const bool ok = save_shot(target, app->shot_path);
+        SDL_Log("gigantima: wrote %s (%s) at turn %u", app->shot_path,
+                target == app->ren ? "game" : "debug", app->game.turn);
         return ok ? SDL_APP_SUCCESS : SDL_APP_FAILURE;
     }
 
