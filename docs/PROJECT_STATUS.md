@@ -203,7 +203,31 @@ walked into.
 
 ### Townsfolk
 
-Eight named townsfolk, each with a four-entry daily schedule and a greeting.
+**Who lives in the town is a file.** `assets/dialogue.txt` holds one block per
+person — their sprite, their day and everything they say — and `gg_game.c`
+contains no character names at all. Adding a townsperson is an edit to one file
+rather than an edit to a file and a table in C that had to agree with it by
+hand, which is what the two used to be.
+
+A person with an `art` line is somebody the world places; one without is a voice
+that exists to be talked to in an authored map without the generator putting a
+copy of them in every town. Somebody with a sprite and no day is **refused** —
+they would stand on the square from dawn to dawn, which is the whole reason a
+schedule exists.
+
+The schedule's offsets are **from the town centre**, not tiles: the generator
+puts the town somewhere different every seed, so an absolute position would land
+these people in a field. A map authored in the editor records absolute positions
+instead, and a map that names anybody is the whole of who lives there — the
+book's residents stay out of it rather than turning up alongside.
+
+Greetings are rebound after a load **by name, not by the index the save
+records**: the book is a text file somebody may have edited between saves, and
+an index into it is a promise it never made. Somebody no longer in the book
+comes back mute, which is a world where they moved away.
+
+Eight townsfolk in the shipped book, each with a four-entry daily schedule and a
+greeting.
 The schedule lookup wraps the day, so somebody who goes to bed at 22:00 is
 still in bed at 02:00. Schedule points that land inside a wall are walked
 outward at placement time until they are somewhere the NPC can actually stand —
@@ -242,7 +266,9 @@ sharing a tile with another, or standing on the player.
 `a_resident_crosses_the_town_to_a_fixed_target`,
 `a_resident_walks_round_a_building_rather_than_into_it`.*
 
-*Verification, townsfolk: `townsfolk_never_walk_into_terrain` (a full 1440-turn day),
+*Verification, townsfolk: `who_lives_in_the_town_comes_out_of_the_book`,
+`somebody_who_lives_here_needs_a_day`,
+`townsfolk_never_walk_into_terrain` (a full 1440-turn day),
 `two_townsfolk_never_share_a_tile`,
 `the_player_never_shares_a_tile_with_a_townsperson`,
 `a_schedule_before_its_first_entry_uses_the_last`.*

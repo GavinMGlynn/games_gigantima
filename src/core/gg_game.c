@@ -78,9 +78,10 @@ static void trail_push(gg_game *g, int x, int y) {
 //
 // The vocabulary is the state. There is no dialogue tree, no flags and no
 // script: a topic can be asked when its word is known, and words are handed
-// over by other topics. That one rule is what lets a rumour cross a town -
-// Iolo teaches CARAVAN, and it is Shamino and Nell who have something to say
-// about it - without anything in here knowing that a rumour exists.
+// over by other topics. That one rule is what lets a rumour cross a town - the
+// merchant hands over a word, and it is the gatekeeper and the old woman who
+// have something to say about it - without anything in here knowing that a
+// rumour exists, or who anybody is.
 // ---------------------------------------------------------------------------
 bool gg_knows(const gg_game *g, const char *word) {
     if (!word || !*word) return false;
@@ -1036,36 +1037,14 @@ void gg_game_animate(gg_game *g) {
 
 // ---------------------------------------------------------------------------
 // World population
+//
+// Who lives in the generated town comes out of assets/dialogue.txt, which is
+// also where everything they say lives - one block per person, so adding a
+// townsperson is an edit to one file rather than an edit to a file and a table
+// in C that had to agree with it by hand.
+//
+// Nothing in this file knows anybody's name.
 // ---------------------------------------------------------------------------
-// A townsperson: a name, a look, and a day. The schedule is what makes them a
-// person rather than a wandering sprite, so every one of them gets a real one.
-typedef struct {
-    const char *name;
-    uint8_t     art;
-    const char *greeting;
-    uint8_t     hours[4];
-    int8_t      dx[4], dy[4];   // offsets from the town centre
-} gg_townsfolk_def;
-
-static const gg_townsfolk_def TOWNSFOLK[] = {
-    { "Iolo",     GG_ACTOR_MERCHANT, "Hail, Avatar! The market opens at dawn.",
-      { 6, 12, 18, 22 }, { -6, 0, 6, -6 }, { -4, -6, -4, 2 } },
-    { "Shamino",  GG_ACTOR_GUARD,    "The gate is watched. Pass freely.",
-      { 5, 11, 17, 23 }, { 0, 8, 0, -8 }, { 8, 0, -8, 0 } },
-    { "Dupre",    GG_ACTOR_GUARD,    "Well met. Keep thy blade keen.",
-      { 7, 13, 19, 1 },  { 8, -8, 2, 2 },  { 2, 2, 8, -6 } },
-    { "Katrina",  GG_ACTOR_HEALER,   "Art thou wounded? I have herbs.",
-      { 6, 12, 20, 23 }, { -8, -2, -8, -8 }, { 0, 4, 0, 4 } },
-    { "Nystul",   GG_ACTOR_MAGE,     "The stars speak, if thou wilt listen.",
-      { 9, 15, 21, 2 },  { 4, 4, -4, -4 }, { -6, 4, 6, 6 } },
-    { "Nell",     GG_ACTOR_ELDER,    "I have seen eighty winters in this vale.",
-      { 8, 14, 19, 21 }, { -2, 2, -6, -6 }, { -2, -2, 6, 6 } },
-    { "Gwenno",   GG_ACTOR_HEALER,   "Dost thou bring news from the north?",
-      { 7, 12, 18, 22 }, { 6, -4, 6, 6 },  { 6, 6, -2, 6 } },
-    { "Chuckles", GG_ACTOR_MERCHANT, "A riddle! Why does the Avatar cross the vale?",
-      { 10, 14, 18, 23 }, { 0, -6, 6, 0 }, { 0, 0, 6, -6 } },
-};
-
 static void place_townsfolk(gg_game *g) {
     // Anchor everyone on the town's centre so the schedule offsets land inside
     // the walls wherever the generator put the town.
@@ -1078,19 +1057,24 @@ static void place_townsfolk(gg_game *g) {
         }
     }
 
-    for (size_t i = 0; i < GG_COUNTOF(TOWNSFOLK) && g->actors < GG_ACTORS_MAX; i++) {
-        const gg_townsfolk_def *d = &TOWNSFOLK[i];
+    for (int i = 0; i < gg_dialogue_speakers() && g->actors < GG_ACTORS_MAX; i++) {
+        const gg_speaker *d = gg_dialogue_speaker(i);
+        // Somebody in the book with no sprite is a voice, not a resident -
+        // which is how a person can exist to be talked to in an authored map
+        // without the generator putting a copy of them in every town.
+        if (!d || !d->lives) continue;
+
         gg_actor *a = &g->actor[g->actors];
         SDL_zerop(a);
         a->active = true;
         a->art = d->art;
         a->def = (uint8_t)i;
-        a->greeting = d->greeting;
+        a->greeting = d->greet;
         SDL_strlcpy(a->name, d->name, sizeof a->name);
 
-        for (int k = 0; k < 4; k++) {
-            int sx = gg_clampi(cx + d->dx[k], 1, g->map.w - 2);
-            int sy = gg_clampi(cy + d->dy[k], 1, g->map.h - 2);
+        for (int k = 0; k < d->schedn && k < GG_SCHEDULE_MAX; k++) {
+            int sx = gg_clampi(cx + d->sched[k].x, 1, g->map.w - 2);
+            int sy = gg_clampi(cy + d->sched[k].y, 1, g->map.h - 2);
             // A schedule point inside a wall would have the NPC shoving at it
             // all day, so walk outward until the target is somewhere it can
             // actually stand.
@@ -1103,11 +1087,12 @@ static void place_townsfolk(gg_game *g) {
                                 sx += ox; sy += oy; found = true;
                             }
             }
-            a->sched[k].hour = d->hours[k];
+            a->sched[k].hour = d->sched[k].hour;
             a->sched[k].x = (int16_t)sx;
             a->sched[k].y = (int16_t)sy;
         }
-        a->schedn = 4;
+        a->schedn = (uint8_t)d->schedn;
+
         // Stats of their own, so a companion is somebody the world can hurt
         // rather than a sprite that follows. Modest and uniform for now:
         // what makes them differ is a later item than what makes them exist.
@@ -1249,13 +1234,17 @@ static bool finish_new_game(gg_game *g, const char *profile) {
 
 void gg_game_rebind_actors(gg_game *g) {
     // Puts back what a save file cannot carry. The greeting is a pointer into
-    // a static table, so it is rebuilt from the actor's `def` index rather
-    // than written out - a pointer in a file is a pointer into the wrong
-    // process.
+    // the loaded book, so it is rebuilt rather than written out - a pointer in
+    // a file is a pointer into the wrong process.
+    //
+    // Found by name rather than by the index the save records, because the book
+    // is a text file somebody may have edited between saves and an index into
+    // it is a promise it never made. A name that is no longer in the book
+    // simply comes back mute, which is a world where somebody moved away.
     for (int i = 0; i < g->actors; i++) {
         gg_actor *a = &g->actor[i];
-        a->greeting = (a->def < GG_COUNTOF(TOWNSFOLK)) ? TOWNSFOLK[a->def].greeting
-                                                       : nullptr;
+        const gg_speaker *s = gg_dialogue_find(a->name);
+        a->greeting = s ? s->greet : nullptr;
     }
 }
 

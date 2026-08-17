@@ -138,8 +138,9 @@ Conversation is a **vocabulary, not a dialogue tree**. Everyone starts knowing
 two words, NAME and JOB; a topic can be asked when you know one of its words,
 and answers hand over words you did not have. So a rumour heard from the
 merchant is what makes the gatekeeper worth asking, and there is no flag system
-anywhere making that happen. It is all in `assets/dialogue.txt` — adding a
-person or a topic is an edit to a text file.
+anywhere making that happen. It is all in `assets/dialogue.txt`, which holds one block per person — their
+sprite, their day and everything they say. Adding a townsperson is an edit to a
+text file, and `gg_game.c` does not know anybody's name.
 
 People leave things about their houses, and apples fall under trees. Everything
 you carry has a weight, and thirty stone is all anyone can manage — a bar of

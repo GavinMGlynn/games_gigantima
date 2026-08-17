@@ -7,6 +7,8 @@
 //
 //     # comments run to the end of the line
 //     person Iolo
+//     art    MERCHANT            <- which sprite; also means "place them"
+//     at     06 -6 -4            <- at this hour, be this far from the square
 //     greet  Hail, Avatar!
 //     topic  job market            <- synonyms, first one is the label
 //       say  I keep the stall by the square.
@@ -44,6 +46,10 @@ const gg_topic *gg_speaker_topic(const gg_speaker *s, const char *word) {
         for (int w = 0; w < s->topic[i].words; w++)
             if (word_eq(s->topic[i].word[w], word)) return &s->topic[i];
     return nullptr;
+}
+
+const gg_speaker *gg_dialogue_speaker(int i) {
+    return (i >= 0 && i < g_speakers) ? &g_speaker[i] : nullptr;
 }
 
 const gg_speaker *gg_dialogue_find(const char *name) {
@@ -143,7 +149,59 @@ bool gg_dialogue_load(const char *path) {
             break;
         }
 
-        if (word_eq(key, "greet")) {
+        if (word_eq(key, "art")) {
+            int art = -1;
+            for (int i = 0; i < GG_ACTOR_COUNT; i++)
+                if (word_eq(GG_ACTOR_ID_NAME[i], rest)) art = i;
+            if (art < 0) {
+                SDL_Log("gigantima: %s:%d: there is no art called '%s'",
+                        path, lineno, rest);
+                ok = false;
+                break;
+            }
+            who->art = (uint8_t)art;
+            who->lives = true;
+            topic = nullptr;
+        } else if (word_eq(key, "at")) {
+            if (who->schedn >= GG_SCHEDULE_MAX) {
+                complain(path, lineno, "more hours than a day has room for");
+                ok = false;
+                break;
+            }
+            // `at HOUR DX DY`, all three required: a schedule entry missing its
+            // place would put somebody at the town centre by accident.
+            int v[3] = { 0, 0, 0 };
+            char *p = rest;
+            bool got = true;
+            for (int k = 0; k < 3 && got; k++) {
+                char *w = p;
+                while (*p && *p != ' ' && *p != '\t') p++;
+                if (w == p) { got = false; break; }
+                const char save = *p;
+                *p = '\0';
+                const bool neg = (*w == '-');
+                if (neg) w++;
+                if (!*w) got = false;
+                int n = 0;
+                for (const char *d = w; *d && got; d++) {
+                    if (*d < '0' || *d > '9') got = false;
+                    else n = n * 10 + (*d - '0');
+                }
+                v[k] = neg ? -n : n;
+                *p = save;
+                p = skip_spaces(p);
+            }
+            if (!got || v[0] < 0 || v[0] > 23) {
+                complain(path, lineno, "`at` wants an hour and two offsets");
+                ok = false;
+                break;
+            }
+            who->sched[who->schedn].hour = (uint8_t)v[0];
+            who->sched[who->schedn].x = (int16_t)v[1];
+            who->sched[who->schedn].y = (int16_t)v[2];
+            who->schedn++;
+            topic = nullptr;
+        } else if (word_eq(key, "greet")) {
             SDL_strlcpy(who->greet, rest, sizeof who->greet);
             topic = nullptr;
         } else if (word_eq(key, "bye")) {
@@ -212,6 +270,14 @@ bool gg_dialogue_load(const char *path) {
     // Every person needs a greeting, or walking up to them says nothing at all
     // and the conversation looks broken rather than empty.
     for (int i = 0; ok && i < g_speakers; i++) {
+        // Somebody the world is meant to place needs a day, or they stand on
+        // the town square from dawn to dawn - which is what a schedule exists
+        // to prevent.
+        if (g_speaker[i].lives && g_speaker[i].schedn == 0) {
+            SDL_Log("gigantima: %s: %s has a sprite but no day to keep",
+                    path, g_speaker[i].name);
+            ok = false;
+        }
         if (!g_speaker[i].greet[0]) {
             SDL_Log("gigantima: %s: %s has no greeting", path, g_speaker[i].name);
             ok = false;

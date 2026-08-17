@@ -16,13 +16,14 @@
 #define GG_DIALOGUE_H
 
 #include "core/gg_common.h"
+#include "core/gg_ids.h"
 
 #define GG_WORD_MAX        20   // a keyword, with its terminator
 #define GG_LINE_MAX        88   // one line of speech
 #define GG_TOPIC_WORDS_MAX  3   // synonyms for one topic
 #define GG_TOPIC_LINES_MAX  3
-// Per person. A mage who teaches a language legitimately has a great many:
-// Nystul alone answers to eight runes plus the ordinary courtesies.
+// Per person. Somebody who teaches a language legitimately has a great many -
+// the vale's mage answers to eight runes plus the ordinary courtesies.
 #define GG_TOPICS_MAX      16
 #define GG_SPEAKERS_MAX    16
 
@@ -50,6 +51,20 @@ typedef struct {
     char bye[GG_LINE_MAX];
     gg_topic topic[GG_TOPICS_MAX];
     int  topics;
+
+    // Who they are, as well as what they say. The file that lists everybody by
+    // name is the natural home for the rest of a person: one block, one person,
+    // and adding a townsperson is an edit to one file rather than an edit to a
+    // file and a table in C that had to agree with it.
+    //
+    // The schedule's x and y are OFFSETS FROM THE TOWN CENTRE, not tiles: the
+    // generator puts the town somewhere different every seed, so an absolute
+    // position would land these people in a field. An authored map records
+    // absolute positions instead - see gg_map_actor.
+    uint8_t art;                               // gg_actor_id
+    gg_sched_entry sched[GG_SCHEDULE_MAX];
+    int  schedn;
+    bool lives;                                // has an art: the world places them
 } gg_speaker;
 
 // Loads the whole book. Held in one place rather than per game, because
@@ -66,6 +81,10 @@ void gg_dialogue_clear(void);
 
 // Who is loaded, for tests and for the editor.
 int gg_dialogue_speakers(void);
+
+// The i'th speaker, or nullptr. The world populates a generated town by walking
+// these, so the book is the roll of who lives there as well as what they say.
+const gg_speaker *gg_dialogue_speaker(int i);
 
 // The speaker of that name, or nullptr. Names are matched exactly: a townsman
 // with no entry simply has nothing to say beyond a greeting, which is a

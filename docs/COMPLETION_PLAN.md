@@ -183,9 +183,14 @@ that is reachable while content is C, so the editor comes before the content.
       and played in the game with no code change — the person authored is in the
       world under her name and keeping her day, the region names the place, and
       the generator's own townsfolk are not there.*
-- [ ] **Actors, schedules and dialogue move out of C into map data.** Today the
-      eight townsfolk are a table in `gg_game.c`.
-      *Verification: `gg_game.c` contains no character names.*
+- [x] **Actors, schedules and dialogue move out of C into map data.** The eight
+      townsfolk were a table in `gg_game.c`; they are now blocks in
+      `assets/dialogue.txt`, one per person, holding their sprite, their day and
+      everything they say. An authored map records people absolutely instead,
+      and a map that names anybody is the whole of who lives there.
+      *Verification: `gg_game.c` contains no character names — and a person
+      added to the book turns up in the world, one taken out does not, and one
+      with a sprite but no day is refused.*
 - [ ] **Quest and story state machine**, with flags, stages and journal entries,
       all in data. *Verification: a two-stage quest completed, its journal
       updated, and the state surviving a save/load.*

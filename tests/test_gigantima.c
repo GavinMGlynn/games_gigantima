@@ -49,6 +49,21 @@ static int g_checks, g_failures;
 // ---------------------------------------------------------------------------
 // RNG
 // ---------------------------------------------------------------------------
+// Puts the shipped bestiary back, so a test that loaded its own does not leave
+// every test after it fighting something that no longer exists.
+static void restore_bestiary(void) {
+    CHECK(gg_bestiary_load(gg_asset_path("bestiary.txt")),
+          "could not put the shipped bestiary back");
+}
+
+// The same for the book of people. It is the roll of who lives in a generated
+// town as well as what they say, so a test that leaves it cleared leaves every
+// test after it in an empty world.
+static void restore_dialogue(void) {
+    CHECK(gg_dialogue_load(gg_asset_path("dialogue.txt")),
+          "could not put the shipped dialogue back");
+}
+
 static void the_rng_is_reproducible_from_its_seed(void) {
     gg_rng a, b;
     gg_rng_seed(&a, 12345);
@@ -2706,7 +2721,7 @@ static void a_topic_unlocks_only_after_the_word_is_learned(void) {
           "the answer did not come from the file: '%s'", g.said[0]);
 
     gg_game_free(&g);
-    gg_dialogue_clear();
+    restore_dialogue();
     SDL_RemovePath(path);
 }
 
@@ -2753,7 +2768,7 @@ static void a_word_learned_from_one_person_opens_another(void) {
           g.askables);
 
     gg_game_free(&g);
-    gg_dialogue_clear();
+    restore_dialogue();
     SDL_RemovePath(path);
 }
 
@@ -2794,7 +2809,7 @@ static void what_was_learned_survives_a_save(void) {
 
     gg_game_free(&b);
     gg_game_free(&a);
-    gg_dialogue_clear();
+    restore_dialogue();
     SDL_RemovePath(path);
     wipe_saves(who);
 }
@@ -2859,7 +2874,7 @@ static void synonyms_ask_the_same_topic_and_show_one_label(void) {
               "the list shows '%s', not the label the author chose", g.askable[0]);
 
     gg_game_free(&g);
-    gg_dialogue_clear();
+    restore_dialogue();
     SDL_RemovePath(path);
 }
 
@@ -2914,7 +2929,7 @@ static void the_vale_has_a_book_and_every_word_in_it_is_reachable(void) {
         CHECK(s->bye[0] != '\0', "%s has no parting line", WHO[w]);
     }
 
-    gg_dialogue_clear();
+    restore_dialogue();
 }
 
 // ---------------------------------------------------------------------------
@@ -3169,7 +3184,7 @@ static void a_companion_is_recruited_by_a_topic_in_the_book(void) {
     CHECK(gg_party_size(&g) == 0, "asking COME again did not send them away");
 
     gg_game_free(&g);
-    gg_dialogue_clear();
+    restore_dialogue();
     SDL_RemovePath(path);
 }
 
@@ -3940,7 +3955,7 @@ static void every_spell_in_the_vale_can_be_learned_from_somebody(void) {
     }
 
     gg_magic_clear();
-    gg_dialogue_clear();
+    restore_dialogue();
 }
 
 static void a_spell_of_light_survives_a_save(void) {
@@ -3994,13 +4009,6 @@ static const char *write_bestiary(const char *text) {
         SDL_CloseIO(io);
     }
     return path;
-}
-
-// Puts the shipped bestiary back, so a test that loaded its own does not leave
-// every test after it fighting something that no longer exists.
-static void restore_bestiary(void) {
-    CHECK(gg_bestiary_load(gg_asset_path("bestiary.txt")),
-          "could not put the shipped bestiary back");
 }
 
 // The plan's own verification: a creature added with no code change. Every
@@ -4719,6 +4727,114 @@ static void a_failed_load_leaves_what_was_open_alone(void) {
     gg_edit_close(&e);
 }
 
+// The plan's own verification, stated as a rule the code has to keep: nothing
+// in the simulation knows anybody's name. A townsperson added to the book turns
+// up in the world, and one taken out of it does not.
+static void who_lives_in_the_town_comes_out_of_the_book(void) {
+    const char *path = write_dialogue(
+        "person Wilkin\n"
+        "art ELDER\n"
+        "at 06 -3 -3\n"
+        "at 12 3 -3\n"
+        "at 18 3 3\n"
+        "at 22 -3 3\n"
+        "greet Wilkin, and glad of it.\n"
+        "topic name\n"
+        "  say Wilkin.\n"
+        "person Voice\n"
+        "greet I am only a voice.\n"
+        "topic name\n"
+        "  say Nobody you can meet.\n");
+    CHECK(gg_dialogue_load(path), "the book did not load");
+    CHECK(gg_dialogue_speakers() == 2, "expected two people in the book");
+
+    const gg_speaker *w = gg_dialogue_find("Wilkin");
+    CHECK(w != nullptr, "Wilkin is not in the book");
+    CHECK(w && w->lives, "Wilkin has a sprite but is not marked as living here");
+    CHECK(w && w->schedn == 4, "Wilkin has %d hours, expected 4", w ? w->schedn : -1);
+    CHECK(w && w->art == GG_ACTOR_ELDER, "Wilkin is wearing the wrong sprite");
+
+    const gg_speaker *v = gg_dialogue_find("Voice");
+    CHECK(v && !v->lives, "somebody with no sprite is being placed in the world");
+
+    gg_game g;
+    CHECK(gg_game_new(&g, 71, "Bookkeeper"), "new game failed");
+
+    int wilkins = 0, voices = 0, residents = 0;
+    for (int i = 0; i < g.actors; i++) {
+        if (i == g.player || !g.actor[i].active || g.actor[i].hostile) continue;
+        residents++;
+        if (SDL_strcmp(g.actor[i].name, "Wilkin") == 0) wilkins++;
+        if (SDL_strcmp(g.actor[i].name, "Voice") == 0) voices++;
+    }
+    CHECK(wilkins == 1, "the town holds %d Wilkins, expected one", wilkins);
+    CHECK(voices == 0, "a voice with no sprite was placed in the world");
+    CHECK(residents == 1, "the town holds %d people, and the book names one who "
+          "lives there", residents);
+
+    // The one in the world keeps the day the file gave them, walked out of any
+    // wall the generator happened to put there - and their greeting comes from
+    // the same block rather than from a second table.
+    for (int i = 0; i < g.actors; i++) {
+        if (SDL_strcmp(g.actor[i].name, "Wilkin") != 0) continue;
+        CHECK(g.actor[i].schedn == 4, "Wilkin came into the world with %u hours",
+              g.actor[i].schedn);
+        CHECK(g.actor[i].greeting && SDL_strstr(g.actor[i].greeting, "glad of it"),
+              "Wilkin's greeting did not come from the book");
+        for (int k = 0; k < g.actor[i].schedn; k++)
+            CHECK(gg_map_walkable(&g.map, g.actor[i].sched[k].x,
+                                  g.actor[i].sched[k].y),
+                  "Wilkin is sent somewhere solid at %02u:00",
+                  g.actor[i].sched[k].hour);
+    }
+
+    gg_game_free(&g);
+    restore_dialogue();
+    SDL_RemovePath(path);
+
+    // And with the shipped book, the town is the eight it names.
+    gg_game h;
+    CHECK(gg_game_new(&h, 72, "Vale"), "new game failed");
+    int shipped = 0, placed = 0;
+    for (int i = 0; i < gg_dialogue_speakers(); i++)
+        if (gg_dialogue_speaker(i)->lives) shipped++;
+    for (int i = 0; i < h.actors; i++)
+        if (i != h.player && h.actor[i].active && !h.actor[i].hostile) placed++;
+    CHECK(shipped > 0, "the shipped book names nobody who lives anywhere");
+    CHECK(placed == shipped, "the book names %d residents and the town holds %d",
+          shipped, placed);
+    gg_game_free(&h);
+}
+
+// A person in the book with a sprite must have a day, or they stand on the
+// square from dawn to dawn - which is the whole reason a schedule exists.
+static void somebody_who_lives_here_needs_a_day(void) {
+    const char *path = write_dialogue(
+        "person Idle\n"
+        "art GUARD\n"
+        "greet I have nowhere to be.\n"
+        "topic name\n"
+        "  say Idle.\n");
+    CHECK(!gg_dialogue_load(path),
+          "somebody with a sprite and no day was accepted");
+    CHECK(gg_dialogue_speakers() == 0, "the bad book left people behind");
+
+    // And an `at` line that is missing a number is refused rather than read as
+    // a zero, which would silently put somebody on the town square.
+    const char *bad = write_dialogue(
+        "person Half\n"
+        "art GUARD\n"
+        "at 06 -3\n"
+        "greet Half a day.\n"
+        "topic name\n"
+        "  say Half.\n");
+    CHECK(!gg_dialogue_load(bad), "a half-written schedule line was accepted");
+
+    restore_dialogue();
+    SDL_RemovePath(path);
+    SDL_RemovePath(bad);
+}
+
 // ---------------------------------------------------------------------------
 // Content tables
 // ---------------------------------------------------------------------------
@@ -4775,6 +4891,8 @@ int main(void) {
     // that want their own creatures load over the top and clear afterwards.
     if (!gg_bestiary_load(gg_asset_path("bestiary.txt")))
         SDL_Log("gigantima: tests could not load the bestiary");
+    if (!gg_dialogue_load(gg_asset_path("dialogue.txt")))
+        SDL_Log("gigantima: tests could not load the dialogue");
 
     RUN(the_rng_is_reproducible_from_its_seed);
     RUN(a_zero_seed_does_not_stick_at_zero);
@@ -4922,6 +5040,9 @@ int main(void) {
     RUN(the_editor_rubs_out_what_it_draws);
     RUN(the_editor_says_what_is_wrong_with_a_map);
     RUN(a_failed_load_leaves_what_was_open_alone);
+
+    RUN(who_lives_in_the_town_comes_out_of_the_book);
+    RUN(somebody_who_lives_here_needs_a_day);
 
     RUN(every_terrain_and_item_has_a_name);
     RUN(every_prop_has_a_plausible_footprint);

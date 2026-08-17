@@ -4,8 +4,8 @@
 // given; it is a phrase - IN LOR, VAS FLAM - and you can cast it when you know
 // the words it is made of. So the runes live in exactly the same vocabulary the
 // conversation system uses, and are learned the same way: somebody tells you
-// one. Nystul teaching MANI is the same mechanism as Iolo teaching CARAVAN, and
-// nothing here needed a second one.
+// one. The mage teaching a rune is the same mechanism as the merchant teaching
+// a rumour, and nothing here needed a second one.
 //
 // The reagents are the other half of the price. They are ordinary items, spent
 // out of the ordinary pack, so a spell you cannot afford is a spell whose herbs
