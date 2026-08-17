@@ -41,6 +41,18 @@ typedef struct {
     // A slot rather than a flag, because who follows whom is the formation.
     uint8_t party;
 
+    // Fighting. `hostile` puts them on the other side; `speed` fills `energy`
+    // each turn and an action costs 100 of it, which is what initiative is.
+    // `damage` and `guard` are natural ability - claws, or a thick hide - and
+    // anything held is added to them.
+    bool    hostile;
+    uint8_t speed;
+    int16_t energy;
+    uint8_t damage, guard;
+
+    // What they leave behind. One kind and a count, dropped where they fall.
+    uint8_t loot_kind, loot_count;
+
     int16_t x, y;         // tile the actor occupies now
     int16_t from_x, from_y;   // tile it left, for drawing the slide
     uint8_t step;         // ticks left in the slide; 0 means standing still

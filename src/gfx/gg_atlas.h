@@ -65,6 +65,9 @@ static const gg_rect GG_ITEM_RECT[GG_ITEM_COUNT] = {
     [GG_ITEM_TORCH] = {   96,    0,  32,  64 },
     [GG_ITEM_GOLD] = {  128,    0,  32,  32 },
     [GG_ITEM_SILVER] = {  160,    0,  32,  32 },
+    [GG_ITEM_HAMMER] = {  192,    0,  32,  32 },
+    [GG_ITEM_STONE] = {  224,    0,  32,  32 },
+    [GG_ITEM_SHIELD] = {  256,    0,  32,  32 },
 };
 
 #define GG_ACTOR_FRAME   64
@@ -76,6 +79,8 @@ static const gg_rect GG_ACTOR_RECT[GG_ACTOR_COUNT] = {
     [GG_ACTOR_HEALER] = {    0,  768,  64,  64 },
     [GG_ACTOR_MAGE] = {    0, 1024,  64,  64 },
     [GG_ACTOR_ELDER] = {    0, 1280,  64,  64 },
+    [GG_ACTOR_BRIGAND] = {    0, 1536,  64,  64 },
+    [GG_ACTOR_OUTLAW] = {    0, 1792,  64,  64 },
 };
 
 // --- edge sets: 3x3 blob rings, in atlas_edges.png ---

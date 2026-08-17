@@ -1,5 +1,6 @@
 // gg_game.c - the turn loop, the world clock, and the townsfolk who live by it.
 #include "core/gg_game.h"
+#include "core/gg_combat.h"
 
 #include <stdarg.h>
 
@@ -376,6 +377,18 @@ static void world_turn(gg_game *g, int minutes) {
         if (i < 0) continue;
         gg_actor *a = &g->actor[i];
 
+        // A companion who has something at arm's length deals with it before
+        // thinking about the line. Following into a fight and standing there
+        // is the behaviour that makes a party feel like luggage.
+        {
+            int foe = -1;
+            for (int k = 0; k < g->actors; k++)
+                if (gg_at_odds(g, i, k) &&
+                    gg_dist_cheb(a->x, a->y, g->actor[k].x, g->actor[k].y) <= 1)
+                    foe = k;
+            if (foe >= 0) { gg_strike(g, i, foe); continue; }
+        }
+
         // The Nth footprint back. Before there are enough footprints - just
         // recruited, or just loaded - the oldest one is the best there is.
         const int want = slot - 1 < g->trailn ? slot - 1 : g->trailn - 1;
@@ -395,13 +408,17 @@ static void world_turn(gg_game *g, int minutes) {
         }
     }
 
+    // Then whatever wants to kill you, in initiative order.
+    gg_combat_turn(g);
+
     const int hour = gg_game_hour(g);
     for (int i = 0; i < g->actors; i++) {
         gg_actor *a = &g->actor[i];
         if (i == g->player || !a->active) continue;
         // Somebody walking with you has given up their day; they were moved
-        // above, by the trail rather than by a schedule.
-        if (a->party != GG_NOT_IN_PARTY) continue;
+        // above, by the trail rather than by a schedule. Anything hostile was
+        // moved by gg_combat_turn, and keeps no schedule at all.
+        if (a->party != GG_NOT_IN_PARTY || a->hostile) continue;
 
         int tx, ty;
         if (!gg_actor_target_at(a, hour, &tx, &ty)) continue;
@@ -444,6 +461,14 @@ static void do_move(gg_game *g, int dx, int dy) {
     for (int i = 0; i < g->actors; i++) {
         if (i == g->player || !g->actor[i].active) continue;
         if (g->actor[i].x == nx && g->actor[i].y == ny) {
+            // An enemy in the way is struck. Walking into somebody already
+            // means "deal with this person"; which dealing it is depends on
+            // whose side they are on, and nothing else.
+            if (gg_at_odds(g, g->player, i)) {
+                gg_strike(g, g->player, i);
+                world_turn(g, GG_MINUTES_PER_TURN);
+                return;
+            }
             // Somebody walking with you steps aside rather than being talked
             // at. Without this the party can wall you into a doorway they
             // followed you through, which is the exact failure the plan's
@@ -653,6 +678,48 @@ static void pack_move(gg_game *g, int dy) {
     g->pack_cursor = (g->pack_cursor + dy + g->packn) % g->packn;
 }
 
+// Striking without stepping. At arm's length it hits whatever is in front;
+// with something readied that has reach, it throws at the nearest thing it can
+// see. Walking into an enemy does the first of those anyway, so this exists
+// for the second - and for hitting something you would rather not walk into.
+static void do_fight(gg_game *g) {
+    const gg_actor *p = gg_player_const(g);
+    static const int DX[4] = { 0, -1, 0, 1 };
+    static const int DY[4] = { -1, 0, 1, 0 };
+
+    // In front first, so a deliberate swing at somebody you are facing is
+    // never turned into a throw at somebody else.
+    const int fx = p->x + DX[p->facing], fy = p->y + DY[p->facing];
+    for (int i = 0; i < g->actors; i++)
+        if (g->actor[i].active && g->actor[i].x == fx && g->actor[i].y == fy &&
+            gg_at_odds(g, g->player, i)) {
+            gg_strike(g, g->player, i);
+            world_turn(g, GG_MINUTES_PER_TURN);
+            return;
+        }
+
+    // Then the nearest thing a readied throw can reach, if anything is.
+    const int reach = gg_reach(g, g->player);
+    if (reach > 1) {
+        int best = -1, best_d = 0;
+        for (int i = 0; i < g->actors; i++) {
+            if (!gg_at_odds(g, g->player, i)) continue;
+            const int d = gg_dist_cheb(p->x, p->y, g->actor[i].x, g->actor[i].y);
+            if (d > reach || !gg_line_of_sight(g, p->x, p->y,
+                                               g->actor[i].x, g->actor[i].y))
+                continue;
+            if (best < 0 || d < best_d) { best = i; best_d = d; }
+        }
+        if (best >= 0 && gg_throw_at(g, g->player, g->actor[best].x,
+                                     g->actor[best].y)) {
+            world_turn(g, GG_MINUTES_PER_TURN);
+            return;
+        }
+    }
+
+    gg_log(g, "There is nothing within reach to strike.");
+}
+
 static void do_open(gg_game *g) {
     gg_actor *p = gg_player(g);
     static const int DX[4] = { 0, -1, 0, 1 };
@@ -726,6 +793,7 @@ void gg_game_act(gg_game *g, gg_action a) {
     case GG_ACT_TALK: do_talk(g); break;
     case GG_ACT_OPEN: do_open(g); break;
     case GG_ACT_GET:  do_get(g); break;
+    case GG_ACT_FIGHT: do_fight(g); break;
 
     case GG_ACT_PACK:
         g->mode = GG_MODE_PACK;
@@ -903,6 +971,32 @@ static bool finish_new_game(gg_game *g, const char *profile) {
     g->actors = 1;
 
     place_townsfolk(g);
+
+    // Trouble in the wilderness, well away from the town gate. The vale's
+    // problem is people, and this is where the caravan met them.
+    {
+        int cx = g->map.start_x, cy = g->map.start_y;
+        for (int i = 0; i < g->map.regions; i++)
+            if (g->map.region[i].kind == GG_REGION_TOWN) {
+                cx = g->map.region[i].x + g->map.region[i].w / 2;
+                cy = g->map.region[i].y + g->map.region[i].h / 2;
+                break;
+            }
+
+        // Placed from the seeded RNG like everything else, so the same number
+        // puts the same brigands in the same places.
+        int placed = 0;
+        for (int tries = 0; tries < 400 && placed < 6; tries++) {
+            const int x = gg_rand_belowi(&g->rng, g->map.w);
+            const int y = gg_rand_belowi(&g->rng, g->map.h);
+            if (gg_dist_cheb(cx, cy, x, y) < 24) continue;   // not on the doorstep
+            const gg_cell *c = gg_map_at_const(&g->map, x, y);
+            if (!c || (c->flags & GG_CELL_INDOORS)) continue;
+            const gg_actor_id art = (placed % 3 == 2) ? GG_ACTOR_OUTLAW
+                                                      : GG_ACTOR_BRIGAND;
+            if (gg_spawn_foe(g, art, x, y) >= 0) placed++;
+        }
+    }
 
     g->mode = GG_MODE_PLAY;
     gg_log(g, "%s. Day %u, %s.", g->map.name, g->day, gg_game_place(g));

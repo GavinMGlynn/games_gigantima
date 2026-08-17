@@ -188,15 +188,19 @@ def prop(name, sheet, col, row, w, h, foot=None, door=NO_DOOR, hollow=False,
 # ---------------------------------------------------------------------------
 FOOD = f"{SMALL}/Food"
 ORES = f"{SMALL}/Ores & Ingots"
+TOOLS = f"{SMALL}/Tools, Smithing.png"
+SHIELD_PROP = "Characters/Props/Shield 01 - Heater Shield"
+
 
 # What using an item does. Mirrored into gg_ids.h.
 USE_NONE, USE_EAT, USE_DRINK = 0, 1, 2
 # Where an item can be worn or held. GG_SLOT_NONE means it cannot be.
-SLOT_NONE, SLOT_LIGHT = 0, 1
+SLOT_NONE, SLOT_LIGHT, SLOT_WEAPON, SLOT_ARMOUR = 0, 1, 2, 3
 
 
 def item(name, sheet, col, row, w, h, one, many, short, weight,
-         stack=True, use=USE_NONE, heal=0, slot=SLOT_NONE, light=0, value=0):
+         stack=True, use=USE_NONE, heal=0, slot=SLOT_NONE, light=0, value=0,
+         damage=0, guard=0, reach=0, layers=None, frame=None):
     """One kind of carryable thing.
 
     `one`/`many` are how it reads in a sentence - "thou takest a loaf of
@@ -215,9 +219,21 @@ def item(name, sheet, col, row, w, h, one, many, short, weight,
 
     `value` is worth in copper, for when there is trade. Recorded now because
     it is a property of the thing, not of the shop.
+
+    `damage` is what it adds to a blow, `guard` what it turns aside, and
+    `reach` how many tiles away it can be used - zero meaning arm's length.
+    A thing with reach is thrown, and leaves itself on the ground where it
+    lands, which is why a stone is worth picking up again.
+
+    `layers`/`frame` cut the picture out of a character prop instead of a tile
+    sheet: several PNGs composited, then the one 64px frame named, then cropped
+    to what is actually drawn and centred in a tile. The shield exists only as
+    something a person is holding, so this is the only way to get a picture of
+    one on its own.
     """
     return (name, sheet, col, row, w, h, one, many, short, weight,
-            1 if stack else 0, use, heal, slot, light, value)
+            1 if stack else 0, use, heal, slot, light, value,
+            damage, guard, reach, layers, frame)
 
 
 ITEMS = [
@@ -239,6 +255,23 @@ ITEMS = [
     item("SILVER", f"{ORES}/Alloys.png",    2, 0, 1, 1,
          "a bar of silver", "bars of silver", "silver",
          weight=400, value=200),
+
+    # Arms. This art set has no swords that stand on their own - the sword is
+    # only ever a layer on a swinging character - so what the vale fights with
+    # is what the vale has: a smith's hammer, a stone, and a shield cut out of
+    # the one frame that shows it whole.
+    item("HAMMER", TOOLS, 8, 0, 1, 1,
+         "a smith's hammer", "smith's hammers", "hammer",
+         weight=350, stack=False, slot=SLOT_WEAPON, damage=5, value=60),
+    item("STONE",  f"{ORES}/Ore, Stone.png", 1, 2, 1, 1,
+         "a throwing stone", "throwing stones", "stones",
+         weight=30, slot=SLOT_WEAPON, damage=2, reach=5, value=1),
+    item("SHIELD", "", 0, 2, 1, 1,
+         "a wooden shield", "wooden shields", "shield",
+         weight=500, stack=False, slot=SLOT_ARMOUR, guard=3, value=80,
+         layers=[f"{SHIELD_PROP}/Wood/Oak/Combat 1h - Idle.png",
+                 f"{SHIELD_PROP}/Paint/Combat 1h - Idle.png"],
+         frame=(0, 2)),
 ]
 
 
@@ -351,6 +384,17 @@ ACTORS = [
     ("ELDER", cast(BODY_M, HEAD_E, "Porcelain", "Medium 04 - Bangs & Bun", "White",
                    "Shirt 01 - Longsleeve Shirt", "Plum",
                    "Pants 03 - Pants", "Charcoal", "Shoes 01 - Shoes", "Leather")),
+
+    # What there is to fight. This set has no monsters at all - it is people,
+    # head to foot - so the vale's trouble is people, which suits a caravan
+    # that did not arrive better than a wolf would.
+    ("BRIGAND", cast(BODY_M, HEAD_M, "Tawny", "Short 04 - Cowlick", "Black",
+                     "Shirt 01 - Longsleeve Shirt", "Garnet",
+                     "Pants 03 - Pants", "Black", "Shoes 02 - Boots", "Black")),
+    ("OUTLAW", cast(BODY_F, HEAD_F, "Bronze", "Medium 06 - Dreadlocks", "Charcoal",
+                    "Shirt 01 - Longsleeve Shirt", "Shadow",
+                    "Pants 03 - Pants", "Black", "Shoes 02 - Boots", "Leather",
+                    sex="Feminine, Thin")),
 ]
 
 
@@ -368,14 +412,36 @@ def sheet(rel):
 
 
 def find_layer(directory, colour):
-    """Resolve a layer to its Walk.png, tolerating the sheets that have no
-    colour axis. Returns None if the variant does not exist for this body."""
+    """Resolve a layer to its Walk.png.
+
+    Some sheets have no colour axis at all, and for those the bare Walk.png is
+    the right answer. A colour that was *asked for* and does not exist is not:
+    that used to fall through to the uncoloured base, and two brigands were
+    baked and committed in white shirts because "Rust" and "Slate" are not
+    colours this set has. A misspelling has to be an error, not a costume.
+
+    Returns None if the layer does not exist for this body at all, which is a
+    different thing and stays a note.
+    """
     base = os.path.join(LPC, "Characters", directory)
-    for candidate in ([os.path.join(base, colour, "Walk.png")] if colour else []) + \
-                     [os.path.join(base, "Walk.png")]:
-        if os.path.exists(candidate):
-            return candidate
-    return None
+    if not os.path.isdir(base):
+        return None
+
+    if colour:
+        tinted = os.path.join(base, colour, "Walk.png")
+        if os.path.exists(tinted):
+            return tinted
+        # Only forgive the miss when this sheet has no colours to choose from.
+        has_colours = any(os.path.isdir(os.path.join(base, d))
+                          for d in os.listdir(base))
+        if has_colours:
+            choices = sorted(d for d in os.listdir(base)
+                             if os.path.isdir(os.path.join(base, d)))
+            sys.exit(f"no colour '{colour}' for {directory}. It has: "
+                     + ", ".join(choices))
+
+    plain = os.path.join(base, "Walk.png")
+    return plain if os.path.exists(plain) else None
 
 
 class Shelf:
@@ -733,10 +799,37 @@ def build_items():
     entries = []
     cache = {}
     for (name, rel, c, r, wt, ht, one, many, short, weight,
-         stack, use, heal, slot, light, value) in ITEMS:
-        if rel not in cache:
-            cache[rel] = sheet(rel)
-        img = cache[rel].crop((c * TILE, r * TILE, (c + wt) * TILE, (r + ht) * TILE))
+         stack, use, heal, slot, light, value,
+         damage, guard, reach, layers, frame) in ITEMS:
+        if layers:
+            # A character prop: composite the layers, take the named 64px
+            # frame, crop to what is drawn, and centre that in a tile. A shield
+            # exists in this set only as something somebody is holding, so
+            # there is no cell of a sheet to point at.
+            comp = None
+            for rel_layer in layers:
+                one_layer = sheet(rel_layer)
+                comp = one_layer if comp is None else \
+                    Image.alpha_composite(comp, one_layer)
+            fx, fy = frame
+            cut = comp.crop((fx * FRAME, fy * FRAME,
+                             (fx + 1) * FRAME, (fy + 1) * FRAME))
+            box = cut.getbbox()
+            if not box:
+                sys.exit(f"item {name}: frame {frame} of its prop is empty")
+            drawn_part = cut.crop(box)
+            if drawn_part.width > TILE or drawn_part.height > TILE:
+                sys.exit(f"item {name}: {drawn_part.width}x{drawn_part.height} "
+                         f"does not fit a {TILE}px tile")
+            img = Image.new("RGBA", (TILE * wt, TILE * ht), (0, 0, 0, 0))
+            img.paste(drawn_part,
+                      ((TILE - drawn_part.width) // 2,
+                       (TILE - drawn_part.height) // 2))
+        else:
+            if rel not in cache:
+                cache[rel] = sheet(rel)
+            img = cache[rel].crop((c * TILE, r * TILE,
+                                   (c + wt) * TILE, (r + ht) * TILE))
 
         # The bottom row is what sits on the ground, so that is the cell that
         # has to carry the picture - the same rule, and the same 5% bar, as a
@@ -758,9 +851,22 @@ def build_items():
         if heal and use == USE_NONE:
             sys.exit(f"item {name} heals {heal} but cannot be used")
 
+        # A slot that turns nothing aside and strikes no harder is a control
+        # that does nothing, which is the thing this project keeps refusing to
+        # ship. Every equippable has to earn its slot.
+        if slot == SLOT_WEAPON and damage == 0:
+            sys.exit(f"item {name} is a weapon that does no damage")
+        if slot == SLOT_ARMOUR and guard == 0:
+            sys.exit(f"item {name} is armour that turns nothing aside")
+        if slot == SLOT_LIGHT and light == 0:
+            sys.exit(f"item {name} is held as a light but gives none")
+        if reach and slot != SLOT_WEAPON:
+            sys.exit(f"item {name} has reach but is not a weapon")
+
         x, y, w, h = packer.add(name, img)
         entries.append((name, x, y, w, h, wt, ht, one, many, short, weight,
-                        stack, use, heal, slot, light, value))
+                        stack, use, heal, slot, light, value,
+                        damage, guard, reach))
     return packer.render(), entries
 
 
@@ -897,9 +1003,12 @@ def emit_ids(tiles, props, actors, items, path):
     o.append("// What using a thing does.")
     o.append("typedef enum { GG_USE_NONE, GG_USE_EAT, GG_USE_DRINK } gg_item_use;")
     o.append("")
-    o.append("// Where a thing can be held. One slot so far, and it is the one")
-    o.append("// that does something: a torch you are holding lights the world.")
-    o.append("typedef enum { GG_SLOT_NONE, GG_SLOT_LIGHT, GG_SLOT_COUNT } gg_slot_id;")
+    o.append("// Where a thing can be held. Each slot has to do something: a")
+    o.append("// torch lights, a weapon strikes, a shield turns a blow aside.")
+    o.append("typedef enum {")
+    o.append("    GG_SLOT_NONE, GG_SLOT_LIGHT, GG_SLOT_WEAPON, GG_SLOT_ARMOUR,")
+    o.append("    GG_SLOT_COUNT")
+    o.append("} gg_slot_id;")
     o.append("")
     o.append("// A kind of carryable thing.")
     o.append("//")
@@ -911,6 +1020,9 @@ def emit_ids(tiles, props, actors, items, path):
     o.append("//   use/heal        what using it does, and how much health it gives")
     o.append("//   slot/light      where it is held, and how far it lights while held")
     o.append("//   value           worth in copper, for when there is trade")
+    o.append("//   damage/guard    what it adds to a blow, what it turns aside")
+    o.append("//   reach           how many tiles away it strikes; 0 is arm's length,")
+    o.append("//                   and anything further is thrown and left where it lands")
     o.append("typedef struct {")
     o.append("    const char *one, *many, *short_name;")
     o.append("    uint8_t  tiles_w, tiles_h;")
@@ -919,6 +1031,7 @@ def emit_ids(tiles, props, actors, items, path):
     o.append("    uint8_t  use, heal;")
     o.append("    uint8_t  slot, light;")
     o.append("    uint16_t value;")
+    o.append("    uint8_t  damage, guard, reach;")
     o.append("} gg_item_def;")
     o.append("extern const gg_item_def GG_ITEM[GG_ITEM_COUNT];")
     o.append("")
@@ -971,13 +1084,15 @@ def emit_sizes(props, items, path):
 
     o.append("const gg_item_def GG_ITEM[GG_ITEM_COUNT] = {")
     for (name, x, y, w, h, wt, ht, one, many, short, weight,
-         stack, use, heal, slot, light, value) in items:
+         stack, use, heal, slot, light, value, damage, guard, reach) in items:
         uses = ["GG_USE_NONE", "GG_USE_EAT", "GG_USE_DRINK"][use]
-        slots = ["GG_SLOT_NONE", "GG_SLOT_LIGHT"][slot]
+        slots = ["GG_SLOT_NONE", "GG_SLOT_LIGHT",
+                 "GG_SLOT_WEAPON", "GG_SLOT_ARMOUR"][slot]
         o.append(f"    [GG_ITEM_{name}] = {{")
         o.append(f'        "{one}", "{many}", "{short}",')
         o.append(f"        {wt}, {ht}, {weight}, {stack},")
         o.append(f"        {uses}, {heal}, {slots}, {light}, {value},")
+        o.append(f"        {damage}, {guard}, {reach},")
         o.append("    },")
     o.append("};")
     with open(path, "w") as f:
@@ -1097,7 +1212,9 @@ def emit_credits(path):
     """
     used = sorted({os.path.dirname(rel) for _n, rel, *_ in TILES} |
                   {os.path.dirname(rel) for _n, rel, *_ in PROPS} |
-                  {os.path.dirname(rel) for _n, rel, *_ in ITEMS} |
+                  {os.path.dirname(rel) for _n, rel, *_ in ITEMS if rel} |
+                  {os.path.dirname(l) for it in ITEMS if it[-2]
+                   for l in it[-2]} |
                   {os.path.dirname(rel) for _n, rel, *_ in EDGES} |
                   {os.path.dirname(s[1]) for s in OVERLAYS if len(s) == 4} |
                   {"Characters"})

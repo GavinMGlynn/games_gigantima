@@ -130,9 +130,16 @@ found, not when someone remembers.
       *Verification: a companion follows through a door without blocking the
       player, over a long walk — the test walks in, out and back four times and
       fails if the Avatar is ever blocked or shares a tile.*
-- [ ] **Turn-based combat.** Initiative, melee and ranged, hit resolution, death
-      and loot. *Verification: a scripted encounter with a fixed seed resolving
-      identically every run.*
+- [x] **Turn-based combat.** Initiative as a speed budget — a quick foe acts
+      twice where a slow one acts every other turn — melee by walking into
+      somebody, ranged by throwing a readied stone, and every roll through the
+      seeded RNG. What falls leaves what it carried, on the ground, to be picked
+      up like anything else. Weapons and armour exist now that there is
+      something for them to change. This art set has no monsters at all, so the
+      vale's trouble is brigands, which suits a caravan that never arrived.
+      *Verification: a scripted encounter with a fixed seed resolving identically
+      every run, five runs over, and a different seed producing a different
+      fight — plus eight more on reach, walls, loot, bystanders and dying.*
 - [ ] **Magic.** Reagents, spellbook, a runic word system.
       *Verification: a spell defined in data, cast, with its effect and its
       reagent cost both observable.*
@@ -217,6 +224,11 @@ Recorded here as they turn up, so they are not rediscovered:
   a dead parameter built clean on every developer machine and failed only in CI,
   on the one platform nobody builds locally. **A warning enabled on one compiler
   and suppressed on another is a remote lint nobody can run.**
+- The art baker resolved a missing colour by silently using the *uncoloured*
+  layer, so two brigands were composited, baked and committed in white shirts
+  because "Rust" and "Slate" are not colours this set has. Making it fatal
+  caught a second one — "Olive" is not a skin tone either — on its first run.
+  **A fallback that produces something plausible is worse than one that stops.**
 - "Not entirely transparent" is not a measurement. The wall torch passed the
   baker's art check with nine texels — the tip of a flame, the rest of the torch
   being on the row below — and baked to an invisible sprite. **A check on art

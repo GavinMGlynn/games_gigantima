@@ -17,7 +17,7 @@ what people have left lying about, eat it or carry it or set it down again, ask
 the eight townsfolk about what they know and collect the words that unlock what
 the rest of them know, and watch them path around the buildings to keep daily
 schedules under a day/night cycle — or take two of them along, walking in single
-file behind you. Hold a torch and it lights the room. Pausing, saving and
+file behind you, and find out what the brigands in the hills make of that. Hold a torch and it lights the room. Pausing, saving and
 quitting are all on a menu, and every page works from a gamepad alone, naming
 included. There is **no story, no combat, no magic, no sound and no editor**.
 
@@ -104,8 +104,9 @@ A **profile** is a player: a name, and a directory of their own under the
 preferences path. Several people share a machine, and each finds their own
 world where they left it.
 
-A save carries the map, every actor with its schedule, the clock, the RNG state
-and what the avatar is carrying. Carrying the **RNG** is what makes a resumed
+A save carries the map, every actor with its schedule, stats, side and kit, the
+clock, the RNG state, what the Avatar is carrying, the words they have learned
+and the footprints their party is following. Carrying the **RNG** is what makes a resumed
 game not merely look the same but *continue* the same — the world goes on
 making the decisions it would have.
 
@@ -415,6 +416,65 @@ world, "that will do" in a menu — and so has to be readable from either drain.
 
 *Verification: `the_pad_feeds_the_world_and_the_menus_separately`.*
 
+### Fighting
+
+Turn-based like everything else: it happens inside `gg_game_act` and nowhere
+else. What it adds to a turn is an **order**. Everyone carries an energy budget
+that fills by their speed each turn and empties by 100 an action, so an outlaw
+at speed 150 acts three times in two turns where a brigand at 100 acts once a
+turn — and among those acting, the quickest goes first, ties broken by actor
+index so the order is total. That is initiative, and it shows in the log as an
+outlaw swinging twice between two of your own turns.
+
+**Every roll goes through the game's own RNG**, which is saved. A fight is part
+of the reproducible world rather than something on top of it: the same seed
+fights the same battle, which is the whole of this item's verification.
+
+Melee is **walking into somebody**, the same gesture that talks to a townsperson
+and swaps with a companion — which of the three it is depends only on whose side
+they are on. Ranged is a **readied stone**, thrown up to five tiles along a clear
+line, which leaves itself on the ground where it lands. `F` strikes without
+stepping, for the throw and for anything you would rather not walk into.
+
+There are **three sides, not two**: yours, the hostiles', and everybody else. A
+townsperson cannot be struck at all — a stray blow that starts a riot is a thing
+people stop swinging to avoid, and there is no crime system for it to mean
+anything to yet.
+
+**The dead leave what they carried**, through the same `gg_ground_drop` a
+dropped item uses, so loot is picked up with the same key and saved by the same
+code. The Avatar is the exception to dying: they are *not* removed, because the
+camera, the HUD and `gg_player` all read through that actor and a player index
+pointing at a dead slot is a crash rather than an ending. The game ends instead,
+and a save made after that comes back ended — the mode is derived from the
+Avatar's health on load rather than assumed to be play.
+
+**Hostiles only notice within eight tiles.** Without that a brigand hunts from
+anywhere on the map, and a player who stands still for a few hundred turns is
+killed by somebody who set out from the far side of the continent. That is not
+menace, it is bookkeeping — and it was caught by the save test diverging, not by
+anybody watching.
+
+**This art set contains no monsters.** It is people, head to foot, so what there
+is to fight is brigands and outlaws, composited from the same layers the
+townsfolk are. A caravan that never arrived is better served by that than by a
+wolf. There is no sword that stands on its own either — the sword exists only as
+a layer on a swinging character — so the arms are a smith's hammer, a throwing
+stone, and a shield cut out of the one frame that shows one whole.
+
+*Verification: `a_scripted_encounter_resolves_the_same_way_every_time` (the
+plan's own — five runs of one seed, and a different seed producing a different
+fight, so the check cannot pass on a simulation that ignores its dice),
+`a_blow_lands_or_misses_by_the_dice_and_never_for_nothing`,
+`armour_turns_blows_aside_and_a_weapon_drives_them_home`,
+`a_thrown_stone_reaches_across_the_room_and_lands_there`, `a_wall_stops_a_stone`,
+`the_quick_strike_before_the_slow_and_more_often`,
+`what_falls_leaves_what_it_carried`, `a_townsperson_is_never_caught_in_a_fight`,
+`the_avatar_dying_ends_the_game_rather_than_the_world`. Four were checked by
+breaking the rule they pin — making every speed equal, clearing line of sight,
+dropping no loot, and putting townsfolk on the other side. Plus a `--shot` frame
+of an exchange of blows, now taken in CI.*
+
 ### The party
 
 Up to four walk with the Avatar. **Recruiting is content, not code**: a topic in
@@ -677,9 +737,9 @@ Named plainly, because a reader should not have to infer absence:
 | | |
 | --- | --- |
 | Story, quests, journal | nothing at all |
-| Combat | nothing at all |
+| Combat depth | blows, initiative, reach and loot exist; there are no skills, no criticals, no morale, no fleeing, and two kinds of foe |
 | Magic | nothing at all |
-| Weapons and armour | nothing. The slot system takes any number of slots; a light is the only one anything fills, because there is no combat for a sword to affect |
+| Arms | a hammer, a throwing stone and a shield. No swords: this art set has none that stand on their own |
 | Trade | nothing. Items carry a value in copper, and no one buys or sells |
 | Conversation beyond words | topics and a vocabulary, but nobody reacts to anything — no quests, no trade, no one who does something because you asked |
 | Sound | nothing. `ext/sdl_mixer` is pinned but not linked, and the options page says so where the volume rows would be |

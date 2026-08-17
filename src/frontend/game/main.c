@@ -21,6 +21,7 @@
 #include "debug/gg_debug.h"
 #include "core/gg_save.h"
 #include "core/gg_dialogue.h"
+#include "core/gg_combat.h"
 #include "ui/gg_screens.h"
 #include "platform/gg_settings.h"
 
@@ -503,6 +504,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
             // page the player reads, so --shot has to be able to photograph it.
             { "talk",     GG_SCREEN_PLAY },
             { "party",    GG_SCREEN_PLAY },
+            { "fight",    GG_SCREEN_PLAY },
         };
         bool known = false;
         for (size_t k = 0; k < GG_COUNTOF(NAMED); k++)
@@ -754,6 +756,17 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
         // actions would close it again.
         if (app->screen_name && SDL_strcmp(app->screen_name, "pack") == 0)
             app->game.mode = GG_MODE_PACK;
+
+        // Puts two brigands within arm's reach and swings once, so a fight can
+        // be photographed. Everything after the placing is the ordinary
+        // simulation, so the frame shows a real exchange of blows.
+        if (app->screen_name && SDL_strcmp(app->screen_name, "fight") == 0) {
+            const gg_actor *pl = gg_player_const(&app->game);
+            gg_spawn_foe(&app->game, GG_ACTOR_BRIGAND, pl->x + 1, pl->y);
+            gg_spawn_foe(&app->game, GG_ACTOR_OUTLAW, pl->x + 2, pl->y - 1);
+            gg_game_act(&app->game, GG_ACT_FIGHT);
+            gg_game_act(&app->game, GG_ACT_FIGHT);
+        }
 
         // Takes the two nearest townsfolk along, so the line and the party's
         // rows in the HUD can be photographed. The walk that follows is the

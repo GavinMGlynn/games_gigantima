@@ -8,10 +8,11 @@ An Ultima VI-style seamless-world RPG in C23 and SDL3.
 > journeys that save and resume, a generated continent with autotiled shorelines
 > and terrain, a town of houses you can walk into, townsfolk who path around the
 > buildings to keep daily schedules, a world clock with lit rooms at night, and
-> things you can pick up, carry, eat and set down again. There is no story, no
-> combat, no magic, no sound and no editor yet. `docs/PROJECT_STATUS.md` is the
-> single source of truth for what works; `docs/COMPLETION_PLAN.md` is the road
-> to the rest. Nothing here claims more than it has earned.
+> things you can pick up, carry, eat and set down again, companions who walk
+> with you and brigands who do not. There is no story, no magic, no sound and no
+> editor yet. `docs/PROJECT_STATUS.md` is the single source of truth for what
+> works; `docs/COMPLETION_PLAN.md` is the road to the rest. Nothing here claims
+> more than it has earned.
 
 ## What "Ultima VI-style" means here
 
@@ -79,6 +80,7 @@ by being the thing CI actually runs.
 | `T` | talk to whoever you face, and ask about the word under the cursor |
 | `L` | look at what you stand on |
 | `O` | open |
+| `F` | strike what thou facest, or throw a readied stone |
 | `G` | take what is underfoot |
 | `I` | what thou carriest |
 | `U` / `R` / `P` | use it, ready it, put it down |
@@ -90,7 +92,7 @@ by being the thing CI actually runs.
 
 A gamepad works for all of it, hot-plugged, with the sticks and the d-pad both
 driving movement: **A** talks, **B** waits, **X** looks, **Y** opens, **Back**
-opens the pack and **Start** pauses. Inside the pack those same four face
+opens the pack, **RB** strikes, and **Start** pauses. Inside the pack those same four face
 buttons carry the pack's verbs instead — **A** uses, **Y** readies, **X** sets
 down, **B** closes.
 
@@ -108,6 +110,13 @@ the title; `--new` starts that profile over rather than resuming.
 
 Walking into somebody talks to them, as Ultima VI did — the common case needs
 no key at all.
+
+There are brigands in the hills, and they are people — this art set has no
+monsters in it at all, which suits a caravan that never arrived better than a
+wolf would. Walking into one strikes it, the same gesture that talks to a
+townsperson; a readied stone reaches five tiles and lands where it was thrown.
+A quick foe acts twice where a slow one acts once, and what falls leaves what it
+was carrying.
 
 Some of them will come with you. Asking is a topic like any other — Dupre and
 Gwenno each have a reason and a word for it — and up to four walk behind you in
@@ -142,7 +151,7 @@ window, writes a single frame and exits, which is how CI checks that the game
 can still find and draw its own art — it photographs whatever the other flags
 select, so `--shot` alone gets the title screen and `--debug --shot` gets the
 debug view; `--screen NAME` opens a named page — `title`, `profiles`, `name`,
-`options`, `play`, `pause`, `pack`, `talk` or `party` — so each one can be photographed in turn.
+`options`, `play`, `pause`, `pack`, `talk`, `party` or `fight` — so each one can be photographed in turn.
 `--at X,Y` and `--time HH:MM` put the avatar somewhere specific at a specific
 hour, because verifying a change to how water is drawn means getting to water,
 and checking that a lit room differs from the street at night means getting to

@@ -132,6 +132,12 @@ static bool actor_write(SDL_IOStream *io, const gg_actor *a) {
     ok = ok && gg_io_w32(io, (uint32_t)(uint16_t)a->hp);
     ok = ok && gg_io_w32(io, (uint32_t)(uint16_t)a->hp_max);
     ok = ok && gg_io_w32(io, a->level) && gg_io_w32(io, a->party);
+    // Fighting. Without these a resumed brigand is a harmless bystander who
+    // walks a schedule it does not have.
+    ok = ok && gg_io_w32(io, a->hostile ? 1u : 0u);
+    ok = ok && gg_io_w32(io, a->speed) && gg_io_w32(io, (uint32_t)(uint16_t)a->energy);
+    ok = ok && gg_io_w32(io, a->damage) && gg_io_w32(io, a->guard);
+    ok = ok && gg_io_w32(io, a->loot_kind) && gg_io_w32(io, a->loot_count);
     ok = ok && gg_io_w32(io, a->schedn);
     for (int i = 0; ok && i < a->schedn; i++) {
         ok = gg_io_w32(io, a->sched[i].hour) &&
@@ -145,6 +151,8 @@ static bool actor_read(SDL_IOStream *io, gg_actor *a) {
     SDL_zerop(a);
     uint32_t active = 0, art = 0, facing = 0, x = 0, y = 0, def = 0, n = 0;
     uint32_t hp = 0, hpmax = 0, level = 0, party = 0;
+    uint32_t hostile = 0, speed = 0, energy = 0, damage = 0, guard = 0;
+    uint32_t loot_kind = 0, loot_count = 0;
     bool ok = gg_io_r32(io, &active) && gg_io_r32(io, &art) &&
               gg_io_r32(io, &facing);
     ok = ok && SDL_ReadIO(io, a->name, GG_ACTOR_NAME_MAX) == GG_ACTOR_NAME_MAX;
@@ -152,6 +160,10 @@ static bool actor_read(SDL_IOStream *io, gg_actor *a) {
     ok = ok && gg_io_r32(io, &x) && gg_io_r32(io, &y) && gg_io_r32(io, &def);
     ok = ok && gg_io_r32(io, &hp) && gg_io_r32(io, &hpmax) &&
                gg_io_r32(io, &level) && gg_io_r32(io, &party);
+    ok = ok && gg_io_r32(io, &hostile) && gg_io_r32(io, &speed) &&
+               gg_io_r32(io, &energy) && gg_io_r32(io, &damage) &&
+               gg_io_r32(io, &guard) && gg_io_r32(io, &loot_kind) &&
+               gg_io_r32(io, &loot_count);
     ok = ok && gg_io_r32(io, &n) && n <= GG_SCHEDULE_MAX;
     if (!ok) return false;
 
@@ -171,6 +183,15 @@ static bool actor_read(SDL_IOStream *io, gg_actor *a) {
     // A slot past the end of the line would leave somebody following nobody,
     // and this file may not be ours.
     a->party = (uint8_t)(party <= GG_PARTY_MAX ? party : GG_NOT_IN_PARTY);
+    a->hostile = hostile != 0;
+    a->speed = (uint8_t)speed;
+    a->energy = (int16_t)(uint16_t)energy;
+    a->damage = (uint8_t)damage;
+    a->guard = (uint8_t)guard;
+    // Clamped: an item id past the table would index off the end of GG_ITEM
+    // the moment they were killed, and this file may not be ours.
+    a->loot_kind = (uint8_t)(loot_kind < GG_ITEM_COUNT ? loot_kind : 0);
+    a->loot_count = (uint8_t)(loot_count > 255 ? 0 : loot_count);
     a->schedn = (uint8_t)n;
 
     for (uint32_t i = 0; i < n; i++) {
@@ -367,7 +388,12 @@ bool gg_save_read(gg_game *g, const char *base, const char *name) {
     // A conversation is not resumed. It holds a pointer into the loaded book -
     // which a file cannot carry - and nobody wants to come back to a game
     // mid-sentence. The words learned survive, which is the part that matters.
-    g->mode = GG_MODE_PLAY;
+    //
+    // The mode is derived rather than stored, and derived from the one fact
+    // that outlives a conversation: a game saved with the Avatar already dead
+    // must come back dead, not walk out of the grave because the loader
+    // assumed everything resumes into play.
+    g->mode = gg_player_const(g)->hp > 0 ? GG_MODE_PLAY : GG_MODE_GAMEOVER;
     g->talking_to = -1;
     g->speaker = nullptr;
     g->saids = 0;

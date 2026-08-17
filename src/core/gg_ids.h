@@ -63,6 +63,8 @@ typedef enum {
     GG_ACTOR_HEALER,
     GG_ACTOR_MAGE,
     GG_ACTOR_ELDER,
+    GG_ACTOR_BRIGAND,
+    GG_ACTOR_OUTLAW,
     GG_ACTOR_COUNT
 } gg_actor_id;
 
@@ -73,15 +75,21 @@ typedef enum {
     GG_ITEM_TORCH,
     GG_ITEM_GOLD,
     GG_ITEM_SILVER,
+    GG_ITEM_HAMMER,
+    GG_ITEM_STONE,
+    GG_ITEM_SHIELD,
     GG_ITEM_COUNT
 } gg_item_id;
 
 // What using a thing does.
 typedef enum { GG_USE_NONE, GG_USE_EAT, GG_USE_DRINK } gg_item_use;
 
-// Where a thing can be held. One slot so far, and it is the one
-// that does something: a torch you are holding lights the world.
-typedef enum { GG_SLOT_NONE, GG_SLOT_LIGHT, GG_SLOT_COUNT } gg_slot_id;
+// Where a thing can be held. Each slot has to do something: a
+// torch lights, a weapon strikes, a shield turns a blow aside.
+typedef enum {
+    GG_SLOT_NONE, GG_SLOT_LIGHT, GG_SLOT_WEAPON, GG_SLOT_ARMOUR,
+    GG_SLOT_COUNT
+} gg_slot_id;
 
 // A kind of carryable thing.
 //
@@ -93,6 +101,9 @@ typedef enum { GG_SLOT_NONE, GG_SLOT_LIGHT, GG_SLOT_COUNT } gg_slot_id;
 //   use/heal        what using it does, and how much health it gives
 //   slot/light      where it is held, and how far it lights while held
 //   value           worth in copper, for when there is trade
+//   damage/guard    what it adds to a blow, what it turns aside
+//   reach           how many tiles away it strikes; 0 is arm's length,
+//                   and anything further is thrown and left where it lands
 typedef struct {
     const char *one, *many, *short_name;
     uint8_t  tiles_w, tiles_h;
@@ -101,6 +112,7 @@ typedef struct {
     uint8_t  use, heal;
     uint8_t  slot, light;
     uint16_t value;
+    uint8_t  damage, guard, reach;
 } gg_item_def;
 extern const gg_item_def GG_ITEM[GG_ITEM_COUNT];
 

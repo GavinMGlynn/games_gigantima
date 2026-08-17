@@ -15,6 +15,7 @@
 #include "core/gg_path.h"
 #include "core/gg_save.h"
 #include "core/gg_dialogue.h"
+#include "core/gg_combat.h"
 #include "ui/gg_menu.h"
 #include "ui/gg_screens.h"
 #include "platform/gg_settings.h"
@@ -864,7 +865,10 @@ static bool games_match(const gg_game *a, const gg_game *b, const char **why) {
         if (x->active != y->active || x->x != y->x || x->y != y->y ||
             x->art != y->art || x->facing != y->facing || x->def != y->def ||
             x->hp != y->hp || x->hp_max != y->hp_max || x->level != y->level ||
-            x->party != y->party ||
+            x->party != y->party || x->hostile != y->hostile ||
+            x->speed != y->speed || x->energy != y->energy ||
+            x->damage != y->damage || x->guard != y->guard ||
+            x->loot_kind != y->loot_kind || x->loot_count != y->loot_count ||
             x->schedn != y->schedn || SDL_strcmp(x->name, y->name) != 0) {
             *why = "an actor";
             return false;
@@ -946,6 +950,10 @@ static void a_resumed_game_can_still_be_talked_to(void) {
     int with_greeting = 0, residents = 0;
     for (int i = 0; i < b.actors; i++) {
         if (i == b.player || !b.actor[i].active) continue;
+        // Only the townsfolk. Brigands are built rather than taken from the
+        // table, so they have no entry to be rebound from and no greeting to
+        // come back with - which is correct, not mute.
+        if (b.actor[i].def == GG_ACTOR_NO_DEF) continue;
         residents++;
         if (b.actor[i].greeting && b.actor[i].greeting[0]) with_greeting++;
     }
@@ -3179,6 +3187,405 @@ static void a_party_survives_a_save_in_order(void) {
 }
 
 // ---------------------------------------------------------------------------
+// Combat
+// ---------------------------------------------------------------------------
+// Builds the same fight every time: an empty patch of ground, the Avatar in the
+// middle of it, and foes placed exactly. Nothing is hunted for in the generated
+// world, so what this measures is the combat rules and not the map.
+static bool set_up_encounter(gg_game *g, uint32_t seed, int *cx, int *cy) {
+    if (!gg_game_new(g, seed, "Fighter")) return false;
+
+    // Clear the hostiles the world spawns, so only what a test places is in it.
+    for (int i = 0; i < g->actors; i++)
+        if (g->actor[i].hostile) g->actor[i].active = false;
+
+    // A clear square big enough to hold a foe beyond GG_NOTICE_RANGE and still
+    // have room to walk in - otherwise "it has not noticed me yet" cannot be
+    // set up at all.
+    const int x0 = 2, y0 = 2;
+    const int side = GG_NOTICE_RANGE * 2 + 12;
+    for (int y = y0; y < y0 + side; y++)
+        for (int x = x0; x < x0 + side; x++) {
+            gg_cell *c = gg_map_at(&g->map, x, y);
+            if (!c) return false;
+            c->terrain = GG_TILE_GRASS;
+            c->prop = GG_NO_PROP;
+            c->flags = 0;
+        }
+
+    gg_actor *p = gg_player(g);
+    p->x = (int16_t)(x0 + side / 2);
+    p->y = (int16_t)(y0 + side / 2);
+    p->step = 0;
+    p->hp = p->hp_max = 30;
+    p->level = 1;
+    g->trailn = 0;
+    g->mode = GG_MODE_PLAY;
+
+    // Nobody else near enough to wander in and change the arithmetic.
+    for (int i = 0; i < g->actors; i++) {
+        if (i == g->player || !g->actor[i].active) continue;
+        if (gg_dist_cheb(p->x, p->y, g->actor[i].x, g->actor[i].y) < side + 8)
+            g->actor[i].active = false;
+    }
+
+    *cx = p->x;
+    *cy = p->y;
+    return true;
+}
+
+// One step of an FNV-style hash. A function rather than a macro so the one
+// signed-to-unsigned conversion happens once, in a place with a named type,
+// rather than at every call site where -Wsign-conversion is right to ask.
+static uint32_t mix32(uint32_t h, int32_t v) {
+    uint32_t u = 0;
+    SDL_memcpy(&u, &v, sizeof u);
+    return (h ^ u) * 16777619u;
+}
+
+// Plays the encounter out and returns a number that stands for everything that
+// happened in it - health, turns, the RNG, what fell and what it left.
+static uint32_t play_out_encounter(uint32_t seed) {
+    gg_game g;
+    int cx = 0, cy = 0;
+    if (!set_up_encounter(&g, seed, &cx, &cy)) return 0;
+
+    CHECK(gg_spawn_foe(&g, GG_ACTOR_BRIGAND, cx + 1, cy) >= 0, "no brigand");
+    CHECK(gg_spawn_foe(&g, GG_ACTOR_OUTLAW, cx + 3, cy + 1) >= 0, "no outlaw");
+
+    // Swing east until one side is done, bounded so a stalemate ends the test
+    // rather than hanging it.
+    int turns = 0;
+    while (turns++ < 200 && g.mode == GG_MODE_PLAY) {
+        bool any = false;
+        for (int i = 0; i < g.actors; i++)
+            if (g.actor[i].active && g.actor[i].hostile) any = true;
+        if (!any) break;
+        gg_game_act(&g, GG_ACT_E);
+    }
+
+    // A hash of the outcome. Every part of it is integer and seeded, so two
+    // runs of the same seed must produce the same number.
+    uint32_t h = 2166136261u;
+    h = mix32(h, (int32_t)g.turn);
+    h = mix32(h, (int32_t)g.rng.s);
+    h = mix32(h, gg_player_const(&g)->hp);
+    h = mix32(h, (int32_t)g.mode);
+    h = mix32(h, g.map.grounds);
+    for (int i = 0; i < g.map.grounds; i++) {
+        h = mix32(h, g.map.ground[i].x);
+        h = mix32(h, g.map.ground[i].y);
+        h = mix32(h, g.map.ground[i].kind);
+        h = mix32(h, g.map.ground[i].count);
+    }
+    for (int i = 0; i < g.actors; i++) {
+        h = mix32(h, g.actor[i].active ? 1 : 0);
+        h = mix32(h, g.actor[i].hp);
+        h = mix32(h, g.actor[i].x);
+        h = mix32(h, g.actor[i].y);
+    }
+
+    gg_game_free(&g);
+    return h;
+}
+
+// The plan's own verification: a scripted encounter with a fixed seed
+// resolving identically every run.
+static void a_scripted_encounter_resolves_the_same_way_every_time(void) {
+    const uint32_t first = play_out_encounter(4242);
+    CHECK(first != 0, "the encounter could not be set up");
+
+    for (int run = 0; run < 4; run++) {
+        const uint32_t again = play_out_encounter(4242);
+        CHECK(again == first,
+              "run %d of the same encounter ended differently (%u vs %u)",
+              run, again, first);
+    }
+
+    // And a different seed must actually produce a different fight, or the
+    // check above would pass on a simulation that ignores its dice.
+    const uint32_t other = play_out_encounter(99);
+    CHECK(other != first, "two different seeds fought identical battles");
+}
+
+static void a_blow_lands_or_misses_by_the_dice_and_never_for_nothing(void) {
+    gg_game g;
+    int cx = 0, cy = 0;
+    CHECK(set_up_encounter(&g, 7, &cx, &cy), "setup failed");
+
+    const int foe = gg_spawn_foe(&g, GG_ACTOR_BRIGAND, cx + 1, cy);
+    CHECK(foe >= 0, "no brigand");
+
+    int hits = 0, misses = 0, total = 0;
+    for (int i = 0; i < 200; i++) {
+        g.actor[foe].hp = g.actor[foe].hp_max;      // keep them standing
+        g.actor[foe].active = true;
+        const int hurt = gg_strike(&g, g.player, foe);
+        if (hurt > 0) { hits++; total += hurt; } else misses++;
+    }
+    CHECK(hits > 0 && misses > 0,
+          "%d hits and %d misses in 200 blows - the dice are not being rolled",
+          hits, misses);
+    // A blow that connects and takes nothing off reads as a bug however the
+    // arithmetic got there.
+    CHECK(total >= hits, "some blows landed for no damage at all");
+
+    gg_game_free(&g);
+}
+
+static void armour_turns_blows_aside_and_a_weapon_drives_them_home(void) {
+    gg_game g;
+    int cx = 0, cy = 0;
+    CHECK(set_up_encounter(&g, 8, &cx, &cy), "setup failed");
+
+    const int bare = gg_attack_power(&g, g.player);
+    CHECK(gg_pack_add(&g, GG_ITEM_HAMMER, 1) == 1, "could not take a hammer");
+    g.pack_cursor = gg_pack_find(&g, GG_ITEM_HAMMER);
+    g.mode = GG_MODE_PACK;
+    gg_game_act(&g, GG_ACT_EQUIP);
+    g.mode = GG_MODE_PLAY;
+
+    CHECK(gg_attack_power(&g, g.player) == bare + GG_ITEM[GG_ITEM_HAMMER].damage,
+          "a readied hammer added %d, expected %d",
+          gg_attack_power(&g, g.player) - bare, GG_ITEM[GG_ITEM_HAMMER].damage);
+
+    const int unguarded = gg_guard_power(&g, g.player);
+    CHECK(gg_pack_add(&g, GG_ITEM_SHIELD, 1) == 1, "could not take a shield");
+    g.pack_cursor = gg_pack_find(&g, GG_ITEM_SHIELD);
+    g.mode = GG_MODE_PACK;
+    gg_game_act(&g, GG_ACT_EQUIP);
+    g.mode = GG_MODE_PLAY;
+
+    CHECK(gg_guard_power(&g, g.player) == unguarded + GG_ITEM[GG_ITEM_SHIELD].guard,
+          "a shield turned aside %d, expected %d",
+          gg_guard_power(&g, g.player) - unguarded, GG_ITEM[GG_ITEM_SHIELD].guard);
+
+    // Both at once: a weapon and armour occupy different slots, so readying
+    // one must not put the other away.
+    CHECK(gg_attack_power(&g, g.player) > bare,
+          "readying the shield disarmed the hammer");
+
+    gg_game_free(&g);
+}
+
+static void a_thrown_stone_reaches_across_the_room_and_lands_there(void) {
+    gg_game g;
+    int cx = 0, cy = 0;
+    CHECK(set_up_encounter(&g, 9, &cx, &cy), "setup failed");
+
+    const int foe = gg_spawn_foe(&g, GG_ACTOR_BRIGAND, cx + 4, cy);
+    CHECK(foe >= 0, "no brigand");
+    g.actor[foe].hp = g.actor[foe].hp_max = 90;     // survives the whole test
+
+    // Bare-handed, four tiles is out of reach.
+    CHECK(gg_reach(&g, g.player) == 1, "empty hands reach further than a tile");
+    CHECK(!gg_throw_at(&g, g.player, g.actor[foe].x, g.actor[foe].y),
+          "something was thrown with nothing in hand");
+
+    CHECK(gg_pack_add(&g, GG_ITEM_STONE, 3) == 3, "could not take stones");
+    g.pack_cursor = gg_pack_find(&g, GG_ITEM_STONE);
+    g.mode = GG_MODE_PACK;
+    gg_game_act(&g, GG_ACT_EQUIP);
+    g.mode = GG_MODE_PLAY;
+    CHECK(gg_reach(&g, g.player) == GG_ITEM[GG_ITEM_STONE].reach,
+          "a readied stone reaches %d, expected %d", gg_reach(&g, g.player),
+          GG_ITEM[GG_ITEM_STONE].reach);
+
+    const int carried = gg_pack_count(&g, GG_ITEM_STONE);
+    CHECK(gg_throw_at(&g, g.player, g.actor[foe].x, g.actor[foe].y),
+          "the stone was not thrown");
+    CHECK(gg_pack_count(&g, GG_ITEM_STONE) == carried - 1,
+          "throwing did not use up a stone");
+
+    // It lies where it was thrown, so a fight is worth walking back across.
+    const int where = gg_ground_at(&g.map, g.actor[foe].x, g.actor[foe].y);
+    CHECK(where >= 0, "the stone vanished instead of landing");
+    if (where >= 0)
+        CHECK(g.map.ground[where].kind == GG_ITEM_STONE,
+              "something other than the stone landed there");
+
+    // Out of range is refused rather than stretched to.
+    g.actor[foe].x = (int16_t)(cx + 9);
+    CHECK(!gg_throw_at(&g, g.player, g.actor[foe].x, g.actor[foe].y),
+          "a stone was thrown further than it reaches");
+
+    gg_game_free(&g);
+}
+
+static void a_wall_stops_a_stone(void) {
+    gg_game g;
+    int cx = 0, cy = 0;
+    CHECK(set_up_encounter(&g, 10, &cx, &cy), "setup failed");
+
+    const int foe = gg_spawn_foe(&g, GG_ACTOR_BRIGAND, cx + 3, cy);
+    CHECK(foe >= 0, "no brigand");
+    CHECK(gg_line_of_sight(&g, cx, cy, cx + 3, cy), "open ground blocked sight");
+
+    // Ready the stone first. Readying costs a turn, and a turn is one the
+    // brigand also gets - doing this after placing it moved it off the tile
+    // the wall was built to hide, which is how this test first failed.
+    gg_pack_add(&g, GG_ITEM_STONE, 2);
+    g.pack_cursor = gg_pack_find(&g, GG_ITEM_STONE);
+    g.mode = GG_MODE_PACK;
+    gg_game_act(&g, GG_ACT_EQUIP);
+    g.mode = GG_MODE_PLAY;
+
+    // Now the wall, and the brigand put back behind it.
+    gg_cell *between = gg_map_at(&g.map, cx + 1, cy);
+    CHECK(between != nullptr, "no cell between");
+    if (between) {
+        between->terrain = GG_TILE_WALL_BRICK;
+        between->flags |= GG_CELL_BLOCKED;
+    }
+    g.actor[foe].x = (int16_t)(cx + 3);
+    g.actor[foe].y = (int16_t)cy;
+    CHECK(!gg_line_of_sight(&g, cx, cy, cx + 3, cy), "a wall did not block sight");
+
+    const int had = gg_pack_count(&g, GG_ITEM_STONE);
+    CHECK(!gg_throw_at(&g, g.player, g.actor[foe].x, g.actor[foe].y),
+          "a stone was thrown through a wall");
+    CHECK(gg_pack_count(&g, GG_ITEM_STONE) == had,
+          "a refused throw still used up a stone");
+
+    gg_game_free(&g);
+}
+
+static void the_quick_strike_before_the_slow_and_more_often(void) {
+    gg_game g;
+    int cx = 0, cy = 0;
+    CHECK(set_up_encounter(&g, 11, &cx, &cy), "setup failed");
+
+    // An outlaw is the quick one and a brigand the slow one; that is the whole
+    // observable difference initiative makes, so it is what gets checked.
+    const int far_off = GG_NOTICE_RANGE + 3;
+    CHECK(gg_spawn_foe(&g, GG_ACTOR_OUTLAW, cx + far_off, cy) >= 0, "no outlaw");
+    CHECK(gg_spawn_foe(&g, GG_ACTOR_BRIGAND, cx - far_off, cy) >= 0, "no brigand");
+
+    const int outlaw = g.actors - 2, brigand = g.actors - 1;
+    CHECK(g.actor[outlaw].speed > g.actor[brigand].speed,
+          "the outlaw is not the quicker of the two");
+
+    // Neither has noticed anything yet, so neither has moved.
+    const int ox = g.actor[outlaw].x, bx = g.actor[brigand].x;
+    gg_game_act(&g, GG_ACT_WAIT);
+    CHECK(g.actor[outlaw].x == ox && g.actor[brigand].x == bx,
+          "something charged from beyond where it could see");
+
+    // Bring both into range, the same distance out, and let them come.
+    g.actor[outlaw].x = (int16_t)(cx + GG_NOTICE_RANGE - 1);
+    g.actor[brigand].x = (int16_t)(cx - (GG_NOTICE_RANGE - 1));
+    const int o_start = gg_dist_cheb(cx, cy, g.actor[outlaw].x, g.actor[outlaw].y);
+    const int b_start = gg_dist_cheb(cx, cy, g.actor[brigand].x, g.actor[brigand].y);
+    CHECK(o_start == b_start, "the two did not start the same distance away");
+
+    for (int i = 0; i < 3; i++) gg_game_act(&g, GG_ACT_WAIT);
+
+    const gg_actor *p = gg_player_const(&g);
+    const int o_now = gg_dist_cheb(p->x, p->y, g.actor[outlaw].x, g.actor[outlaw].y);
+    const int b_now = gg_dist_cheb(p->x, p->y, g.actor[brigand].x, g.actor[brigand].y);
+    CHECK(o_now < b_now,
+          "after three turns the quick one is %d away and the slow one %d - "
+          "speed bought nothing", o_now, b_now);
+
+    gg_game_free(&g);
+}
+
+static void what_falls_leaves_what_it_carried(void) {
+    gg_game g;
+    int cx = 0, cy = 0;
+    CHECK(set_up_encounter(&g, 12, &cx, &cy), "setup failed");
+
+    const int foe = gg_spawn_foe(&g, GG_ACTOR_BRIGAND, cx + 1, cy);
+    CHECK(foe >= 0, "no brigand");
+    const int fx = g.actor[foe].x, fy = g.actor[foe].y;
+    const uint8_t kind = g.actor[foe].loot_kind;
+    const uint8_t count = g.actor[foe].loot_count;
+    CHECK(count > 0, "a brigand carries nothing worth taking");
+
+    CHECK(gg_ground_at(&g.map, fx, fy) < 0, "something was already lying there");
+
+    g.actor[foe].hp = 1;
+    gg_strike(&g, g.player, foe);
+    // One blow always takes at least one off, so one hit point is always fatal
+    // - but the dice may still miss, so swing until it lands.
+    for (int i = 0; i < 60 && g.actor[foe].active; i++) {
+        g.actor[foe].hp = 1;
+        gg_strike(&g, g.player, foe);
+    }
+    CHECK(!g.actor[foe].active, "the brigand would not fall");
+
+    const int loot = gg_ground_at(&g.map, fx, fy);
+    CHECK(loot >= 0, "the brigand left nothing behind");
+    if (loot >= 0) {
+        CHECK(g.map.ground[loot].kind == kind, "it left the wrong thing");
+        CHECK(g.map.ground[loot].count == count, "it left %u, expected %u",
+              g.map.ground[loot].count, count);
+    }
+
+    // And what it left can be picked up like anything else.
+    gg_player(&g)->x = (int16_t)fx;
+    gg_player(&g)->y = (int16_t)fy;
+    gg_game_act(&g, GG_ACT_GET);
+    CHECK(gg_pack_count(&g, (gg_item_id)kind) >= count,
+          "the loot could not be picked up");
+
+    gg_game_free(&g);
+}
+
+static void a_townsperson_is_never_caught_in_a_fight(void) {
+    gg_game g;
+    int cx = 0, cy = 0;
+    CHECK(set_up_encounter(&g, 13, &cx, &cy), "setup failed");
+
+    // Somebody who is neither ours nor hostile, standing right beside it all.
+    gg_actor *bystander = &g.actor[1];
+    bystander->active = true;
+    bystander->hostile = false;
+    bystander->party = GG_NOT_IN_PARTY;
+    bystander->x = (int16_t)(cx + 1);
+    bystander->y = (int16_t)cy;
+    bystander->hp = bystander->hp_max = 20;
+
+    CHECK(!gg_at_odds(&g, g.player, 1), "a townsperson counts as an enemy");
+    CHECK(gg_strike(&g, g.player, 1) == 0, "a townsperson was struck");
+    CHECK(bystander->hp == 20, "a townsperson lost health in somebody's fight");
+
+    const int foe = gg_spawn_foe(&g, GG_ACTOR_BRIGAND, cx + 2, cy);
+    CHECK(foe >= 0, "no brigand");
+    CHECK(!gg_at_odds(&g, foe, 1), "a brigand counts a townsperson as an enemy");
+
+    gg_game_free(&g);
+}
+
+static void the_avatar_dying_ends_the_game_rather_than_the_world(void) {
+    gg_game g;
+    int cx = 0, cy = 0;
+    CHECK(set_up_encounter(&g, 14, &cx, &cy), "setup failed");
+
+    const int foe = gg_spawn_foe(&g, GG_ACTOR_BRIGAND, cx + 1, cy);
+    CHECK(foe >= 0, "no brigand");
+
+    gg_player(&g)->hp = 1;
+    for (int i = 0; i < 60 && g.mode == GG_MODE_PLAY; i++) {
+        gg_player(&g)->hp = 1;
+        gg_strike(&g, foe, g.player);
+    }
+    CHECK(g.mode == GG_MODE_GAMEOVER, "the avatar survived being killed");
+
+    // The Avatar's actor must still be there: the camera, the HUD and
+    // gg_player all read through it, and a dead index is a crash, not an end.
+    CHECK(g.actor[g.player].active, "the avatar was removed from the world");
+    CHECK(gg_player_const(&g)->hp == 0, "a slain avatar has health left");
+
+    // And the world stops turning for them.
+    const uint32_t stopped = g.turn;
+    gg_game_act(&g, GG_ACT_E);
+    CHECK(g.turn == stopped, "the world went on turning after the end");
+
+    gg_game_free(&g);
+}
+
+// ---------------------------------------------------------------------------
 // Content tables
 // ---------------------------------------------------------------------------
 static void every_terrain_and_item_has_a_name(void) {
@@ -3340,6 +3747,16 @@ int main(void) {
     RUN(the_line_closes_when_somebody_leaves_it);
     RUN(a_companion_is_recruited_by_a_topic_in_the_book);
     RUN(a_party_survives_a_save_in_order);
+
+    RUN(a_scripted_encounter_resolves_the_same_way_every_time);
+    RUN(a_blow_lands_or_misses_by_the_dice_and_never_for_nothing);
+    RUN(armour_turns_blows_aside_and_a_weapon_drives_them_home);
+    RUN(a_thrown_stone_reaches_across_the_room_and_lands_there);
+    RUN(a_wall_stops_a_stone);
+    RUN(the_quick_strike_before_the_slow_and_more_often);
+    RUN(what_falls_leaves_what_it_carried);
+    RUN(a_townsperson_is_never_caught_in_a_fight);
+    RUN(the_avatar_dying_ends_the_game_rather_than_the_world);
 
     RUN(every_terrain_and_item_has_a_name);
     RUN(every_prop_has_a_plausible_footprint);

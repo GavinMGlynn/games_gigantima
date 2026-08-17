@@ -39,6 +39,7 @@ typedef enum {
     // rather than in the UI is what lets a replay file drive all of this
     // through the same door as a keypress - see the deterministic-replay item.
     GG_ACT_GET,
+    GG_ACT_FIGHT,
     GG_ACT_PACK,
     GG_ACT_USE,
     GG_ACT_EQUIP,
