@@ -59,6 +59,30 @@ typedef enum {
 #define GG_LOG_LINES 5
 #define GG_LOG_WIDTH 96
 
+// Things worth hearing, emitted by the simulation and drained by the frontend.
+// The simulation does not know that audio exists - the same arrangement the
+// bump rumble already had, generalised, so that adding a sound is adding a case
+// to a switch in one file rather than a hook in the middle of a rule.
+typedef enum {
+    GG_EV_STEP,     // a footfall
+    GG_EV_BUMP,     // walked into something
+    GG_EV_BLOW,     // a blow landed
+    GG_EV_HURT,     // the Avatar took one
+    GG_EV_DIE,      // something fell
+    GG_EV_TAKE,     // picked up
+    GG_EV_DROP,     // set down
+    GG_EV_COIN,     // picked up money
+    GG_EV_DOOR,     // a door
+    GG_EV_CAST,     // a spell went off
+    GG_EV_LEARN,    // a word, or a rune
+    GG_EV_COUNT
+} gg_event;
+
+// A turn cannot produce many of these; the bound is generous and overflow
+// drops the newest rather than growing, because a lost footstep is nothing and
+// an unbounded queue is a leak.
+#define GG_EVENTS_MAX 16
+
 // How far back the Avatar's footsteps are remembered. One per party slot, plus
 // a couple so the tail of the line is following a real path rather than the
 // leader's current tile.
@@ -168,7 +192,12 @@ typedef struct {
     // Set when something happened that the frontend should react to; the
     // frontend clears them. Keeps SDL out of the simulation.
     bool want_save;
-    bool blocked_bump;            // walked into a wall: worth a sound
+    bool blocked_bump;            // walked into a wall: worth a rumble
+
+    // What just happened that is worth hearing. Drained by the frontend every
+    // frame; the simulation never learns what becomes of them.
+    uint8_t event[GG_EVENTS_MAX];
+    int     events;
 
     char profile[32];             // whose game this is
 } gg_game;
@@ -220,6 +249,15 @@ const char *gg_game_place(const gg_game *g);
 
 void gg_log(gg_game *g, SDL_PRINTF_FORMAT_STRING const char *fmt, ...)
     SDL_PRINTF_VARARG_FUNC(2);
+
+// --- things worth hearing --------------------------------------------------
+// Notes that something happened. Silently drops the newest when the queue is
+// full: a lost footstep is nothing, and a queue that grows is a leak.
+void gg_emit(gg_game *g, gg_event e);
+
+// Takes up to `max` of them, oldest first, and empties the queue. Returns how
+// many were taken.
+int gg_events_drain(gg_game *g, gg_event *out, int max);
 
 // Maps a direction action to a tile delta. Returns false for non-movement
 // actions, which is how the caller tells them apart.

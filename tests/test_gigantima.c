@@ -18,6 +18,7 @@
 #include "core/gg_combat.h"
 #include "core/gg_magic.h"
 #include "core/gg_bestiary.h"
+#include "audio/gg_audio.h"
 #include "ui/gg_menu.h"
 #include "ui/gg_screens.h"
 #include "platform/gg_settings.h"
@@ -494,10 +495,30 @@ static void the_options_page_cycles_its_values(void) {
     gg_screens_choose(&s, base, &set, true);
     CHECK(set.fullscreen != fs, "fullscreen did not toggle");
 
-    // The disabled sound rows must not be reachable, or a player lands on a
-    // control that does nothing.
-    CHECK(!s.menu.item[3].enabled && !s.menu.item[4].enabled,
-          "the sound rows are selectable before there is any sound");
+    // The sound rows are live now that there is sound. They were disabled
+    // while there was none, on the grounds that a control doing nothing is
+    // worse than one that says why - so this check is the inverse of the one
+    // that stood here before, and it is the same rule.
+    CHECK(s.menu.item[3].enabled && s.menu.item[4].enabled,
+          "the sound rows are dead but there is sound to turn down");
+
+    gg_menu_select(&s.menu, 3);
+    const int was_music = set.music;
+    gg_screens_choose(&s, base, &set, true);
+    CHECK(set.music != was_music, "the music row did not turn anything");
+    // Eleven positions, 0 to 10, so eleven turns in all - and one has already
+    // been taken above.
+    for (int i = 0; i < 10; i++) gg_screens_choose(&s, base, &set, true);
+    CHECK(set.music == was_music,
+          "eleven turns of an eleven-position control did not come back round "
+          "(%d, was %d)", set.music, was_music);
+    CHECK(set.music >= 0 && set.music <= 10, "music left its range: %d",
+          set.music);
+
+    // Silence has to be reachable, and it is the whole reason the cycle wraps
+    // rather than stopping at one.
+    while (set.music != 0) gg_screens_choose(&s, base, &set, true);
+    CHECK(set.music == 0, "a player cannot turn the music off");
 
     gg_game_free(&g);
     wipe_saves("Opt");
@@ -4292,6 +4313,169 @@ static void the_vale_is_stocked_with_creatures_that_work(void) {
 }
 
 // ---------------------------------------------------------------------------
+// Audio
+// ---------------------------------------------------------------------------
+// Which tune the world calls for is pure arithmetic over the game state, so it
+// is checked as a number rather than by listening - which is the only way any
+// of this could be checked at all.
+static void the_tune_follows_where_you_are_and_what_hour_it_is(void) {
+    gg_game g;
+    CHECK(gg_game_new(&g, 61, "Listener"), "new game failed");
+
+    // Find a tile in the town, and one well outside every region.
+    int tx = -1, ty = -1, wx = -1, wy = -1;
+    for (int i = 0; i < g.map.regions && tx < 0; i++)
+        if (g.map.region[i].kind == GG_REGION_TOWN) {
+            tx = g.map.region[i].x + g.map.region[i].w / 2;
+            ty = g.map.region[i].y + g.map.region[i].h / 2;
+        }
+    CHECK(tx >= 0, "the map has no town");
+    for (int y = 1; y < g.map.h && wx < 0; y++)
+        for (int x = 1; x < g.map.w && wx < 0; x++)
+            if (gg_map_region_at(&g.map, x, y) < 0) { wx = x; wy = y; }
+    CHECK(wx >= 0, "the map is all region and no wilderness");
+    if (tx < 0 || wx < 0) { gg_game_free(&g); return; }
+
+    gg_actor *p = gg_player(&g);
+
+    // Four corners of the same rule: town or wild, day or night, all different.
+    p->x = (int16_t)tx; p->y = (int16_t)ty;
+    g.minutes = 12 * 60;
+    const int town_day = gg_audio_tune_for(&g);
+    g.minutes = 1 * 60;
+    const int town_night = gg_audio_tune_for(&g);
+
+    p->x = (int16_t)wx; p->y = (int16_t)wy;
+    g.minutes = 12 * 60;
+    const int wild_day = gg_audio_tune_for(&g);
+    g.minutes = 1 * 60;
+    const int wild_night = gg_audio_tune_for(&g);
+
+    CHECK(town_day != town_night, "the town sounds the same at noon and at one");
+    CHECK(wild_day != wild_night, "the wild sounds the same at noon and at one");
+    CHECK(town_day != wild_day, "the town and the wild sound the same by day");
+    CHECK(town_night != wild_night, "the town and the wild sound the same by night");
+
+    // Every answer has to be a tune that exists, or the mixer reads off the end.
+    const int all[] = { town_day, town_night, wild_day, wild_night };
+    for (size_t i = 0; i < GG_COUNTOF(all); i++) {
+        CHECK(all[i] >= 0 && all[i] < gg_audio_tune_count(),
+              "the world asked for tune %d, and there are %d", all[i],
+              gg_audio_tune_count());
+        CHECK(gg_audio_tune_name(all[i])[0] != '\0', "tune %d has no name",
+              all[i]);
+    }
+
+    // And the boundary is where the HUD says it is, so what a player reads and
+    // what they hear agree.
+    p->x = (int16_t)wx; p->y = (int16_t)wy;
+    g.minutes = 6 * 60;
+    CHECK(gg_audio_tune_for(&g) == wild_day, "six in the morning is not day");
+    g.minutes = 5 * 60 + 59;
+    CHECK(gg_audio_tune_for(&g) == wild_night, "one minute to six is not night");
+    g.minutes = 19 * 60 + 59;
+    CHECK(gg_audio_tune_for(&g) == wild_day, "one minute to eight is not day");
+    g.minutes = 20 * 60;
+    CHECK(gg_audio_tune_for(&g) == wild_night, "eight at night is not night");
+
+    // An index out of range names nothing rather than reading off the end.
+    CHECK(gg_audio_tune_name(-1)[0] == '\0', "a tune before the first has a name");
+    CHECK(gg_audio_tune_name(gg_audio_tune_count())[0] == '\0',
+          "a tune past the last has a name");
+
+    gg_game_free(&g);
+}
+
+// The simulation says what happened; it does not know that anything listens.
+static void the_world_says_what_it_did_and_forgets_it(void) {
+    gg_game g;
+    CHECK(gg_game_new(&g, 62, "Noisy"), "new game failed");
+
+    gg_event heard[GG_EVENTS_MAX];
+    gg_events_drain(&g, heard, GG_EVENTS_MAX);   // clear whatever setup made
+
+    // A step is a sound.
+    const gg_actor *p = gg_player_const(&g);
+    const int before = gg_dist_cheb(0, 0, p->x, p->y);
+    (void)before;
+    gg_game_act(&g, GG_ACT_E);
+    int n = gg_events_drain(&g, heard, GG_EVENTS_MAX);
+    CHECK(n > 0, "walking made no sound at all");
+    bool stepped = false;
+    for (int i = 0; i < n; i++)
+        if (heard[i] == GG_EV_STEP || heard[i] == GG_EV_DOOR ||
+            heard[i] == GG_EV_BUMP) stepped = true;
+    CHECK(stepped, "walking made a sound, but not one about walking");
+
+    // Draining empties it: a sound is heard once.
+    n = gg_events_drain(&g, heard, GG_EVENTS_MAX);
+    CHECK(n == 0, "the same %d sounds were heard twice", n);
+
+    // Picking something up is a different sound from setting it down.
+    gg_ground_drop(&g.map, gg_player_const(&g)->x, gg_player_const(&g)->y,
+                   GG_ITEM_APPLE, 1);
+    gg_game_act(&g, GG_ACT_GET);
+    n = gg_events_drain(&g, heard, GG_EVENTS_MAX);
+    bool took = false;
+    for (int i = 0; i < n; i++) if (heard[i] == GG_EV_TAKE) took = true;
+    CHECK(took, "taking something made no sound about taking");
+
+    // The queue is bounded, and overflow drops rather than grows.
+    for (int i = 0; i < GG_EVENTS_MAX * 4; i++) gg_emit(&g, GG_EV_STEP);
+    CHECK(g.events <= GG_EVENTS_MAX, "the queue grew to %d, past its bound of %d",
+          g.events, GG_EVENTS_MAX);
+    n = gg_events_drain(&g, heard, GG_EVENTS_MAX);
+    CHECK(n == GG_EVENTS_MAX, "drained %d of a full queue of %d", n,
+          GG_EVENTS_MAX);
+
+    // Something past the end of the enum is refused rather than stored.
+    gg_emit(&g, (gg_event)GG_EV_COUNT);
+    CHECK(g.events == 0, "a sound that does not exist went into the queue");
+
+    gg_game_free(&g);
+}
+
+// Every event the simulation can emit needs a sound, or something happens in
+// silence and nobody notices until they wonder why.
+static void every_event_has_a_sound_baked_for_it(void) {
+    for (int i = 0; i < GG_EV_COUNT; i++) {
+        char path[1024];
+        // The names the baker writes, and the ones gg_audio.c looks for.
+        static const char *const NAME[GG_EV_COUNT] = {
+            [GG_EV_STEP] = "step", [GG_EV_BUMP] = "bump", [GG_EV_BLOW] = "blow",
+            [GG_EV_HURT] = "hurt", [GG_EV_DIE] = "die", [GG_EV_TAKE] = "take",
+            [GG_EV_DROP] = "drop", [GG_EV_COIN] = "coin", [GG_EV_DOOR] = "door",
+            [GG_EV_CAST] = "cast", [GG_EV_LEARN] = "learn",
+        };
+        CHECK(NAME[i] != nullptr, "event %d has no sound named for it", i);
+        if (!NAME[i]) continue;
+
+        SDL_snprintf(path, sizeof path, "%sfx_%s.wav",
+                     gg_asset_path("sounds/"), NAME[i]);
+        SDL_IOStream *io = SDL_IOFromFile(path, "rb");
+        CHECK(io != nullptr, "no sound was baked for event %d (%s)", i, NAME[i]);
+        if (io) {
+            // A WAV, and not an empty one - a zero-length file would load and
+            // play nothing, which is the same as having no sound at all.
+            const Sint64 size = SDL_GetIOSize(io);
+            CHECK(size > 44, "the sound for %s is %lld bytes, which is a header "
+                  "and nothing else", NAME[i], (long long)size);
+            SDL_CloseIO(io);
+        }
+    }
+
+    // And every tune the world can ask for has a file too.
+    for (int i = 0; i < gg_audio_tune_count(); i++) {
+        char path[1024];
+        SDL_snprintf(path, sizeof path, "%smus_%s.wav",
+                     gg_asset_path("sounds/"), gg_audio_tune_name(i));
+        SDL_IOStream *io = SDL_IOFromFile(path, "rb");
+        CHECK(io != nullptr, "no tune was baked for %s", gg_audio_tune_name(i));
+        if (io) SDL_CloseIO(io);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Content tables
 // ---------------------------------------------------------------------------
 static void every_terrain_and_item_has_a_name(void) {
@@ -4485,6 +4669,10 @@ int main(void) {
     RUN(a_creature_with_reach_strikes_from_where_it_stands);
     RUN(a_bestiary_that_does_not_parse_loads_nothing);
     RUN(the_vale_is_stocked_with_creatures_that_work);
+
+    RUN(the_tune_follows_where_you_are_and_what_hour_it_is);
+    RUN(the_world_says_what_it_did_and_forgets_it);
+    RUN(every_event_has_a_sound_baked_for_it);
 
     RUN(every_terrain_and_item_has_a_name);
     RUN(every_prop_has_a_plausible_footprint);

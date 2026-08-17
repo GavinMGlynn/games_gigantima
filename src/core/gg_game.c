@@ -166,6 +166,7 @@ void gg_conversation_ask(gg_game *g) {
     // and it may make this very speaker answerable to something new - so the
     // list is rebuilt before the player looks at it again.
     if (t->teach[0] && gg_learn(g, t->teach)) {
+        gg_emit(g, GG_EV_LEARN);
         gg_log(g, "Thou hast learned of %s.", t->teach);
         gg_conversation_refresh(g);
     }
@@ -287,6 +288,7 @@ bool gg_cast(gg_game *g, int spell) {
     }
 
     spend_reagents(g, s);
+    gg_emit(g, GG_EV_CAST);
     if (s->say[0]) gg_log(g, "%s", s->say);
 
     switch (s->effect) {
@@ -415,6 +417,22 @@ int gg_light_radius(const gg_game *g) {
     // must not put out the torch in your other hand.
     if (g->light_turns > 0 && g->light_power > best) best = g->light_power;
     return best;
+}
+
+// ---------------------------------------------------------------------------
+// Things worth hearing
+// ---------------------------------------------------------------------------
+void gg_emit(gg_game *g, gg_event e) {
+    if (e >= GG_EV_COUNT) return;
+    if (g->events >= GG_EVENTS_MAX) return;
+    g->event[g->events++] = (uint8_t)e;
+}
+
+int gg_events_drain(gg_game *g, gg_event *out, int max) {
+    const int n = g->events < max ? g->events : max;
+    for (int i = 0; i < n; i++) out[i] = (gg_event)g->event[i];
+    g->events = 0;
+    return n;
 }
 
 // ---------------------------------------------------------------------------
@@ -646,6 +664,7 @@ static void do_move(gg_game *g, int dx, int dy) {
     if (!gg_map_walkable(&g->map, nx, ny)) {
         const gg_cell *c = gg_map_at_const(&g->map, nx, ny);
         g->blocked_bump = true;
+        gg_emit(g, GG_EV_BUMP);
         if (!c)
             gg_log(g, "Thou canst go no further.");
         else if (c->flags & GG_CELL_WATER)
@@ -667,6 +686,7 @@ static void do_move(gg_game *g, int dx, int dy) {
     // person behind wants to stand where you were, not where you are.
     trail_push(g, p->x, p->y);
     gg_actor_move_to(p, nx, ny);
+    gg_emit(g, (c && (c->flags & GG_CELL_DOOR)) ? GG_EV_DOOR : GG_EV_STEP);
     world_turn(g, cost);
 }
 
@@ -740,6 +760,7 @@ static void do_get(gg_game *g) {
             break;
         }
         gg_ground_remove(&g->map, i);
+        gg_emit(g, kind == GG_ITEM_GOLD ? GG_EV_COIN : GG_EV_TAKE);
         gg_log(g, "Thou takest %s.", what);
     }
 
@@ -762,6 +783,7 @@ static void do_drop(gg_game *g) {
         return;
     }
     gg_pack_take(g, g->pack_cursor, count);
+    gg_emit(g, GG_EV_DROP);
 
     char what[96];
     say_amount(what, sizeof what, kind, count);
@@ -791,6 +813,7 @@ static void do_use(gg_game *g) {
     me->hp = (int16_t)gg_clampi(me->hp + d->heal, 0, me->hp_max);
     gg_pack_take(g, g->pack_cursor, 1);
 
+    gg_emit(g, GG_EV_TAKE);
     gg_log(g, d->use == GG_USE_EAT ? "Thou eatest %s, and art the better for it (+%d)."
                                    : "Thou drinkest %s, and art the better for it (+%d).",
            d->one, me->hp - before);
@@ -875,6 +898,7 @@ static void do_open(gg_game *g) {
     static const int DY[4] = { -1, 0, 1, 0 };
     gg_cell *c = gg_map_at(&g->map, p->x + DX[p->facing], p->y + DY[p->facing]);
     if (c && (c->flags & GG_CELL_DOOR)) {
+        gg_emit(g, GG_EV_DOOR);
         gg_log(g, "The door stands open.");
         world_turn(g, GG_MINUTES_PER_TURN);
     } else {

@@ -109,10 +109,10 @@ static void build_options(gg_screens *s, const gg_settings *set) {
     gg_menu_add(&s->menu, true, "Window size", "%dx", set->scale);
     gg_menu_add(&s->menu, true, "Fullscreen", set->fullscreen ? "on" : "off");
     gg_menu_add(&s->menu, true, "Gamepad rumble", set->rumble ? "on" : "off");
-    // Shown but not adjustable: there is nothing to turn down yet, and a
-    // control that does nothing is worse than one that says why.
-    gg_menu_add(&s->menu, false, "Music", "no sound yet");
-    gg_menu_add(&s->menu, false, "Effects", "no sound yet");
+    gg_menu_add(&s->menu, true, "Music", set->music > 0 ? "%d of 10" : "off",
+                set->music);
+    gg_menu_add(&s->menu, true, "Effects", set->effects > 0 ? "%d of 10" : "off",
+                set->effects);
     gg_menu_add(&s->menu, true, "Back", nullptr);
     gg_menu_select(&s->menu, 0);
 }
@@ -227,6 +227,10 @@ static void cycle_option(gg_screens *s, gg_settings *set, int row) {
     case 0: set->scale = set->scale >= 4 ? 1 : set->scale + 1; break;
     case 1: set->fullscreen = !set->fullscreen; break;
     case 2: set->rumble = !set->rumble; break;
+    // Round the loop rather than stopping at either end, so a player who wants
+    // silence gets there by holding one direction like everything else here.
+    case 3: set->music = set->music >= 10 ? 0 : set->music + 1; break;
+    case 4: set->effects = set->effects >= 10 ? 0 : set->effects + 1; break;
     default: return;
     }
     const int keep = s->menu.cursor;
@@ -237,9 +241,8 @@ static void cycle_option(gg_screens *s, gg_settings *set, int row) {
 void gg_screens_adjust(gg_screens *s, int dir, gg_settings *set) {
     if (s->id != GG_SCREEN_OPTIONS || dir == 0) return;
     const int row = gg_menu_chosen(&s->menu);
-    // Rows 0..2 are the values; the rest are the greyed sound rows and "Back",
-    // which have nothing to cycle.
-    if (row < 0 || row > 2) return;
+    // Everything but the last row, which is "Back" and has nothing to cycle.
+    if (row < 0 || row >= s->menu.n - 1) return;
 
     s->notice[0] = '\0';
     if (dir > 0) {
@@ -248,10 +251,14 @@ void gg_screens_adjust(gg_screens *s, int dir, gg_settings *set) {
     }
     // Backwards is the same cycle run the other way. Only "Window size" has
     // more than two states, so only it needs the arithmetic.
-    if (row == 0) set->scale = set->scale <= 1 ? 4 : set->scale - 1;
-    else          cycle_option(s, set, row);
+    // Backwards is the same cycle run the other way. Only the ones with more
+    // than two states need the arithmetic; the toggles are their own inverse.
+    if (row == 0)      set->scale = set->scale <= 1 ? 4 : set->scale - 1;
+    else if (row == 3) set->music = set->music <= 0 ? 10 : set->music - 1;
+    else if (row == 4) set->effects = set->effects <= 0 ? 10 : set->effects - 1;
+    else               cycle_option(s, set, row);
 
-    if (row == 0) {
+    if (row == 0 || row == 3 || row == 4) {
         const int keep = s->menu.cursor;
         build_options(s, set);
         gg_menu_select(&s->menu, keep);

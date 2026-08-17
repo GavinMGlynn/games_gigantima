@@ -98,12 +98,14 @@ static void die(gg_game *g, int who) {
     // gg_player reads through that actor, and a game whose player index points
     // at a dead slot crashes rather than ends. The game ends instead.
     if (who == g->player) {
+        gg_emit(g, GG_EV_DIE);
         gg_log(g, "Thou art slain. Thy journey ends here.");
         a->hp = 0;
         g->mode = GG_MODE_GAMEOVER;
         return;
     }
 
+    gg_emit(g, GG_EV_DIE);
     gg_log(g, "%s falls.", a->name);
 
     // Its loot table, rolled through the game's RNG so what falls is part of
@@ -151,6 +153,9 @@ int gg_strike(gg_game *g, int attacker, int defender) {
     const int hurt = 1 + power + (int)gg_rand_below(&g->rng, 3);
 
     de->hp = (int16_t)(de->hp - hurt);
+    // Two sounds, because being hit matters more than hitting: the Avatar
+    // taking a blow should be the one that makes a player look at the health.
+    gg_emit(g, defender == g->player ? GG_EV_HURT : GG_EV_BLOW);
     gg_log(g, "%s strikes %s for %d.", at->name, de->name, hurt);
 
     if (de->hp <= 0) {

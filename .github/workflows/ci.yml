@@ -87,6 +87,51 @@ jobs:
             test -s "screen-$s.bmp" || { echo "$s drew nothing"; exit 1; }
           done
 
+      # The world has to make a noise, and the volume rows have to change what
+      # it is. Captured through SDL's disk audio driver rather than a device:
+      # the only way to check sound on a machine with no speakers, which is
+      # every machine CI runs on.
+      - name: Smoke test - the world can be heard, and turned down
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: disk
+        run: |
+          set -e
+          settings="$HOME/.local/share/gigantima/gigantima/settings.txt"
+          mkdir -p "$(dirname "$settings")"
+
+          # Written with printf rather than a heredoc: a quoted heredoc
+          # terminator has to start at column zero, and every line inside a
+          # YAML block is indented.
+          printf '%s\n' \
+            'import struct, math' \
+            'raw = open("sdlaudio.raw", "rb").read()' \
+            'n = len(raw) // 2' \
+            'v = struct.unpack("<%dh" % n, raw) if n else ()' \
+            'print(int(math.sqrt(sum(x * x for x in v) / n)) if n else 0)' \
+            > rms.py
+
+          measure() {   # $1 music, $2 effects; prints the RMS of the capture
+            printf 'scale = 2\nfullscreen = 0\nrumble = 1\nmusic = %s\neffects = %s\n' \
+              "$1" "$2" > "$settings"
+            rm -f sdlaudio.raw
+            ./build/gigantima --seed 9001 --profile CIEar --new --play \
+              --turns 40 --listen 1200 > /dev/null 2>&1
+            python3 rms.py
+          }
+
+          both=$(measure 8 8)
+          music=$(measure 8 0)
+          effects=$(measure 0 8)
+          silent=$(measure 0 0)
+          echo "rms: both=$both music=$music effects=$effects silent=$silent"
+
+          test "$silent" -eq 0 || { echo "everything off is not silent"; exit 1; }
+          test "$music" -gt 0   || { echo "the music makes no sound"; exit 1; }
+          test "$effects" -gt 0 || { echo "the effects make no sound"; exit 1; }
+          test "$both" -gt "$music"   || { echo "effects added nothing"; exit 1; }
+          test "$both" -gt "$effects" || { echo "music added nothing"; exit 1; }
+
       - uses: actions/upload-artifact@v4
         with:
           name: linux-frame

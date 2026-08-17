@@ -9,10 +9,11 @@ An Ultima VI-style seamless-world RPG in C23 and SDL3.
 > and terrain, a town of houses you can walk into, townsfolk who path around the
 > buildings to keep daily schedules, a world clock with lit rooms at night, and
 > things you can pick up, carry, eat and set down again, companions who walk
-> with you, brigands who do not, and a magic you cast by learning the words for
-> it. There is no story, no sound and no editor yet. `docs/PROJECT_STATUS.md` is the single source of truth for what
-> works; `docs/COMPLETION_PLAN.md` is the road to the rest. Nothing here claims
-> more than it has earned.
+> with you, brigands who do not, a magic you cast by learning the words for it,
+> and a world with a voice. There is no story and no editor yet, and the sounds
+> are synthesised rather than composed. `docs/PROJECT_STATUS.md` is the single
+> source of truth for what works; `docs/COMPLETION_PLAN.md` is the road to the
+> rest. Nothing here claims more than it has earned.
 
 ## What "Ultima VI-style" means here
 
@@ -145,12 +146,17 @@ you carry has a weight, and thirty stone is all anyone can manage — a bar of
 silver is four of them, so a hoard is a decision rather than a total. Ready a
 torch and it lights the room; put it away and the night closes back in.
 
+Sound is generated rather than recorded: `tools/make_sounds.py` writes every
+effect and every tune out of arithmetic, so there is no third-party audio to
+license or attribute — and no illusion that a drone and an arpeggio are a score.
+Music follows the region and the hour and crossfades when either changes.
+
 ### Command line
 
 ```
 gigantima [--profile NAME] [--seed N] [--play] [--debug]
           [--scale N] [--fullscreen] [--no-rumble]
-          [--new] [--turns N] [--map FILE.ggmap] [--screen NAME]
+          [--new] [--turns N] [--listen MS] [--map FILE.ggmap] [--screen NAME]
           [--at X,Y] [--time HH:MM] [--shot FILE.bmp] [--shot-at TURN]
 ```
 
@@ -177,8 +183,9 @@ src/ui/         menus and screens, status band, conversation panel
 src/platform/   asset and save paths, keyboard and gamepad
 src/debug/      the debug window
 src/frontend/   main.c per executable
-tools/          the art baker and the sheet-scanning tool it was built with
-assets/         the atlases, and the content: dialogue, spells, bestiary
+tools/          the art baker, the sound baker, and the sheet scanner
+assets/         the atlases and sounds, and the content: dialogue, spells,
+                bestiary
 ext/            pinned submodules — see ext/README.md
 docs/           the completion plan and the project status
 ```

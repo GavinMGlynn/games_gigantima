@@ -158,13 +158,16 @@ found, not when someone remembers.
       *Verification: a creature added in a file alone — its name, stats,
       sprite, loot and the number the generator places, all observed in a world
       that was never told what it was.*
-- [ ] **Audio.** Music that follows the region and the time of day, ambience,
-      and effects driven from the simulation the way rumble already is. Needs a
-      freely-licensed sound set vendored with its attribution, as the art was.
-      Includes making the options page's music and effects rows live, which is
-      where the volume control this project promised actually lands.
-      *Verification: a headless run producing a capture with the expected events
-      in it, and both volume rows changing what it contains.*
+- [x] **Audio.** Music that follows the region and the hour, crossfading when
+      either changes, and effects driven from an event queue the simulation
+      fills without knowing that anything listens. The options page's music and
+      effects rows are live, which is where the volume control this project
+      promised finally lands. **The sounds are generated, not vendored** — see
+      `PROJECT_STATUS.md` for why the plan changed, and for the ceiling that
+      puts on them.
+      *Verification: a headless run producing a capture with the events in it,
+      and both volume rows changing what it contains — measured as four
+      captures at four volume settings, in CI.*
 
 ## Phase 3 — Content at scale
 

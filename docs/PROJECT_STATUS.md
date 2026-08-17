@@ -18,10 +18,12 @@ eight townsfolk what they know and collect the words that unlock what the rest
 of them know; take two of them along, walking in single file behind you; learn
 the runes that make a spell and gather the herbs that pay for it; and find out
 what the brigands in the hills make of all that. Hold a torch and it lights the
-room. Every page works from a gamepad alone, naming included.
+room, and the world has a voice - footfalls, blows, and a tune that follows the
+region and the hour. Every page works from a gamepad alone, naming included.
 
-**There is no story, no sound and no editor.** Those are the three that keep
-this an engine: nothing here is *about* anything yet.
+**There is no story and no editor.** Those are the two that keep this an engine:
+nothing here is *about* anything yet, and none of it can be authored without a
+compiler.
 
 ---
 
@@ -417,6 +419,60 @@ because it is the one button that means something on every screen — pause in t
 world, "that will do" in a menu — and so has to be readable from either drain.
 
 *Verification: `the_pad_feeds_the_world_and_the_menus_separately`.*
+
+### Sound
+
+**The sounds are generated, not vendored, and that is a departure from what the
+plan said.** The plan called for a freely-licensed set vendored with its
+attribution, as the art was. Nothing exists in the shape LPC has — one coherent
+set in one repository — so vendoring would have meant assembling dozens of files
+from as many uploaders and carrying a licence and an attribution for each. This
+project's standing preference is no dependency over a small one, and
+`tools/make_sounds.py` is a few hundred lines of arithmetic that writes its own
+WAVs: no licence question, no attribution burden, 2.6 MB in the repository, and
+reproducible by anyone who runs it. It is deterministic, so the committed files
+and the script cannot drift.
+
+**The ceiling is real and worth stating: these are tones and noise, not
+recordings.** A footfall is filtered noise under a fast envelope; the tunes are
+a drone and an arpeggio wandering a mode. They establish the mechanism and they
+are meant to be replaced by something composed. Replacing any of them is a file
+swap — nothing in the code knows how they were made.
+
+**SDL_mixer has been removed.** It was pinned in `ext/` against this work and
+turned out not to be needed: SDL3 loads and converts WAVs on its own, so
+`src/audio/gg_audio.c` opens one device stream and mixes a music loop under up
+to eight one-shot voices itself. About a hundred lines against a dependency on
+four platforms — which is what "prefer no dependency to a small one" looks like
+when it is acted on rather than quoted.
+
+**The simulation does not know audio exists.** It emits events — a footfall, a
+blow, a word learned — into a small bounded queue, and the frontend drains them
+and hands them over. That is the arrangement the bump rumble already had,
+generalised, so adding a sound is a case in one switch rather than a hook in the
+middle of a rule. Overflow drops the newest: a lost footstep is nothing, and a
+queue that grows is a leak.
+
+Music is chosen by **where you are and what hour it is** — town or wilderness,
+day or night, and one mood for underground where there is no hour — and changes
+are crossfaded over half a second rather than cut. The day boundary is the same
+one the HUD uses for its words, so what a player reads and what they hear agree.
+
+The baked level was **measured, not guessed**. At the first level a blow peaked
+near full scale on its own; three at once plus the music clipped, which showed
+up as a peak of exactly 32767 in a headless capture. Baking at a quarter of full
+scale leaves room for three effects and a tune together, and no volume setting
+clips now.
+
+*Verification: `the_tune_follows_where_you_are_and_what_hour_it_is` (four
+combinations all different, the day boundary to the minute, and every answer a
+tune that exists), `the_world_says_what_it_did_and_forgets_it` (including that
+the queue is bounded and drains once), `every_event_has_a_sound_baked_for_it`,
+and `the_options_page_cycles_its_values`, whose check that the sound rows were
+dead is now the inverse. Plus the plan's own, in CI: four headless captures
+through SDL's disk audio driver at four volume settings — everything off is
+silent, music alone and effects alone are each audible, and both together are
+louder than either.*
 
 ### The bestiary
 
@@ -832,7 +888,7 @@ Named plainly, because a reader should not have to infer absence:
 | Arms | a hammer, a throwing stone and a shield. No swords: this art set has none that stand on their own |
 | Trade | nothing. Items carry a value in copper, and no one buys or sells |
 | Conversation beyond words | topics and a vocabulary, but nobody reacts to anything — no quests, no trade, no one who does something because you asked |
-| Sound | nothing. `ext/sdl_mixer` is pinned but not linked, and the options page says so where the volume rows would be |
+| Composed audio | the sounds are synthesised tones and noise, and the tunes a drone and an arpeggio. The mechanism is finished; the music is placeholder |
 | Level editor | nothing. The map format exists for it |
 | Party roles | up to four follow, and have health and a level, but nothing distinguishes one companion from another - no classes, no skills, no orders to give |
 | Screens not yet needed | no journal, character sheet or map page — there is nothing yet for them to show |

@@ -10,7 +10,6 @@ this repository — a clone gets URLs and commit SHAs, not sources.
 | --- | --- | --- | --- | --- |
 | `sdl` | libsdl-org/SDL | `release-3.4.14` | **Linked.** Window, renderer, input, audio, filesystem, timing | Zlib |
 | `sdl_image` | libsdl-org/SDL_image | `release-3.4.4` | **Linked.** Decodes the PNG atlases in `assets/` | Zlib |
-| `sdl_mixer` | libsdl-org/SDL_mixer | `release-3.2.4` | **Declared, not yet linked.** For the audio phase | Zlib |
 | `lpc-revised` | ElizaWy/LPC | `f07f7f5` | **Art source, build-time only.** Never linked, never shipped | OGA-BY 3.0 / CC-BY 3.0 |
 
 All four are pinned to a release tag where one exists. `lpc-revised` has no
@@ -27,8 +26,12 @@ cmake --preset linux-release && cmake --build --preset linux-release
 ctest --preset linux-release
 ```
 
-`ext/sdl_mixer` is declared so that the version the audio work will be built
-against is recorded, but no CMake target references it yet.
+`ext/sdl_mixer` used to be declared here against the audio work. It has been
+removed, because the audio work did not need it: SDL3 loads and converts WAVs on
+its own, and the sounds are generated rather than vendored, so the mixing is a
+hundred lines in `src/audio/gg_audio.c` instead of a dependency on four
+platforms. This project prefers no dependency to a small one, and that is what
+that preference looks like when it is acted on.
 
 **Do not init `ext/lpc-revised` casually: it is 766 MB.** It is needed only to
 *regenerate* the art, and the generated output — `assets/atlas_*.png`,

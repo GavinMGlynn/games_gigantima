@@ -24,6 +24,7 @@
 #include "core/gg_combat.h"
 #include "core/gg_magic.h"
 #include "core/gg_bestiary.h"
+#include "audio/gg_audio.h"
 #include "ui/gg_screens.h"
 #include "platform/gg_settings.h"
 
@@ -87,6 +88,10 @@ typedef struct {
     // way to exercise the save-on-exit path at all.
     uint32_t turn_limit;
     bool     turn_limit_set;
+
+    // --listen MS keeps a headless run alive afterwards so the audio device is
+    // fed. See the note where it is used.
+    uint32_t listen_ms;
 
     // --screen NAME opens on a named screen, so --shot can photograph each of
     // them. Without it only the world and the title were reachable from the
@@ -280,6 +285,7 @@ static bool screen_act(gg_app *app, gg_screen_result r) {
         if (app->screens.id == GG_SCREEN_OPTIONS) {
             gg_settings_save(&app->settings, gg_pref_file(GG_SETTINGS_FILE));
             app->in.no_rumble = !app->settings.rumble;
+            gg_audio_volumes(app->settings.music, app->settings.effects);
             if (app->settings.fullscreen != app->faux_fs) toggle_fullscreen(app);
             if (app->win && !app->faux_fs)
                 SDL_SetWindowSize(app->win, GG_SCREEN_W * app->settings.scale,
@@ -362,6 +368,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
         } else if (SDL_strcmp(argv[i], "--turns") == 0 && i + 1 < argc) {
             app->turn_limit = (uint32_t)SDL_atoi(argv[++i]);
             app->turn_limit_set = true;
+        } else if (SDL_strcmp(argv[i], "--listen") == 0 && i + 1 < argc) {
+            app->listen_ms = (uint32_t)SDL_atoi(argv[++i]);
         } else if (SDL_strcmp(argv[i], "--new") == 0) {
             app->force_new = true;
         } else if (SDL_strcmp(argv[i], "--map") == 0 && i + 1 < argc) {
@@ -488,7 +496,13 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     if (!gg_bestiary_load(gg_asset_path("bestiary.txt")))
         SDL_Log("gigantima: no bestiary loaded; the hills will be empty");
 
+    // A silent game is a playable one, so a device that will not open is a log
+    // line and not a failure - the same call the gamepad gets.
+    if (!gg_audio_init(gg_asset_path("sounds/")))
+        SDL_Log("gigantima: no audio; the world will be silent");
+
     gg_settings_load(&app->settings, gg_pref_file(GG_SETTINGS_FILE));
+    gg_audio_volumes(app->settings.music, app->settings.effects);
     if (app->settings.rumble == false) app->in.no_rumble = true;
     if (no_rumble) app->settings.rumble = false;
 
@@ -721,6 +735,14 @@ static bool step_once(gg_app *app) {
     }
 
     if (app->started) {
+        // Whatever the world had to say since the last tick. The simulation
+        // does not know audio exists; this is the only place the two meet.
+        gg_event heard[GG_EVENTS_MAX];
+        const int n = gg_events_drain(&app->game, heard, GG_EVENTS_MAX);
+        for (int i = 0; i < n; i++) gg_audio_play(heard[i]);
+        if (n > 0 || app->frames % 30 == 0)
+            gg_audio_music_for(&app->game);
+
         const gg_action a = gg_input_take(&app->in);
         if (a != GG_ACT_NONE) {
             gg_game_act(&app->game, a);
@@ -848,11 +870,37 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
     if (app->turn_limit_set) {
         while (app->game.turn < app->turn_limit) {
             const uint32_t before = app->game.turn;
-            gg_game_act(&app->game, GG_ACT_WAIT);
+
+            // Walking rather than waiting, with a wait as the fallback: this
+            // used to stand still for the whole run, which exercised almost
+            // nothing and made an audio capture of it silent, because waiting
+            // is silent. A blocked move costs no turn, so the fallback is what
+            // keeps this from spinning against a wall.
+            gg_game_act(&app->game, GG_ACT_E);
+            if (app->game.turn == before) gg_game_act(&app->game, GG_ACT_WAIT);
             gg_game_animate(&app->game);
             if (app->game.turn == before) break;   // cannot advance; do not spin
+
+            // Whatever that turn had to say. Drained here as well as in the
+            // frame loop because this path never reaches one, and a headless
+            // run is exactly where an audio capture is taken.
+            gg_event heard[GG_EVENTS_MAX];
+            const int n = gg_events_drain(&app->game, heard, GG_EVENTS_MAX);
+            for (int i = 0; i < n; i++) gg_audio_play(heard[i]);
         }
+        gg_audio_music_for(&app->game);
         SDL_Log("gigantima: played to turn %u", app->game.turn);
+
+        // --listen holds the process open afterwards so the audio device is
+        // actually asked for something. Without it the turns run in a
+        // millisecond and a capture is an empty file - which is how this was
+        // found. The audio equivalent of --shot, and it exists for the same
+        // reason: a thing you cannot capture is a thing you cannot check.
+        if (app->listen_ms > 0) {
+            const uint64_t until = SDL_GetTicks() + app->listen_ms;
+            while (SDL_GetTicks() < until) SDL_Delay(10);
+            SDL_Log("gigantima: listened for %u ms", app->listen_ms);
+        }
         return SDL_APP_SUCCESS;
     }
 
@@ -907,6 +955,7 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result) {
     gg_dialogue_clear();
     gg_magic_clear();
     gg_bestiary_clear();
+    gg_audio_quit();
     gg_input_quit(&app->in);
     gg_game_free(&app->game);
     debug_close(app);
