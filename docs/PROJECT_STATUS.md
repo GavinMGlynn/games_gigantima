@@ -11,10 +11,10 @@ buried in a later clause. See `CLAUDE.md`.
 
 ## In one line
 
-An engine, not yet a game: you can walk a generated continent, enter a walled
-town, and watch eight townsfolk keep daily schedules under a day/night cycle.
-There is **no story, no combat, no magic, no usable inventory, no saving, no
-sound, no menus and no editor**.
+An engine, not yet a game: you can walk a generated continent, enter a town, go
+inside its houses, and watch eight townsfolk path around the buildings to keep
+daily schedules under a day/night cycle. There is **no story, no combat, no
+magic, no usable inventory, no saving, no sound, no menus and no editor**.
 
 ---
 
@@ -167,6 +167,31 @@ tile, which had the avatar playing the first half of the cycle over and over.
 `the_camera_clamps_to_the_map_edges`, `a_finished_step_lands_exactly_on_the_tile`,
 and the CI smoke test, which renders a frame headless and fails if the game
 cannot find its own art.*
+
+### Light
+
+Lit **per tile**, not by one quad over the whole view. Tile granularity is not
+a compromise: Ultima VI lit by the tile too, and a circle of torchlight
+stepping outward a tile at a time is the look.
+
+A cell takes the brightest of three sources — the sky, from the world clock;
+the room it is in, because somebody lives there and rooms are lit day or
+night; and the avatar's own carried light, which falls off with distance so
+the edge of what you can see moves with you. A doorway takes three quarters of
+the room's light, so an open door reads as light spilling into the street
+rather than as a hole in the wall.
+
+Night is blue rather than black, and bottoms out at three fifths rather than
+opaque: a pure black wash reads as the renderer having broken, and the player
+has to be able to walk home.
+
+**Light comes from rules, not from objects.** A room is lit because it is a
+room and the avatar because it is the avatar; there is no emitter list, so a
+brazier, a campfire or a dropped torch lights nothing. That needs the
+inventory first and is a named plan item.
+
+*Verification: `a_room_is_lit_at_midnight_and_the_street_is_not`,
+`the_avatar_carries_a_light_that_falls_off`, `noon_lights_the_whole_outdoors`.*
 
 ### Shorelines
 
@@ -356,11 +381,6 @@ Named plainly, because a reader should not have to infer absence:
 
 Deliberate, documented, with the cost to close:
 
-- **Whole-view light quad.** Ignores `GG_CELL_INDOORS` and light sources.
-  Closing it needs a light model — emitters, radius, and a per-tile blend.
-- **`GG_CELL_INDOORS` is set but not yet read.** Building interiors carry it;
-  the lighting pass does not consult it, so a room is as dark at night as the
-  street. That is the light-sources plan item.
 - **Roads stop at water** rather than bridging it. Paving the water was what
   put a brown causeway across the middle of the lake; a bridge prop is the
   proper fix.

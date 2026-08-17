@@ -4,13 +4,14 @@ An Ultima VI-style seamless-world RPG in C23 and SDL3.
 
 [![ci](https://github.com/GavinMGlynn/games_gigantima/actions/workflows/ci.yml/badge.svg)](https://github.com/GavinMGlynn/games_gigantima/actions/workflows/ci.yml)
 
-> **Status: early.** The engine works end to end — a generated continent, a
-> walled town, townsfolk on daily schedules, depth-sorted rendering, a world
-> clock with day and night, and a HUD — and you can walk around in it. There is
-> no story, no combat, no magic, no inventory interaction, no saving and no
-> sound yet. `docs/PROJECT_STATUS.md` is the single source of truth for what
-> works; `docs/COMPLETION_PLAN.md` is the road to the rest. Nothing here claims
-> more than it has earned.
+> **Status: early.** The engine works end to end — a generated continent with
+> autotiled shorelines and terrain, a town of houses you can walk into,
+> townsfolk who path around the buildings to keep daily schedules, a world
+> clock with lit rooms at night, and a HUD. There is no story, no combat, no
+> magic, no inventory interaction, no saving and no sound yet.
+> `docs/PROJECT_STATUS.md` is the single source of truth for what works;
+> `docs/COMPLETION_PLAN.md` is the road to the rest. Nothing here claims more
+> than it has earned.
 
 ## What "Ultima VI-style" means here
 
@@ -94,7 +95,8 @@ no key at all.
 ```
 gigantima [--profile NAME] [--seed N] [--play] [--debug]
           [--scale N] [--fullscreen] [--no-rumble]
-          [--at X,Y] [--shot FILE.bmp] [--shot-at TURN]
+          [--map FILE.ggmap] [--at X,Y] [--time HH:MM]
+          [--shot FILE.bmp] [--shot-at TURN]
 ```
 
 `--seed` makes a run reproducible: the world, the town layout and every random
@@ -102,8 +104,12 @@ decision come from that one number. `--shot` runs the world forward with no
 window, writes a single frame and exits, which is how CI checks that the game
 can still find and draw its own art — it photographs whatever the other flags
 select, so `--shot` alone gets the title screen and `--debug --shot` gets the
-debug view. `--at X,Y` drops the avatar somewhere specific, because verifying a
-change to how water is drawn means getting to water.
+debug view. `--at X,Y` and `--time HH:MM` put the avatar somewhere specific at
+a specific hour, because verifying a change to how water is drawn means getting
+to water, and checking that a lit room differs from the street at night means
+getting to night without walking there. `--map` plays an authored `.ggmap`,
+which is how the shoreline corners were checked against coastlines the
+generator would smooth away.
 
 ## Layout
 

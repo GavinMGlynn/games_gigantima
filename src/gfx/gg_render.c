@@ -225,6 +225,42 @@ static gg_edge_id edge_set(const gg_map *m, int x, int y) {
 }
 
 // ---------------------------------------------------------------------------
+// Light
+//
+// Three sources, and a cell takes the brightest of them:
+//
+//   the sky      outdoors only, from the world clock
+//   a room       an interior is lit by whoever lives there, day or night
+//   the avatar   a small carried light, so the player is never in the dark
+//
+// The interior light is what `GG_CELL_INDOORS` was set for. Without it a room
+// was exactly as dark as the street at night, which made going inside after
+// dusk pointless.
+// ---------------------------------------------------------------------------
+uint8_t gg_light_at(const gg_game *g, int x, int y, uint8_t day) {
+    const gg_cell *c = gg_map_at_const(&g->map, x, y);
+
+    // A room is lit by its own hearth, and a doorway takes some of it, so an
+    // open door reads as light spilling into the street rather than as a hole.
+    uint8_t lit = 0;
+    if (c && (c->flags & GG_CELL_INDOORS)) lit = GG_LIGHT_INDOOR;
+    else if (c && (c->flags & GG_CELL_DOOR)) lit = GG_LIGHT_INDOOR * 3 / 4;
+    else lit = day;
+
+    // The avatar's own light. Radius rather than a flat disc, so it falls off
+    // and the edge of what you can see moves with you.
+    const gg_actor *p = gg_player_const(g);
+    const int d = gg_dist_cheb(p->x, p->y, x, y);
+    if (d <= GG_LIGHT_CARRY_RADIUS) {
+        const int fall = GG_LIGHT_FULL -
+                         d * GG_LIGHT_FULL / (GG_LIGHT_CARRY_RADIUS + 1);
+        const uint8_t carried = (uint8_t)gg_clampi(fall, 0, GG_LIGHT_FULL);
+        if (carried > lit) lit = carried;
+    }
+    return lit;
+}
+
+// ---------------------------------------------------------------------------
 // Camera
 // ---------------------------------------------------------------------------
 void gg_render_camera(const gg_game *g, int *cam_px, int *cam_py) {
@@ -447,16 +483,30 @@ void gg_render_world(const gg_game *g, SDL_Renderer *ren) {
         SDL_RenderTexture(ren, list[i].tex, &list[i].src, &list[i].dst);
 
     // --- 3. light ----------------------------------------------------------
-    // One translucent quad over the world. Night is blue rather than black
-    // because a pure black wash reads as "the renderer broke", and moonlight
-    // is blue anyway. Indoor cells are not yet excluded - that needs a light
-    // source model, and it is a named item in docs/COMPLETION_PLAN.md.
+    // Per tile, not one quad over everything. Tile granularity is not a
+    // compromise here - Ultima VI lit by the tile too, and a circle of
+    // torchlight stepping outward a tile at a time is the look.
+    //
+    // Night is blue rather than black: a pure black wash reads as the renderer
+    // having broken, and moonlight is blue anyway.
     const uint8_t day = gg_game_daylight(g);
-    if (day < 255) {
-        const uint8_t dark = (uint8_t)((255 - day) * 3 / 5);   // never fully black
+    if (day < GG_LIGHT_FULL) {
         SDL_SetRenderDrawBlendMode(ren, SDL_BLENDMODE_BLEND);
-        SDL_SetRenderDrawColor(ren, 12, 18, 56, dark);
-        const SDL_FRect all = { 0, 0, (float)GG_VIEW_W, (float)GG_VIEW_H };
-        SDL_RenderFillRect(ren, &all);
+        for (int vy = 0; vy <= GG_VIEW_TILES_Y; vy++) {
+            for (int vx = 0; vx <= GG_VIEW_TILES_X; vx++) {
+                const int wx = cam_tx + vx, wy = cam_ty + vy;
+                const uint8_t lit = gg_light_at(g, wx, wy, day);
+                if (lit >= GG_LIGHT_FULL) continue;
+
+                // Never fully black: at three fifths, a moonlit field is still
+                // readable, which matters when the player has to walk home.
+                const uint8_t dark = (uint8_t)((GG_LIGHT_FULL - lit) * 3 / 5);
+                SDL_SetRenderDrawColor(ren, 12, 18, 56, dark);
+                const SDL_FRect dst = { (float)(vx * GG_TILE - off_x),
+                                        (float)(vy * GG_TILE - off_y),
+                                        (float)GG_TILE, (float)GG_TILE };
+                SDL_RenderFillRect(ren, &dst);
+            }
+        }
     }
 }

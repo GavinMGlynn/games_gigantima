@@ -59,6 +59,12 @@ typedef struct {
     // water, and walking there by hand is not a workflow.
     int  at_x, at_y;
     bool at_set;
+
+    // --time HH:MM sets the world clock. Also a development flag, and earned
+    // the same way: checking that a lit room differs from the street at night
+    // means being able to get to night without walking there.
+    int  clock_min;
+    bool clock_set;
 } gg_app;
 
 // ---------------------------------------------------------------------------
@@ -170,7 +176,7 @@ static void draw(gg_app *app) {
 static void usage(void) {
     SDL_Log("usage: gigantima [--profile NAME] [--seed N] [--play] [--debug]\n"
             "                 [--scale N] [--fullscreen] [--no-rumble]\n"
-            "                 [--map FILE.ggmap] [--at X,Y]\n"
+            "                 [--map FILE.ggmap] [--at X,Y] [--time HH:MM]\n"
             "                 [--shot FILE.bmp] [--shot-at TURN]");
 }
 
@@ -204,6 +210,16 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
             app->shot_at = (uint32_t)SDL_atoi(argv[++i]);
         } else if (SDL_strcmp(argv[i], "--map") == 0 && i + 1 < argc) {
             app->map_path = argv[++i];
+        } else if (SDL_strcmp(argv[i], "--time") == 0 && i + 1 < argc) {
+            int hh = 0, mm = 0;
+            if (SDL_sscanf(argv[++i], "%d:%d", &hh, &mm) == 2 &&
+                hh >= 0 && hh < 24 && mm >= 0 && mm < 60) {
+                app->clock_min = hh * 60 + mm;
+                app->clock_set = true;
+            } else {
+                SDL_Log("gigantima: --time wants HH:MM, got '%s'", argv[i]);
+                return SDL_APP_FAILURE;
+            }
         } else if (SDL_strcmp(argv[i], "--at") == 0 && i + 1 < argc) {
             if (SDL_sscanf(argv[++i], "%d,%d", &app->at_x, &app->at_y) == 2) {
                 app->at_set = true;
@@ -275,6 +291,12 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
         SDL_Log("gigantima: could not build a world%s%s",
                 app->map_path ? " from " : "", app->map_path ? app->map_path : "");
         return SDL_APP_FAILURE;
+    }
+
+    if (app->clock_set) {
+        app->game.minutes = (uint32_t)app->clock_min;
+        SDL_Log("gigantima: clock set to %02d:%02d",
+                gg_game_hour(&app->game), gg_game_minute(&app->game));
     }
 
     if (app->at_set) {

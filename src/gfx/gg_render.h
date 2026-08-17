@@ -26,6 +26,23 @@ void gg_render_camera(const gg_game *g, int *cam_px, int *cam_py);
 // Screen pixel -> world tile, using the same camera the last draw used.
 void gg_render_screen_to_tile(const gg_game *g, int sx, int sy, int *tx, int *ty);
 
+// --- light -----------------------------------------------------------------
+#define GG_LIGHT_FULL          255
+// A room is lit by whoever lives there, day or night. Short of full daylight,
+// so stepping inside at noon still reads as stepping into shade.
+#define GG_LIGHT_INDOOR        215
+// How far the avatar's own light reaches, in tiles. Small: the point is that
+// the player is never in the dark, not that night stops mattering.
+#define GG_LIGHT_CARRY_RADIUS  4
+
+// How lit the cell at (x, y) is, 0 to GG_LIGHT_FULL, given the sky's `day`
+// level. The brightest of the sky, the room, and the avatar's carried light.
+//
+// Exposed because it is pure arithmetic over the game state - no texture
+// involved - and because a lighting rule is far easier to check as a number
+// than by eye in a night-time screenshot.
+uint8_t gg_light_at(const gg_game *g, int x, int y, uint8_t day);
+
 // Which of an edge set's nine pieces a water cell resolves to, as
 // GG_EDGE_NW .. GG_EDGE_SE. Exposed because it is pure logic over the map with
 // no texture involved, and it is where a shoreline bug would actually live -

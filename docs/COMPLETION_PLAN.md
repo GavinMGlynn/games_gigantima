@@ -129,9 +129,20 @@ item to tick the easy half is the same violation wearing a different shape.
       `a_resident_crosses_the_town_to_a_fixed_target`,
       `a_resident_walks_round_a_building_rather_than_into_it`.
       Detail in `PROJECT_STATUS.md`.*
-- [ ] **Light sources and indoor lighting.** `GG_CELL_INDOORS` is set and
-      unused; the light quad covers the whole view. *Verification: a night
-      frame in which a lit interior is brighter than the street.*
+- [x] **Light sources and indoor lighting.** Lit per tile rather than by one
+      quad over everything: a cell takes the brightest of the sky, the room it
+      is in, and the avatar's carried light. `GG_CELL_INDOORS` is now read.
+      *Verification: `a_room_is_lit_at_midnight_and_the_street_is_not`,
+      `the_avatar_carries_a_light_that_falls_off`,
+      `noon_lights_the_whole_outdoors`; and `--shot` frames of the same town at
+      noon, dusk and midnight, and of a lit room with a dark street round it.*
+- [ ] **Light that comes from things rather than from rules.** A room is lit
+      because it is a room, and the avatar because it is the avatar; neither is
+      an object in the world. Braziers, campfires, a torch that burns down and
+      is consumed from the pack, and a window that spills light into the
+      street all want an emitter list instead. Wants the inventory item first.
+      *Verification: a torch dropped on the ground lights its surroundings, and
+      goes out when it is used up.*
 
 ## Phase 2 — A game, not an engine
 

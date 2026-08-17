@@ -868,6 +868,80 @@ static void a_finished_step_lands_exactly_on_the_tile(void) {
 }
 
 // ---------------------------------------------------------------------------
+// Light
+// ---------------------------------------------------------------------------
+static void a_room_is_lit_at_midnight_and_the_street_is_not(void) {
+    // The whole point of the lighting item. Before it, GG_CELL_INDOORS was set
+    // on every room and read by nothing, so a house at night was exactly as
+    // dark as the road outside and going in after dusk gained you nothing.
+    gg_game g;
+    CHECK(gg_game_new(&g, 7, "Tester"), "new game failed");
+    g.minutes = 0;                                  // midnight
+    const uint8_t day = gg_game_daylight(&g);
+    CHECK(day == 0, "midnight should be pitch dark outdoors, got %u", day);
+
+    // Find a room, and a patch of street well away from the avatar's own light.
+    int rx = -1, ry = -1, sx = -1, sy = -1;
+    const gg_actor *p = gg_player_const(&g);
+    for (int y = 0; y < g.map.h && (rx < 0 || sx < 0); y++)
+        for (int x = 0; x < g.map.w && (rx < 0 || sx < 0); x++) {
+            const gg_cell *c = gg_map_at_const(&g.map, x, y);
+            if (gg_dist_cheb(p->x, p->y, x, y) <= GG_LIGHT_CARRY_RADIUS) continue;
+            if (rx < 0 && (c->flags & GG_CELL_INDOORS)) { rx = x; ry = y; }
+            if (sx < 0 && c->terrain == GG_TILE_ROAD)   { sx = x; sy = y; }
+        }
+    CHECK(rx >= 0, "the town has no interior to test");
+    CHECK(sx >= 0, "the map has no road to test");
+
+    if (rx >= 0 && sx >= 0) {
+        const uint8_t room = gg_light_at(&g, rx, ry, day);
+        const uint8_t street = gg_light_at(&g, sx, sy, day);
+        CHECK(room > street, "a room at midnight (%u) is no brighter than the "
+              "street (%u)", room, street);
+        CHECK(street == 0, "the street at midnight should be unlit, got %u", street);
+    }
+    gg_game_free(&g);
+}
+
+static void the_avatar_carries_a_light_that_falls_off(void) {
+    gg_game g;
+    CHECK(gg_game_new(&g, 7, "Tester"), "new game failed");
+    g.minutes = 0;
+    const uint8_t day = gg_game_daylight(&g);
+    const gg_actor *p = gg_player_const(&g);
+
+    const uint8_t here = gg_light_at(&g, p->x, p->y, day);
+    CHECK(here == GG_LIGHT_FULL, "the avatar's own tile should be fully lit, got %u",
+          here);
+
+    // Strictly decreasing out to the radius, then nothing.
+    uint8_t prev = here;
+    for (int d = 1; d <= GG_LIGHT_CARRY_RADIUS; d++) {
+        const uint8_t at = gg_light_at(&g, p->x + d, p->y, day);
+        CHECK(at < prev, "light at %d tiles (%u) did not fall below %d tiles (%u)",
+              d, at, d - 1, prev);
+        prev = at;
+    }
+    CHECK(gg_light_at(&g, p->x + GG_LIGHT_CARRY_RADIUS + 3, p->y, day) == 0,
+          "the carried light reaches further than its radius");
+    gg_game_free(&g);
+}
+
+static void noon_lights_the_whole_outdoors(void) {
+    gg_game g;
+    CHECK(gg_game_new(&g, 7, "Tester"), "new game failed");
+    g.minutes = 12 * 60;
+    const uint8_t day = gg_game_daylight(&g);
+    CHECK(day == GG_LIGHT_FULL, "noon should be full daylight, got %u", day);
+
+    // Anywhere outdoors, however far from the avatar.
+    const gg_actor *p = gg_player_const(&g);
+    CHECK(gg_light_at(&g, p->x + 40, p->y + 30, day) == GG_LIGHT_FULL,
+          "an outdoor tile at noon is not fully lit");
+    gg_game_free(&g);
+}
+
+// ---------------------------------------------------------------------------
 // Camera
 //
 // gg_render_camera is pure arithmetic over the game state - no texture, no
@@ -1278,6 +1352,10 @@ int main(void) {
 
     RUN(facing_follows_the_dominant_axis);
     RUN(a_finished_step_lands_exactly_on_the_tile);
+
+    RUN(a_room_is_lit_at_midnight_and_the_street_is_not);
+    RUN(the_avatar_carries_a_light_that_falls_off);
+    RUN(noon_lights_the_whole_outdoors);
 
     RUN(the_camera_moves_in_sub_tile_steps_while_walking);
     RUN(the_camera_clamps_to_the_map_edges);
