@@ -28,3 +28,7 @@ __pycache__/
 *.ggmap
 !assets/maps/*.ggmap
 *.ggsave
+
+# Recorded sessions. A replay worth keeping is one attached to a bug report,
+# not one left lying in the tree.
+*.ggreplay

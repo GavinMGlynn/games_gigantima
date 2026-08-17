@@ -139,6 +139,26 @@ jobs:
           grep -q "the story ended" ending.log || {
             echo "the story could not be played to its end"; exit 1; }
 
+      # And that a session can be recorded and played back to the same world.
+      # The story run above is recorded this time, then replayed: 500-odd
+      # actions, two crossings and a fight, and the replay has to end on the
+      # same state hash. A divergence here is a bug in determinism itself.
+      - name: Smoke test - a recorded session replays to the same world
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_RENDER_DRIVER: software
+          SDL_AUDIODRIVER: dummy
+        run: |
+          ./build/gigantima --map assets/maps/vale.ggmap --profile CIRec --new \
+            --play --shot-at 0 --screen ending --record story.ggreplay \
+            --shot recorded.bmp > record.log 2>&1
+          grep -q "recorded" record.log || { cat record.log; exit 1; }
+          ./build/gigantima --replay story.ggreplay > replay.log 2>&1
+          cat replay.log
+          grep -q "identical" replay.log || {
+            echo "the replay did not end on the world it was recorded from"
+            exit 1; }
+
       # The editor is a second binary on the same core, and it has to keep
       # building and drawing. The map it authors being playable is checked by
       # the unit tests; this is the window.

@@ -14,6 +14,7 @@
 #include "gfx/gg_atlas.h"   // GG_EDGE_* piece indices
 #include "core/gg_path.h"
 #include "core/gg_save.h"
+#include "core/gg_replay.h"
 #include "core/gg_dialogue.h"
 #include "core/gg_combat.h"
 #include "core/gg_magic.h"
@@ -4354,6 +4355,205 @@ static void the_vale_is_stocked_with_creatures_that_work(void) {
 }
 
 // ---------------------------------------------------------------------------
+// Replay
+// ---------------------------------------------------------------------------
+// A session played twice: once recording, once from the recording. The
+// simulation is integer-only and seeded and the world advances only inside
+// gg_game_act, so the second run has to end on the same number as the first -
+// and if it ever does not, the bug is that divergence and this is what finds
+// it.
+//
+// The actions are drawn from a seeded RNG of the test's own rather than by
+// hand: a hand-written list exercises what the author thought of, and this has
+// to exercise whatever the world does.
+static void a_recorded_session_replays_to_the_same_world(void) {
+    const char *path = gg_pref_file("test_session.ggreplay");
+
+    static const gg_action MENU[] = {
+        GG_ACT_N, GG_ACT_S, GG_ACT_E, GG_ACT_W,
+        GG_ACT_NE, GG_ACT_NW, GG_ACT_SE, GG_ACT_SW,
+        GG_ACT_WAIT, GG_ACT_TALK, GG_ACT_LOOK, GG_ACT_OPEN,
+        GG_ACT_GET, GG_ACT_FIGHT, GG_ACT_PACK, GG_ACT_USE,
+        GG_ACT_EQUIP, GG_ACT_DROP, GG_ACT_JOURNAL, GG_ACT_CAST,
+    };
+    const int PLAYED = 400;
+
+    // --- the session --------------------------------------------------------
+    gg_game a;
+    CHECK(gg_game_new(&a, 9001, "Recorder"), "new game failed");
+
+    gg_recorder rec;
+    CHECK(gg_record_begin(&rec, path, &a, nullptr), "could not start recording");
+
+    gg_rng script;
+    gg_rng_seed(&script, 31337);
+    gg_action played[400];
+    for (int i = 0; i < PLAYED; i++) {
+        const gg_action act = MENU[gg_rand_belowi(&script, (int)GG_COUNTOF(MENU))];
+        played[i] = act;
+        gg_record_act(&rec, act);
+        gg_game_act(&a, act);
+        gg_game_animate(&a);
+    }
+    const uint64_t was = gg_record_end(&rec, &a);
+    CHECK(was == gg_state_hash(&a), "the recorder wrote a hash of another world");
+
+    // The world has to have actually gone somewhere, or this proves that two
+    // untouched worlds are the same.
+    CHECK(a.turn > 20, "the session only reached turn %u", a.turn);
+    {
+        gg_game fresh;
+        CHECK(gg_game_new(&fresh, 9001, "Recorder"), "new game failed");
+        CHECK(was != gg_state_hash(&fresh), "the session ended where it began");
+        gg_game_free(&fresh);
+    }
+
+    // --- the replay ---------------------------------------------------------
+    gg_replay r;
+    CHECK(gg_replay_load(&r, path), "the replay would not load");
+    CHECK(r.steps == PLAYED, "the replay holds %d steps, expected %d",
+          r.steps, PLAYED);
+    CHECK(r.seed == 9001, "the replay says seed %u", r.seed);
+    CHECK(SDL_strcmp(r.profile, "Recorder") == 0, "the replay says '%s'",
+          r.profile);
+    CHECK(r.has_hash && r.hash == was, "the replay ends on %016llX, not %016llX",
+          (unsigned long long)r.hash, (unsigned long long)was);
+
+    // Every action came back as the action that was recorded. Checked because
+    // the names are the file format: one misspelling in the table and a replay
+    // is a different session that happens to parse.
+    for (int i = 0; i < r.steps && i < PLAYED; i++) {
+        CHECK(r.step[i].kind == GG_STEP_ACT, "step %d is not an action", i);
+        CHECK(r.step[i].act == played[i], "step %d came back as %s, not %s",
+              i, gg_action_name((gg_action)r.step[i].act),
+              gg_action_name(played[i]));
+    }
+
+    gg_game b;
+    CHECK(gg_game_new(&b, r.seed, r.profile), "the replay's world would not build");
+    for (int i = 0; i < r.steps; i++) {
+        if (r.step[i].kind != GG_STEP_ACT) continue;
+        gg_game_act(&b, (gg_action)r.step[i].act);
+        gg_game_animate(&b);
+    }
+    const uint64_t now = gg_state_hash(&b);
+    CHECK(now == was, "the replay ended on %016llX and the session on %016llX",
+          (unsigned long long)now, (unsigned long long)was);
+
+    // And the hash is not a constant. One *turn* more, not one action more:
+    // a blocked move costs no turn and changes nothing, so a replay one action
+    // short can legitimately hash the same - which this test claimed was a
+    // failure until the random script ended on a bump.
+    gg_game c;
+    CHECK(gg_game_new(&c, r.seed, r.profile), "the third world would not build");
+    for (int i = 0; i < r.steps; i++)
+        if (r.step[i].kind == GG_STEP_ACT) {
+            gg_game_act(&c, (gg_action)r.step[i].act);
+            gg_game_animate(&c);
+        }
+    CHECK(gg_state_hash(&c) == was, "the third world came out different");
+    const uint32_t before = c.turn;
+    gg_game_act(&c, GG_ACT_WAIT);
+    CHECK(c.turn == before + 1, "waiting did not cost a turn");
+    CHECK(gg_state_hash(&c) != was,
+          "a session with one more turn in it hashes the same");
+
+    gg_replay_free(&r);
+    gg_game_free(&c);
+    gg_game_free(&b);
+    gg_game_free(&a);
+    SDL_RemovePath(path);
+}
+
+// Every part of the world the hash claims to cover, poked one at a time. A hash
+// that misses a field is worse than no hash: it makes a divergence in that
+// field look like agreement.
+static void the_state_hash_notices_every_part_of_the_world(void) {
+    gg_game g;
+    CHECK(gg_game_new(&g, 4242, "Hasher"), "new game failed");
+    for (int i = 0; i < 30; i++) gg_game_act(&g, GG_ACT_WAIT);
+
+    const uint64_t base = gg_state_hash(&g);
+    CHECK(gg_state_hash(&g) == base, "the hash of an untouched world moved");
+
+    #define POKE(what, change) do {                                           \
+        change;                                                               \
+        CHECK(gg_state_hash(&g) != base, "the hash ignores " what);           \
+    } while (0)
+
+    POKE("the turn counter",  g.turn++);
+    g.turn--;
+    POKE("the clock",         g.minutes += 7);
+    g.minutes -= 7;
+    POKE("the day",           g.day++);
+    g.day--;
+    POKE("the RNG",           g.rng.s ^= 0x5A5Au);
+    g.rng.s ^= 0x5A5Au;
+    POKE("experience",        g.exp += 5);
+    g.exp -= 5;
+    POKE("the tally of the slain", g.slain++);
+    g.slain--;
+    POKE("what mode it is in", g.mode = GG_MODE_JOURNAL);
+    g.mode = GG_MODE_PLAY;
+    POKE("whether the story is over", g.story_over = true);
+    g.story_over = false;
+
+    POKE("where the Avatar is standing", gg_player(&g)->x++);
+    gg_player(&g)->x--;
+    POKE("the Avatar's health", gg_player(&g)->hp--);
+    gg_player(&g)->hp++;
+    POKE("which way somebody faces", g.actor[1].facing =
+         (uint8_t)((g.actor[1].facing + 1) % 4));
+    g.actor[1].facing = (uint8_t)((g.actor[1].facing + 3) % 4);
+    POKE("whether somebody is still standing", g.actor[1].active = false);
+    g.actor[1].active = true;
+    POKE("who walks with the Avatar", g.actor[1].party = 1);
+    g.actor[1].party = GG_NOT_IN_PARTY;
+
+    POKE("what is carried", gg_pack_add(&g, GG_ITEM_STONE, 1));
+    gg_pack_take(&g, gg_pack_find(&g, GG_ITEM_STONE), 1);
+    POKE("what is held", g.equipped[GG_SLOT_LIGHT] = 0);
+    g.equipped[GG_SLOT_LIGHT] = -1;
+
+    POKE("a word learned", gg_learn(&g, "nothing_in_particular"));
+    g.knownn--;
+    POKE("a flag raised", gg_raise_flag(&g, "a_flag_of_no_consequence"));
+    g.flags--;
+    POKE("how far along a quest is", g.quest[0]++);
+    g.quest[0]--;
+
+    POKE("the ground", gg_ground_drop(&g.map, g.map.start_x, g.map.start_y,
+                                      GG_ITEM_GOLD, 1));
+    gg_ground_remove(&g.map, gg_ground_at(&g.map, g.map.start_x, g.map.start_y));
+    POKE("the terrain", g.map.cell[0].terrain ^= 1);
+    g.map.cell[0].terrain ^= 1;
+    POKE("the trail behind the Avatar", g.trail_x[0]++);
+    g.trail_x[0]--;
+    POKE("which map is underfoot", SDL_strlcpy(g.here, "elsewhere.ggmap",
+                                               sizeof g.here));
+    g.here[0] = '\0';
+
+    #undef POKE
+
+    // Everything was put back, so it must hash the same again - which is also
+    // what proves the pokes above were the only difference each time.
+    CHECK(gg_state_hash(&g) == base,
+          "putting the world back did not put the hash back");
+
+    // And the other half of the claim: **animation is not state**. The world
+    // advances only inside gg_game_act; gg_game_animate moves the drawing on,
+    // and a hash that noticed would report a divergence on every replay that
+    // ran at a different frame rate - which was this file's first bug.
+    gg_game_act(&g, GG_ACT_E);
+    const uint64_t stepped = gg_state_hash(&g);
+    for (int i = 0; i < GG_STEP_TICKS * 3; i++) gg_game_animate(&g);
+    CHECK(gg_state_hash(&g) == stepped,
+          "drawing the world changed what the world hashes to");
+
+    gg_game_free(&g);
+}
+
+// ---------------------------------------------------------------------------
 // Audio
 // ---------------------------------------------------------------------------
 // Which tune the world calls for is pure arithmetic over the game state, so it
@@ -6262,6 +6462,9 @@ int main(void) {
     RUN(a_creature_with_reach_strikes_from_where_it_stands);
     RUN(a_bestiary_that_does_not_parse_loads_nothing);
     RUN(the_vale_is_stocked_with_creatures_that_work);
+
+    RUN(a_recorded_session_replays_to_the_same_world);
+    RUN(the_state_hash_notices_every_part_of_the_world);
 
     RUN(the_tune_follows_where_you_are_and_what_hour_it_is);
     RUN(the_world_says_what_it_did_and_forgets_it);

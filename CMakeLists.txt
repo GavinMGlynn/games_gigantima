@@ -142,6 +142,7 @@ add_library(gigantima_core STATIC
     src/core/gg_bestiary.c
     src/core/gg_quest.c
     src/core/gg_save.c
+    src/core/gg_replay.c
     src/gfx/gg_font.c
     src/gfx/gg_render.c
     src/audio/gg_audio.c

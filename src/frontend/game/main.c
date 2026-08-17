@@ -20,6 +20,7 @@
 #include "platform/gg_paths.h"
 #include "debug/gg_debug.h"
 #include "core/gg_save.h"
+#include "core/gg_replay.h"
 #include "core/gg_dialogue.h"
 #include "core/gg_combat.h"
 #include "core/gg_magic.h"
@@ -93,6 +94,13 @@ typedef struct {
     // --listen MS keeps a headless run alive afterwards so the audio device is
     // fed. See the note where it is used.
     uint32_t listen_ms;
+
+    // --record writes every action the world is given to a file, and --replay
+    // plays one back and says whether it ended on the same world. See
+    // core/gg_replay.h; the point of it is that a bug report can be a file.
+    const char *record_path;
+    const char *replay_path;
+    gg_recorder rec;
 
     // --screen NAME opens on a named screen, so --shot can photograph each of
     // them. Without it only the world and the title were reachable from the
@@ -333,6 +341,32 @@ static bool screen_act(gg_app *app, gg_screen_result r) {
 // ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------
+// Where a map lives. The simulation names the map it wants and this is the only
+// thing that knows where content is kept: maps ship in assets/maps/, and one
+// saved by the editor sits beside the profiles, so both are tried and a map you
+// authored yourself is playable without installing it.
+static const char *gg_asset_path_for_map(const char *leaf) {
+    char rel[GG_MAP_NAME_MAX + 8];
+    SDL_snprintf(rel, sizeof rel, "maps/%s", leaf);
+
+    const char *where = gg_asset_path(rel);
+    SDL_IOStream *probe = SDL_IOFromFile(where, "rb");
+    if (probe) {
+        SDL_CloseIO(probe);
+        return where;
+    }
+    return gg_pref_file(leaf);
+}
+
+// **The one way this file gives the world an action.** Everything below goes
+// through here, so a recording is complete by construction rather than by
+// somebody remembering to add a line beside each call - which is exactly the
+// kind of promise that rots. See core/gg_replay.h.
+static void act(gg_app *app, gg_action a) {
+    gg_record_act(&app->rec, a);
+    gg_game_act(&app->game, a);
+}
+
 // A scripted player, for the staged screens below and for the smoke test that
 // plays the whole story through in one run.
 //
@@ -351,7 +385,7 @@ static bool step_toward(gg_app *app, int tx, int ty) {
     // Out of anything the last step opened. A conversation swallows the
     // direction keys, so a walk that walked into somebody would steer their
     // topic list from here on.
-    if (g->mode == GG_MODE_CONVERSE) gg_game_act(g, GG_ACT_WAIT);
+    if (g->mode == GG_MODE_CONVERSE) act(app, GG_ACT_WAIT);
     if (g->mode != GG_MODE_PLAY) return false;
 
     const int px = gg_player_const(g)->x, py = gg_player_const(g)->y;
@@ -362,14 +396,14 @@ static bool step_toward(gg_app *app, int tx, int ty) {
     if (!gg_step_toward(g, g->player, tx, ty, &nx, &ny)) return false;
 
     const uint32_t was = g->turn;
-    gg_game_act(g, gg_action_toward(nx - px, ny - py));
+    act(app, gg_action_toward(nx - px, ny - py));
     gg_game_animate(g);
     if (g->mode == GG_MODE_CONVERSE) return true;    // greeted somebody
     if (g->turn != was) return true;                 // stepped, or struck
 
     // Blocked by something that is not a turn. One turn of standing still, so
     // whoever is in the way has a chance to move on.
-    gg_game_act(g, GG_ACT_WAIT);
+    act(app, GG_ACT_WAIT);
     gg_game_animate(g);
     return g->turn != was;
 }
@@ -388,7 +422,7 @@ static bool walk_to(gg_app *app, int tx, int ty, int near, int patience) {
         // brigand was carrying.
         me = gg_player_const(g);
         if (g->mode == GG_MODE_PLAY && gg_ground_at(&g->map, me->x, me->y) >= 0)
-            gg_game_act(g, GG_ACT_GET);
+            act(app, GG_ACT_GET);
     }
     const gg_actor *me = gg_player_const(g);
     return gg_dist_cheb(me->x, me->y, tx, ty) <= near;
@@ -399,8 +433,10 @@ static bool walk_to(gg_app *app, int tx, int ty, int near, int patience) {
 // found later is readied without this knowing there is such a thing.
 static void ready_the_best(gg_app *app) {
     gg_game *g = &app->game;
-    const gg_mode was = g->mode;
-    g->mode = GG_MODE_PACK;
+
+    if (g->mode != GG_MODE_PLAY) return;
+    act(app, GG_ACT_PACK);
+    if (g->mode != GG_MODE_PACK) return;
 
     for (int slot = 0; slot < GG_SLOT_COUNT; slot++) {
         int best = -1, best_worth = 0;
@@ -411,10 +447,13 @@ static void ready_the_best(gg_app *app) {
             if (worth > best_worth) { best_worth = worth; best = i; }
         }
         if (best < 0 || g->equipped[slot] == best) continue;
-        g->pack_cursor = best;
-        gg_game_act(g, GG_ACT_EQUIP);
+
+        // Walked to with the direction keys, for the same reason the phial is.
+        for (int guard = 0; guard < GG_PACK_MAX && g->pack_cursor != best; guard++)
+            act(app, GG_ACT_S);
+        if (g->pack_cursor == best) act(app, GG_ACT_EQUIP);
     }
-    g->mode = was;
+    act(app, GG_ACT_PACK);
 }
 
 // Drinks something if there is something to drink and it is needed. A player
@@ -425,16 +464,21 @@ static void drink_if_hurt(gg_app *app) {
     const gg_actor *me = gg_player_const(g);
     if (me->hp * 2 > me->hp_max) return;
 
-    for (int i = 0; i < g->packn; i++) {
-        if (GG_ITEM[g->pack[i].kind].use == GG_USE_NONE) continue;
-        if (GG_ITEM[g->pack[i].kind].heal == 0) continue;
-        const gg_mode was = g->mode;
-        g->mode = GG_MODE_PACK;
-        g->pack_cursor = i;
-        gg_game_act(g, GG_ACT_USE);
-        g->mode = was;
-        return;
-    }
+    int want = -1;
+    for (int i = 0; i < g->packn; i++)
+        if (GG_ITEM[g->pack[i].kind].use != GG_USE_NONE &&
+            GG_ITEM[g->pack[i].kind].heal > 0) { want = i; break; }
+    if (want < 0) return;
+
+    // Opened, walked to and used with the keys a player would press. The pack
+    // cursor is world state and moving it by hand would move the world without
+    // an action - see `act` above.
+    if (g->mode != GG_MODE_PACK) act(app, GG_ACT_PACK);
+    if (g->mode != GG_MODE_PACK) return;
+    for (int guard = 0; guard < GG_PACK_MAX && g->pack_cursor != want; guard++)
+        act(app, GG_ACT_S);
+    if (g->pack_cursor == want) act(app, GG_ACT_USE);
+    if (g->mode == GG_MODE_PACK) act(app, GG_ACT_PACK);
 }
 
 // Hunts what is in the hills until there is a weapon in hand, or `most` of
@@ -466,7 +510,7 @@ static void hunt_for_gear(gg_app *app, int most) {
 
         // Onto the tile they fell on, and take what is there.
         walk_to(app, g->actor[prey].x, g->actor[prey].y, 0, 60);
-        for (int i = 0; i < 4; i++) gg_game_act(g, GG_ACT_GET);
+        for (int i = 0; i < 4; i++) act(app, GG_ACT_GET);
         ready_the_best(app);
     }
 }
@@ -480,17 +524,24 @@ static void ask_everything(gg_app *app, int who) {
 
     if (g->mode != GG_MODE_CONVERSE) {
         const gg_actor *me = gg_player_const(g);
-        gg_game_act(g, gg_action_toward(g->actor[who].x - me->x,
+        act(app, gg_action_toward(g->actor[who].x - me->x,
                                         g->actor[who].y - me->y));
     }
     if (g->mode != GG_MODE_CONVERSE) return;
 
+    // Every word once, reached the way a player reaches it: the cursor is
+    // walked down the list with the direction keys and the word is asked with
+    // the talk key. Setting `ask_cursor` from here would be quicker and would
+    // move the world without an action, which is the one thing that would make
+    // a recorded session unreplayable.
     for (int i = 0; i < GG_TOPICS_MAX && i < g->askables; i++) {
-        g->ask_cursor = i;
-        gg_conversation_ask(g);
+        for (int guard = 0; guard < GG_TOPICS_MAX && g->ask_cursor != i; guard++)
+            act(app, GG_ACT_S);
+        if (g->ask_cursor != i) break;
+        act(app, GG_ACT_TALK);
         if (g->mode != GG_MODE_CONVERSE) return;   // the story ended mid-word
     }
-    gg_game_act(g, GG_ACT_WAIT);
+    act(app, GG_ACT_WAIT);
 }
 
 // Walks to the first way out of the map underfoot and steps on it.
@@ -504,11 +555,12 @@ static bool walk_to_the_way_out(gg_app *app) {
 // the frame loop does for a player and this has to do for itself.
 static bool cross_over(gg_app *app) {
     if (!app->game.want_travel) return false;
-    char leaf[GG_MAP_NAME_MAX + 8];
-    SDL_snprintf(leaf, sizeof leaf, "maps/%s", app->game.travel_to);
-    if (!gg_game_travel(&app->game, gg_asset_path(leaf), app->game.travel_x,
-                        app->game.travel_y))
+    char leaf[GG_MAP_NAME_MAX];
+    SDL_strlcpy(leaf, app->game.travel_to, sizeof leaf);
+    const int tx = app->game.travel_x, ty = app->game.travel_y;
+    if (!gg_game_travel(&app->game, gg_asset_path_for_map(leaf), tx, ty))
         return false;
+    gg_record_travel(&app->rec, leaf, tx, ty);
     SDL_Log("gigantima: walked into %s", app->game.map.name);
     return true;
 }
@@ -518,7 +570,71 @@ static void usage(void) {
             "                 [--scale N] [--fullscreen] [--no-rumble]\n"
             "                 [--new] [--turns N] [--screen NAME] [--map FILE.ggmap]\n"
             "                 [--at X,Y] [--time HH:MM]\n"
-            "                 [--shot FILE.bmp] [--shot-at TURN]");
+            "                 [--shot FILE.bmp] [--shot-at TURN]\n"
+            "                 [--record FILE.ggreplay] [--replay FILE.ggreplay]");
+}
+
+// Plays a recorded session back and says whether it ended on the same world.
+//
+// The whole point of the exercise: the simulation is integer-only and seeded
+// and only moves inside gg_game_act, so this has to end on the number the
+// recording ends on. When it does not, the divergence *is* the bug, and the
+// step it happened on is where to look.
+static SDL_AppResult run_replay(gg_app *app) {
+    gg_replay r;
+    if (!gg_replay_load(&r, app->replay_path)) return SDL_APP_FAILURE;
+
+    const bool built = r.map[0]
+        ? gg_game_new_from_map(&app->game, gg_asset_path_for_map(r.map),
+                               r.profile)
+        : gg_game_new(&app->game, r.seed, r.profile);
+    if (!built) {
+        SDL_Log("gigantima: the replay's world could not be built");
+        gg_replay_free(&r);
+        return SDL_APP_FAILURE;
+    }
+    app->have_game = true;
+    app->started = true;
+
+    int crossings = 0, acts = 0;
+    for (int i = 0; i < r.steps; i++) {
+        if (r.step[i].kind == GG_STEP_TRAVEL) {
+            if (!gg_game_travel(&app->game, gg_asset_path_for_map(r.step[i].leaf),
+                                r.step[i].x, r.step[i].y)) {
+                SDL_Log("gigantima: step %d could not walk into %s", i,
+                        r.step[i].leaf);
+                gg_replay_free(&r);
+                return SDL_APP_FAILURE;
+            }
+            crossings++;
+            continue;
+        }
+        gg_game_act(&app->game, (gg_action)r.step[i].act);
+        gg_game_animate(&app->game);
+        acts++;
+    }
+
+    const uint64_t now = gg_state_hash(&app->game);
+    SDL_Log("gigantima: replayed %d actions and %d crossings to turn %u",
+            acts, crossings, app->game.turn);
+
+    if (!r.has_hash) {
+        SDL_Log("gigantima: the replay carries no hash to compare against; "
+                "this world is %016llX", (unsigned long long)now);
+        gg_replay_free(&r);
+        return SDL_APP_SUCCESS;
+    }
+    const uint64_t was = r.hash;
+    gg_replay_free(&r);
+
+    if (now != was) {
+        SDL_Log("gigantima: DIVERGED - the recording ended on %016llX and this "
+                "run on %016llX", (unsigned long long)was,
+                (unsigned long long)now);
+        return SDL_APP_FAILURE;
+    }
+    SDL_Log("gigantima: identical - %016llX", (unsigned long long)now);
+    return SDL_APP_SUCCESS;
 }
 
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
@@ -554,6 +670,10 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
         } else if (SDL_strcmp(argv[i], "--turns") == 0 && i + 1 < argc) {
             app->turn_limit = (uint32_t)SDL_atoi(argv[++i]);
             app->turn_limit_set = true;
+        } else if (SDL_strcmp(argv[i], "--record") == 0 && i + 1 < argc) {
+            app->record_path = argv[++i];
+        } else if (SDL_strcmp(argv[i], "--replay") == 0 && i + 1 < argc) {
+            app->replay_path = argv[++i];
         } else if (SDL_strcmp(argv[i], "--listen") == 0 && i + 1 < argc) {
             app->listen_ms = (uint32_t)SDL_atoi(argv[++i]);
         } else if (SDL_strcmp(argv[i], "--new") == 0) {
@@ -646,6 +766,10 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     if (!gg_quests_load(gg_asset_path("quests.txt")))
         SDL_Log("gigantima: no quests loaded; nothing will be asked of anybody");
 
+    // A replay decides everything about the world it plays into, so it runs
+    // before one is built and leaves by the front door either way.
+    if (app->replay_path) return run_replay(app);
+
     const uint32_t seed = seed_set ? app->seed
                                    : (uint32_t)SDL_GetPerformanceCounter();
     app->seed = seed;
@@ -696,6 +820,14 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     gg_audio_volumes(app->settings.music, app->settings.effects);
     if (app->settings.rumble == false) app->in.no_rumble = true;
     if (no_rumble) app->settings.rumble = false;
+
+    // Started here, after the world exists and before anything is given to it,
+    // so the recording begins at the same state a replay will build.
+    if (app->record_path) {
+        const char *leaf = app->game.here[0] ? app->game.here : nullptr;
+        if (gg_record_begin(&app->rec, app->record_path, &app->game, leaf))
+            SDL_Log("gigantima: recording to %s", app->record_path);
+    }
 
     // --play and --shot go straight into the world; anything else opens on
     // the title, which is where a player without command-line flags starts.
@@ -853,7 +985,7 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
                 app->game.mode == GG_MODE_PACK ||
                 app->game.mode == GG_MODE_SPELL ||
                 app->game.mode == GG_MODE_JOURNAL) {
-                gg_game_act(&app->game, GG_ACT_WAIT);
+                act(app, GG_ACT_WAIT);
                 return SDL_APP_CONTINUE;
             }
             screen_go(app, GG_SCREEN_PAUSE);
@@ -960,20 +1092,14 @@ static bool step_once(gg_app *app) {
     // in assets/maps/, and one saved by the editor sits beside the profiles -
     // both are tried, so a map you authored is playable without installing it.
     if (app->started && app->game.want_travel) {
-        char leaf[GG_MAP_NAME_MAX + 8];
-        SDL_snprintf(leaf, sizeof leaf, "maps/%s", app->game.travel_to);
-
-        const char *where = gg_asset_path(leaf);
-        SDL_IOStream *probe = SDL_IOFromFile(where, "rb");
-        if (probe) SDL_CloseIO(probe);
-        else       where = gg_pref_file(app->game.travel_to);
-
-        if (gg_game_travel(&app->game, where, app->game.travel_x,
-                           app->game.travel_y))
-            SDL_Log("gigantima: walked into %s (%s)", app->game.map.name,
-                    app->game.travel_to);
-        else
-            SDL_Log("gigantima: cannot walk into %s", app->game.travel_to);
+        const char *leaf = app->game.travel_to;
+        const int tx = app->game.travel_x, ty = app->game.travel_y;
+        if (gg_game_travel(&app->game, gg_asset_path_for_map(leaf), tx, ty)) {
+            SDL_Log("gigantima: walked into %s (%s)", app->game.map.name, leaf);
+            gg_record_travel(&app->rec, leaf, tx, ty);
+        } else {
+            SDL_Log("gigantima: cannot walk into %s", leaf);
+        }
         app->game.want_travel = false;
     }
 
@@ -988,7 +1114,7 @@ static bool step_once(gg_app *app) {
 
         const gg_action a = gg_input_take(&app->in);
         if (a != GG_ACT_NONE) {
-            gg_game_act(&app->game, a);
+            act(app, a);
             if (app->game.blocked_bump) {
                 app->game.blocked_bump = false;
                 gg_input_rumble(&app->in, 0x2000, 0x1000, 60);
@@ -1018,8 +1144,8 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
         uint32_t guard = app->shot_at * 4 + 64;
         while (app->started && app->game.turn < app->shot_at && guard-- > 0) {
             const uint32_t before = app->game.turn;
-            gg_game_act(&app->game, GG_ACT_E);
-            if (app->game.turn == before) gg_game_act(&app->game, GG_ACT_WAIT);
+            act(app, GG_ACT_E);
+            if (app->game.turn == before) act(app, GG_ACT_WAIT);
             gg_game_animate(&app->game);
         }
         if (app->started && app->game.turn < app->shot_at)
@@ -1068,7 +1194,7 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
             // A step clear of the gate, because the way back comes out
             // directly below the tile the silver is on and the Avatar's head
             // would be standing in front of it in the photograph.
-            gg_game_act(&app->game, GG_ACT_S);
+            act(app, GG_ACT_S);
             for (int i = 0; i < GG_STEP_TICKS + 2; i++)
                 gg_game_animate(&app->game);
 
@@ -1138,7 +1264,7 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
 
                     // What he was carrying.
                     walk_to(app, g->actor[rugar].x, g->actor[rugar].y, 0, 40);
-                    for (int i = 0; i < 4; i++) gg_game_act(g, GG_ACT_GET);
+                    for (int i = 0; i < 4; i++) act(app, GG_ACT_GET);
                     SDL_Log("gigantima: %d silver in the pack",
                             gg_pack_count(g, GG_ITEM_SILVER));
                 }
@@ -1191,7 +1317,7 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
                 gg_learn(&app->game, gg_magic_rune(i)->word);
             gg_pack_add(&app->game, GG_ITEM_GINSENG, 2);
             gg_pack_add(&app->game, GG_ITEM_ASH, 1);
-            gg_game_act(&app->game, GG_ACT_CAST);
+            act(app, GG_ACT_CAST);
         }
 
         // Puts two brigands within arm's reach and swings once, so a fight can
@@ -1201,8 +1327,8 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
             const gg_actor *pl = gg_player_const(&app->game);
             gg_spawn_named(&app->game, "BRIGAND", pl->x + 1, pl->y);
             gg_spawn_named(&app->game, "SLINGER", pl->x + 3, pl->y - 1);
-            gg_game_act(&app->game, GG_ACT_FIGHT);
-            gg_game_act(&app->game, GG_ACT_FIGHT);
+            act(app, GG_ACT_FIGHT);
+            act(app, GG_ACT_FIGHT);
         }
 
         // Takes the two nearest townsfolk along, so the line and the party's
@@ -1221,7 +1347,7 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
             for (size_t d = 0; d < GG_COUNTOF(WAY); d++)
                 for (int i = 0; i < 10; i++) {
                     const uint32_t was = app->game.turn;
-                    gg_game_act(&app->game, WAY[d]);
+                    act(app, WAY[d]);
                     if (app->game.turn == was) break;
                 }
         }
@@ -1235,7 +1361,7 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
                 pl->x = app->game.actor[i].x;
                 pl->y = (int16_t)(app->game.actor[i].y + 1);
                 pl->step = 0;
-                gg_game_act(&app->game, GG_ACT_N);
+                act(app, GG_ACT_N);
                 break;
             }
         }
@@ -1270,8 +1396,8 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
             // nothing and made an audio capture of it silent, because waiting
             // is silent. A blocked move costs no turn, so the fallback is what
             // keeps this from spinning against a wall.
-            gg_game_act(&app->game, GG_ACT_E);
-            if (app->game.turn == before) gg_game_act(&app->game, GG_ACT_WAIT);
+            act(app, GG_ACT_E);
+            if (app->game.turn == before) act(app, GG_ACT_WAIT);
             gg_game_animate(&app->game);
             if (app->game.turn == before) break;   // cannot advance; do not spin
 
@@ -1336,6 +1462,15 @@ void SDL_AppQuit(void *appstate, SDL_AppResult result) {
         SDL_SetWindowBordered(app->win, true);
         SDL_SetWindowSize(app->win, app->pre_fs_w, app->pre_fs_h);
         SDL_SetWindowPosition(app->win, app->pre_fs_x, app->pre_fs_y);
+    }
+
+    // The recording, closed with the hash of the world it ended on. Before the
+    // save, so a session that is being recorded is written down even if saving
+    // it fails.
+    if (app->rec.open) {
+        const uint64_t h = gg_record_end(&app->rec, &app->game);
+        SDL_Log("gigantima: recorded %u actions, ending on %016llX",
+                app->rec.acts, (unsigned long long)h);
     }
 
     // Save on the way out, so "pick it up later" needs no thought. Not for a

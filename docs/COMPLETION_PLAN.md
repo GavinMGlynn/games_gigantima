@@ -238,10 +238,14 @@ that is reachable while content is C, so the editor comes before the content.
       pixel, generated sources byte for byte — and reports all eleven files
       reproducible. Checked by altering one pixel of one atlas and one word of
       one table, both of which it caught.*
-- [ ] **Deterministic replay**: record the action stream, play it back, assert an
-      identical end state. The simulation is already integer-only and seeded, so
-      this is cheap and makes every bug report reproducible.
-      *Verification: a recorded session replays to an identical state hash.*
+- [x] **Deterministic replay**: `--record` writes down every action a session is
+      given, and `--replay` plays it back and says whether it ended on the same
+      world. The file is text, so a bug report can be a file somebody can read
+      and trim to the shortest sequence that still breaks.
+      *Verification: the whole storyline — 528 actions, two crossings and a
+      fight — recorded in the real game and replayed to an identical state hash,
+      as a CI smoke test. Checked by removing one action from a recording and by
+      changing its seed, both of which come back as a divergence.*
 - [ ] **Packaging** per platform: an installable Windows build, a macOS bundle,
       and a Linux tarball, each with the assets alongside.
       *Verification: an artifact from CI that runs on a clean machine.*

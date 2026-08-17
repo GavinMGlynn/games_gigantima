@@ -1163,6 +1163,66 @@ The overview is a streaming texture rather than one draw call per tile: 30,000
 `SDL_RenderPoint` calls a frame would halve the frame rate of the window meant
 to be diagnosing it.
 
+### Replay
+
+A session is fully described by what it started from and which actions it was
+given: the simulation is integer-only and seeded, and the world advances only
+inside `gg_game_act`. So it can be written down and played back.
+
+`--record FILE` writes every action as it is given to the world; `--replay FILE`
+builds the same starting world, applies them, and compares the state hash with
+the one the recording ended on. **The file is text**, in the same
+`keyword rest-of-line` shape as every other content file here — so a bug report
+can be a file that somebody reads, diffs, and trims by hand to the shortest
+sequence that still breaks.
+
+    # gigantima replay
+    map vale.ggmap
+    profile Avatar
+    act N
+    act TALK
+    travel stones.ggmap 24 44
+    hash 7EA93FDACE5B4D09
+
+**A crossing is the one thing that is not an action.** The simulation names the
+map it wants and the frontend says where that map lives, so the recording notes
+the crossing that was made and the driver performs it.
+
+**The frontend has one door into the world.** Every action it gives the game
+goes through a single `act()` wrapper that records as it applies, so a recording
+is complete by construction rather than by somebody remembering to add a line
+beside each call. That rule is why the scripted player used for the staged
+screens walks its pack cursor with direction keys and asks a topic with the talk
+key instead of setting `ask_cursor` and calling `gg_conversation_ask`: those
+would move the world without an action, and a session that did it could not be
+replayed. The whole storyline is recordable because of it.
+
+**`gg_state_hash` covers the simulation and not the presentation.** The clock,
+the RNG, the story, every actor, everything carried, everything on the floor and
+every map held in mind — but not `step`, `anim`, `idle` or `from_x`/`from_y`,
+which are how far through a slide the *drawing* is. Those are advanced by
+`gg_game_animate` on a frame rather than by `gg_game_act` on a turn, and a hash
+that noticed them reported a divergence on the very first replay run. The
+turn-based simulation and the 60 Hz presentation are separate here as
+everywhere else.
+
+*Verification: `a_recorded_session_replays_to_the_same_world` — 400 actions
+drawn from a seeded script rather than written by hand, recorded, read back
+(every action compared with what was played, because the names are the file
+format), and replayed to the same hash; plus that one more turn hashes
+differently, because a hash that never changes would pass everything.
+`the_state_hash_notices_every_part_of_the_world` pokes twenty-one parts of the
+world one at a time and requires the hash to move for each, then puts them all
+back and requires it to return — and requires that animating the world does not
+move it at all.*
+
+*And on the real game: the whole storyline recorded through `--screen ending`
+(528 actions, two crossings, 273 turns) and replayed to an identical hash, as a
+CI smoke test. Checked by breaking what it pins — one action removed from the
+recording, and a recording's seed changed — both of which come back as
+`DIVERGED`, and an action name that does not exist, which is refused with the
+file and line.*
+
 ### Sanitizers
 
 The debug presets build with `-fsanitize=address,undefined`. Both the test
