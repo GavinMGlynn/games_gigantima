@@ -11,6 +11,12 @@
 #define GG_ACTORS_MAX     256
 #define GG_ACTOR_NO_DEF   255
 
+// How many may walk with the Avatar, not counting the Avatar. Ultima VI took
+// eight; four is what the follow trail and the HUD can show honestly, and
+// raising it is a constant rather than a rewrite.
+#define GG_PARTY_MAX      4
+#define GG_NOT_IN_PARTY   0
+
 // One entry of a daily routine: from `hour`, be at (x, y). Ultima VI's NPCs
 // were memorable because they were somewhere for a reason at every hour, so
 // this is core rather than decoration.
@@ -24,6 +30,16 @@ typedef struct {
     uint8_t art;          // gg_actor_id - which sprite block to draw
     uint8_t facing;       // gg_facing
     char    name[GG_ACTOR_NAME_MAX];
+
+    // Stats. On the actor rather than on the game, because a companion needs
+    // the same ones the Avatar has and a second place to keep them is the kind
+    // of split that bites the first time something hits the party.
+    int16_t hp, hp_max;
+    uint8_t level;
+
+    // Where in the line this one walks, 1..GG_PARTY_MAX, or GG_NOT_IN_PARTY.
+    // A slot rather than a flag, because who follows whom is the formation.
+    uint8_t party;
 
     int16_t x, y;         // tile the actor occupies now
     int16_t from_x, from_y;   // tile it left, for drawing the slide

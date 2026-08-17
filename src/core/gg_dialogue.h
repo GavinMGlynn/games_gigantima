@@ -35,6 +35,11 @@ typedef struct {
     char say[GG_TOPIC_LINES_MAX][GG_LINE_MAX];
     int  says;
     char teach[GG_WORD_MAX];            // empty when it teaches nothing
+
+    // Asking this takes the speaker into the party. In the file rather than in
+    // C, so who can be recruited - and what they have to be asked - is content
+    // like everything else they say.
+    bool joins;
 } gg_topic;
 
 typedef struct {

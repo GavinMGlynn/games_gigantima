@@ -49,12 +49,12 @@ void gg_ui_hud(const gg_game *g, SDL_Renderer *ren) {
     int x = 10, y = top + 8;
     gg_font_printf(ren, x, y, AMBER, "%s", p->name);
     y += line;
-    gg_font_printf(ren, x, y, DIM, "Level %d", g->level);
+    gg_font_printf(ren, x, y, DIM, "Level %d", p->level);
     y += line + 2;
 
     gg_font_draw(ren, x, y, DIM, "Health");
-    gauge(ren, x + 56, y + 3, 110, 9, g->hp, g->hp_max, BLOOD);
-    gg_font_printf(ren, x + 174, y, INK, "%d/%d", g->hp, g->hp_max);
+    gauge(ren, x + 56, y + 3, 110, 9, p->hp, p->hp_max, BLOOD);
+    gg_font_printf(ren, x + 174, y, INK, "%d/%d", p->hp, p->hp_max);
     y += line + 4;
 
     // Gold, and the load. The load is here rather than only on the pack screen
@@ -66,6 +66,22 @@ void gg_ui_hud(const gg_game *g, SDL_Renderer *ren) {
     gg_font_printf(ren, x, y, DIM, "Gold %d", gg_pack_count(g, GG_ITEM_GOLD));
     gg_font_printf(ren, x + 110, y, carried * 10 >= GG_CARRY_MAX * 9 ? AMBER : DIM,
                    "Load %s/%d st", load, GG_CARRY_MAX / 100);
+    y += line + 2;
+
+    // Whoever walks with you, in the order they walk. Health as a number
+    // rather than a bar: four bars in this space would be four smears, and the
+    // number is what a player actually reads before deciding to turn back.
+    for (int slot = 1; slot <= GG_PARTY_MAX; slot++) {
+        const int who = gg_party_at(g, slot);
+        if (who < 0) continue;
+        const gg_actor *c = &g->actor[who];
+        const bool hurt = c->hp_max > 0 && c->hp * 3 <= c->hp_max;
+        gg_font_printf(ren, x, y, DIM, "%d.", slot);
+        gg_font_printf(ren, x + 20, y, INK, "%s", c->name);
+        gg_font_printf(ren, x + 130, y, hurt ? BLOOD : DIM, "%d/%d",
+                       c->hp, c->hp_max);
+        y += line;
+    }
 
     // --- right column: where and when --------------------------------------
     const int rx = GG_SCREEN_W - 210;

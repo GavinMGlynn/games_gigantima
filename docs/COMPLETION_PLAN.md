@@ -122,9 +122,14 @@ found, not when someone remembers.
       topic that only unlocks after another has been asked; a word learned from
       one person opening another's topic; and a `--shot` frame of the panel
       before and after a word is learned.*
-- [ ] **Party and companions.** Recruit, follow, formation, and their own stats.
+- [x] **Party and companions.** Up to four walk with the Avatar. Recruiting is
+      a topic in the dialogue file, not code, and the same word sends them home
+      again. They follow in single file by walking where the Avatar walked, and
+      one standing in the way steps aside rather than being talked at. Stats now
+      live on the actor, so a companion has the health and level the Avatar has.
       *Verification: a companion follows through a door without blocking the
-      player, over a long walk.*
+      player, over a long walk — the test walks in, out and back four times and
+      fails if the Avatar is ever blocked or shares a tile.*
 - [ ] **Turn-based combat.** Initiative, melee and ranged, hit resolution, death
       and loot. *Verification: a scripted encounter with a fixed seed resolving
       identically every run.*

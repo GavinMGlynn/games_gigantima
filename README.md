@@ -109,6 +109,12 @@ the title; `--new` starts that profile over rather than resuming.
 Walking into somebody talks to them, as Ultima VI did — the common case needs
 no key at all.
 
+Some of them will come with you. Asking is a topic like any other — Dupre and
+Gwenno each have a reason and a word for it — and up to four walk behind you in
+single file, stepping where you stepped so the line files through a doorway one
+at a time. Walk into one and you swap places rather than talk. The same word
+that asked them along sends them home.
+
 Conversation is a **vocabulary, not a dialogue tree**. Everyone starts knowing
 two words, NAME and JOB; a topic can be asked when you know one of its words,
 and answers hand over words you did not have. So a rumour heard from the
@@ -136,7 +142,7 @@ window, writes a single frame and exits, which is how CI checks that the game
 can still find and draw its own art — it photographs whatever the other flags
 select, so `--shot` alone gets the title screen and `--debug --shot` gets the
 debug view; `--screen NAME` opens a named page — `title`, `profiles`, `name`,
-`options`, `play`, `pause`, `pack` or `talk` — so each one can be photographed in turn.
+`options`, `play`, `pause`, `pack`, `talk` or `party` — so each one can be photographed in turn.
 `--at X,Y` and `--time HH:MM` put the avatar somewhere specific at a specific
 hour, because verifying a change to how water is drawn means getting to water,
 and checking that a lit room differs from the street at night means getting to

@@ -831,8 +831,12 @@ static bool games_match(const gg_game *a, const gg_game *b, const char **why) {
     if (a->turn != b->turn)       { *why = "turn"; return false; }
     if (a->minutes != b->minutes) { *why = "minutes"; return false; }
     if (a->day != b->day)         { *why = "day"; return false; }
-    if (a->hp != b->hp || a->hp_max != b->hp_max) { *why = "health"; return false; }
-    if (a->level != b->level || a->exp != b->exp) { *why = "level"; return false; }
+    if (a->exp != b->exp)         { *why = "experience"; return false; }
+    if (a->trailn != b->trailn)   { *why = "trail length"; return false; }
+    for (int i = 0; i < a->trailn; i++)
+        if (a->trail_x[i] != b->trail_x[i] || a->trail_y[i] != b->trail_y[i]) {
+            *why = "the trail"; return false;
+        }
     if (a->rng.s != b->rng.s)     { *why = "rng"; return false; }
     if (a->player != b->player)   { *why = "player index"; return false; }
     if (a->actors != b->actors)   { *why = "actor count"; return false; }
@@ -859,6 +863,8 @@ static bool games_match(const gg_game *a, const gg_game *b, const char **why) {
         const gg_actor *x = &a->actor[i], *y = &b->actor[i];
         if (x->active != y->active || x->x != y->x || x->y != y->y ||
             x->art != y->art || x->facing != y->facing || x->def != y->def ||
+            x->hp != y->hp || x->hp_max != y->hp_max || x->level != y->level ||
+            x->party != y->party ||
             x->schedn != y->schedn || SDL_strcmp(x->name, y->name) != 0) {
             *why = "an actor";
             return false;
@@ -900,7 +906,7 @@ static void a_saved_game_resumes_exactly_where_it_was_left(void) {
     gg_game_act(&a, GG_ACT_PACK);
     gg_ground_drop(&a.map, gg_player_const(&a)->x, gg_player_const(&a)->y,
                    GG_ITEM_SILVER, 2);
-    a.hp = 21;
+    gg_player(&a)->hp = 21;
 
     CHECK(gg_save_write(&a, save_base(), who), "save failed");
 
@@ -2446,7 +2452,7 @@ static void eating_costs_the_food_and_mends_the_eater(void) {
     gg_game g;
     CHECK(gg_game_new(&g, 15, "Eater"), "new game failed");
 
-    g.hp = 5;
+    gg_player(&g)->hp = 5;
     CHECK(gg_pack_add(&g, GG_ITEM_BREAD, 2) == 2, "could not take bread");
     const int slot = gg_pack_find(&g, GG_ITEM_BREAD);
     g.pack_cursor = slot;
@@ -2455,14 +2461,14 @@ static void eating_costs_the_food_and_mends_the_eater(void) {
     const int had = gg_pack_count(&g, GG_ITEM_BREAD);
     gg_game_act(&g, GG_ACT_USE);
 
-    CHECK(g.hp == 5 + GG_ITEM[GG_ITEM_BREAD].heal,
-          "eating bread took health from %d to %d, expected %d", 5, g.hp,
-          5 + GG_ITEM[GG_ITEM_BREAD].heal);
+    CHECK(gg_player(&g)->hp == 5 + GG_ITEM[GG_ITEM_BREAD].heal,
+          "eating bread took health from %d to %d, expected %d", 5,
+          gg_player(&g)->hp, 5 + GG_ITEM[GG_ITEM_BREAD].heal);
     CHECK(gg_pack_count(&g, GG_ITEM_BREAD) == had - 1,
           "eating did not use up a loaf");
 
     // At full health it is refused rather than wasted.
-    g.hp = g.hp_max;
+    gg_player(&g)->hp = gg_player(&g)->hp_max;
     const int spare = gg_pack_count(&g, GG_ITEM_BREAD);
     gg_game_act(&g, GG_ACT_USE);
     CHECK(gg_pack_count(&g, GG_ITEM_BREAD) == spare,
@@ -2879,6 +2885,300 @@ static void the_vale_has_a_book_and_every_word_in_it_is_reachable(void) {
 }
 
 // ---------------------------------------------------------------------------
+// The party
+// ---------------------------------------------------------------------------
+// Walks the avatar to (tx, ty) one step at a time, the way a player would.
+// Returns the number of steps taken; bounded so a blocked path ends the test
+// rather than hanging it - a blocked move costs no turn, so "act until you
+// arrive" is exactly the loop that spins forever.
+static int walk_to(gg_game *g, int tx, int ty, int budget) {
+    int steps = 0;
+    while (budget-- > 0) {
+        const gg_actor *p = gg_player_const(g);
+        if (p->x == tx && p->y == ty) break;
+        const int dx = tx > p->x ? 1 : tx < p->x ? -1 : 0;
+        const int dy = ty > p->y ? 1 : ty < p->y ? -1 : 0;
+        gg_action a = GG_ACT_WAIT;
+        if (dx > 0 && dy == 0) a = GG_ACT_E;
+        else if (dx < 0 && dy == 0) a = GG_ACT_W;
+        else if (dy > 0 && dx == 0) a = GG_ACT_S;
+        else if (dy < 0 && dx == 0) a = GG_ACT_N;
+        else if (dx > 0 && dy > 0) a = GG_ACT_SE;
+        else if (dx > 0 && dy < 0) a = GG_ACT_NE;
+        else if (dx < 0 && dy > 0) a = GG_ACT_SW;
+        else if (dx < 0 && dy < 0) a = GG_ACT_NW;
+
+        const uint32_t before = g->turn;
+        gg_game_act(g, a);
+        if (g->turn == before) break;      // blocked; no point going on
+        steps++;
+    }
+    return steps;
+}
+
+// The plan's own verification: a companion follows through a door without
+// blocking the player, over a long walk.
+static void a_companion_follows_through_a_door_without_blocking(void) {
+    gg_game g;
+    CHECK(gg_game_new(&g, 31, "Leader"), "new game failed");
+
+    // Find a house with a door, and the tiles either side of it. Built from
+    // the map rather than hoped for: a test that only sometimes finds a door
+    // is a test whose green tick means nothing.
+    int dx = -1, dy = -1;
+    for (int y = 1; y < g.map.h - 1 && dx < 0; y++)
+        for (int x = 1; x < g.map.w - 1 && dx < 0; x++) {
+            const gg_cell *c = gg_map_at_const(&g.map, x, y);
+            if (!c || !(c->flags & GG_CELL_DOOR)) continue;
+            // A door worth testing has open ground outside and a room inside.
+            const gg_cell *out = gg_map_at_const(&g.map, x, y + 1);
+            const gg_cell *in  = gg_map_at_const(&g.map, x, y - 1);
+            if (out && in && gg_map_walkable(&g.map, x, y + 1) &&
+                gg_map_walkable(&g.map, x, y - 1) &&
+                (in->flags & GG_CELL_INDOORS)) {
+                dx = x; dy = y;
+            }
+        }
+    CHECK(dx >= 0, "the generated town has no door with room on both sides");
+    if (dx < 0) { gg_game_free(&g); return; }
+
+    // Stand the avatar two south of the door, and a companion behind them.
+    gg_actor *p = gg_player(&g);
+    p->x = (int16_t)dx; p->y = (int16_t)(dy + 2); p->step = 0;
+    g.trailn = 0;
+
+    gg_actor *c = &g.actor[1];
+    CHECK(g.actors >= 2, "the world has no one to recruit");
+    c->active = true;
+    c->x = (int16_t)dx; c->y = (int16_t)(dy + 3); c->step = 0;
+    c->schedn = 0;
+    CHECK(gg_party_join(&g, 1), "could not recruit");
+    CHECK(gg_party_size(&g) == 1, "expected a party of one, got %d",
+          gg_party_size(&g));
+
+    // In through the door, and well inside.
+    const int in_x = dx, in_y = dy - 1;
+    const int steps = walk_to(&g, in_x, in_y, 40);
+    CHECK(steps >= 3, "the avatar only managed %d steps to the doorway", steps);
+    CHECK(p->x == in_x && p->y == in_y,
+          "the avatar is at %d,%d, not the %d,%d it walked to",
+          p->x, p->y, in_x, in_y);
+
+    // The companion has to have come through with them - not still be outside.
+    const gg_cell *where = gg_map_at_const(&g.map, c->x, c->y);
+    CHECK(where != nullptr, "the companion left the map");
+    CHECK(gg_dist_cheb(p->x, p->y, c->x, c->y) <= 2,
+          "the companion is %d tiles behind after following through a door",
+          gg_dist_cheb(p->x, p->y, c->x, c->y));
+
+    // And never on top of the avatar.
+    CHECK(!(c->x == p->x && c->y == p->y),
+          "the companion is standing on the avatar");
+
+    // Now the long walk. Out again and back, several times, checking every
+    // turn that nobody is sharing a tile and the avatar is never stuck.
+    const int out_x = dx, out_y = dy + 3;
+    for (int lap = 0; lap < 4; lap++) {
+        const int there = walk_to(&g, out_x, out_y, 40);
+        const int back  = walk_to(&g, in_x, in_y, 40);
+        CHECK(there > 0 && back > 0,
+              "lap %d: the avatar could not move (%d out, %d back) - blocked by "
+              "its own party", lap, there, back);
+
+        for (int i = 0; i < g.actors; i++) {
+            if (!g.actor[i].active || i == g.player) continue;
+            CHECK(!(g.actor[i].x == p->x && g.actor[i].y == p->y),
+                  "lap %d: %s is standing on the avatar", lap, g.actor[i].name);
+        }
+    }
+
+    gg_game_free(&g);
+}
+
+// Whoever is in the way steps aside rather than being talked at. Without this
+// the party can wall the avatar into a doorway they just followed them through.
+static void a_companion_in_the_way_swaps_places(void) {
+    gg_game g;
+    CHECK(gg_game_new(&g, 32, "Swapper"), "new game failed");
+
+    gg_actor *p = gg_player(&g);
+    gg_actor *c = &g.actor[1];
+    c->active = true;
+    c->schedn = 0;
+
+    // Find open ground with an open tile beside it, so the swap is the only
+    // thing being tested and not the terrain.
+    int fx = -1, fy = -1;
+    for (int y = 1; y < g.map.h - 1 && fx < 0; y++)
+        for (int x = 1; x < g.map.w - 1 && fx < 0; x++)
+            if (gg_map_walkable(&g.map, x, y) && gg_map_walkable(&g.map, x + 1, y))
+                { fx = x; fy = y; }
+    CHECK(fx >= 0, "no two walkable tiles side by side");
+    if (fx < 0) { gg_game_free(&g); return; }
+
+    p->x = (int16_t)fx; p->y = (int16_t)fy; p->step = 0;
+    c->x = (int16_t)(fx + 1); c->y = (int16_t)fy; c->step = 0;
+    CHECK(gg_party_join(&g, 1), "could not recruit");
+
+    const uint32_t before = g.turn;
+    gg_game_act(&g, GG_ACT_E);
+
+    CHECK(g.turn == before + 1, "the swap did not cost a turn");
+    CHECK(p->x == fx + 1 && p->y == fy,
+          "the avatar is at %d,%d, expected %d,%d", p->x, p->y, fx + 1, fy);
+    CHECK(c->x == fx && c->y == fy,
+          "the companion is at %d,%d, expected %d,%d", c->x, c->y, fx, fy);
+    CHECK(g.mode == GG_MODE_PLAY,
+          "walking into a companion started a conversation instead of a swap");
+
+    // Somebody who is *not* in the party is still talked to, not shoved.
+    gg_party_leave(&g, 1);
+    c->x = (int16_t)fx; c->y = (int16_t)fy;
+    p->x = (int16_t)(fx + 1); p->y = (int16_t)fy;
+    gg_game_act(&g, GG_ACT_W);
+    CHECK(g.mode == GG_MODE_CONVERSE,
+          "walking into a townsperson no longer talks to them");
+
+    gg_game_free(&g);
+}
+
+static void the_line_closes_when_somebody_leaves_it(void) {
+    gg_game g;
+    CHECK(gg_game_new(&g, 33, "Marshal"), "new game failed");
+    CHECK(g.actors > GG_PARTY_MAX, "not enough people to fill a party");
+
+    for (int i = 1; i <= GG_PARTY_MAX; i++) {
+        g.actor[i].active = true;
+        CHECK(gg_party_join(&g, i), "could not recruit number %d", i);
+    }
+    CHECK(gg_party_size(&g) == GG_PARTY_MAX, "the party is %d, expected %d",
+          gg_party_size(&g), GG_PARTY_MAX);
+
+    // Full means full.
+    CHECK(!gg_party_join(&g, GG_PARTY_MAX + 1),
+          "a full party took one more");
+
+    // Losing the one in the middle must close the gap, or whoever was behind
+    // follows a footprint nobody is making and the line stretches out.
+    const int middle = gg_party_at(&g, 2);
+    CHECK(middle >= 0, "there is nobody in slot 2");
+    gg_party_leave(&g, middle);
+
+    CHECK(gg_party_size(&g) == GG_PARTY_MAX - 1, "the party did not shrink");
+    for (int slot = 1; slot <= gg_party_size(&g); slot++)
+        CHECK(gg_party_at(&g, slot) >= 0, "slot %d is empty with people behind it",
+              slot);
+    CHECK(gg_party_at(&g, GG_PARTY_MAX) < 0, "the last slot was not vacated");
+
+    // And somebody who left keeps their own stats and can be taken back.
+    CHECK(g.actor[middle].party == GG_NOT_IN_PARTY, "they are still in the line");
+    CHECK(g.actor[middle].hp > 0, "they lost their health on leaving");
+    CHECK(gg_party_join(&g, middle), "they could not be taken back");
+
+    gg_game_free(&g);
+}
+
+// Recruiting is declared in the dialogue file, not in C.
+static void a_companion_is_recruited_by_a_topic_in_the_book(void) {
+    const char *path = write_dialogue(
+        "person Dupre\n"
+        "greet Well met.\n"
+        "topic job\n"
+        "  say I stand about looking dangerous. Say COME if thou needest me.\n"
+        "  teach come\n"
+        "topic come join\n"
+        "  say Aye, somebody has to keep thee alive.\n"
+        "  joins\n");
+    CHECK(gg_dialogue_load(path), "the dialogue file did not load");
+
+    gg_game g;
+    CHECK(gg_game_new(&g, 34, "Recruiter"), "new game failed");
+    g.actor[1].active = true;
+    SDL_strlcpy(g.actor[1].name, "Dupre", sizeof g.actor[1].name);
+
+    g.talking_to = 1;
+    g.mode = GG_MODE_CONVERSE;
+    g.speaker = gg_dialogue_find("Dupre");
+    gg_conversation_refresh(&g);
+
+    // COME is not offered until the job topic has handed the word over, so
+    // nobody can be recruited by a player who has not been asked to be.
+    for (int i = 0; i < g.askables; i++)
+        CHECK(SDL_strcasecmp(g.askable[i], "come") != 0,
+              "COME was offered before it was learned");
+    CHECK(gg_party_size(&g) == 0, "somebody joined before being asked");
+
+    for (int i = 0; i < g.askables; i++)
+        if (SDL_strcasecmp(g.askable[i], "job") == 0) g.ask_cursor = i;
+    gg_conversation_ask(&g);
+    CHECK(gg_knows(&g, "come"), "the job topic did not teach COME");
+
+    int come = -1;
+    for (int i = 0; i < g.askables; i++)
+        if (SDL_strcasecmp(g.askable[i], "come") == 0) come = i;
+    CHECK(come >= 0, "COME is known but not offered");
+    if (come >= 0) {
+        g.ask_cursor = come;
+        gg_conversation_ask(&g);
+    }
+
+    CHECK(gg_party_size(&g) == 1, "asking COME did not recruit");
+    CHECK(g.actor[1].party == 1, "the recruit is in slot %u, expected 1",
+          g.actor[1].party);
+    CHECK(g.actor[1].schedn == 0,
+          "a companion is still keeping their daily schedule");
+
+    // Asking again sends them away, which is the other half of the one word.
+    if (come >= 0) {
+        g.ask_cursor = come;
+        gg_conversation_ask(&g);
+    }
+    CHECK(gg_party_size(&g) == 0, "asking COME again did not send them away");
+
+    gg_game_free(&g);
+    gg_dialogue_clear();
+    SDL_RemovePath(path);
+}
+
+static void a_party_survives_a_save_in_order(void) {
+    const char *who = "Captain";
+    wipe_saves(who);
+
+    gg_game a;
+    CHECK(gg_game_new(&a, 35, who), "new game failed");
+    a.actor[1].active = true;
+    a.actor[2].active = true;
+    CHECK(gg_party_join(&a, 1), "could not recruit the first");
+    CHECK(gg_party_join(&a, 2), "could not recruit the second");
+    a.actor[1].hp = 7;
+
+    // Walk a little so there are footprints to carry.
+    for (int i = 0; i < 6; i++) gg_game_act(&a, GG_ACT_E);
+    CHECK(a.trailn > 1, "walking left no trail");
+
+    CHECK(gg_save_write(&a, save_base(), who), "save failed");
+    gg_game b;
+    SDL_zero(b);
+    CHECK(gg_save_read(&b, save_base(), who), "load failed");
+
+    CHECK(gg_party_size(&b) == 2, "the resumed party is %d, expected 2",
+          gg_party_size(&b));
+    CHECK(gg_party_at(&b, 1) == 1 && gg_party_at(&b, 2) == 2,
+          "the line came back in a different order");
+    CHECK(b.actor[1].hp == 7, "a companion's health came back as %d, expected 7",
+          b.actor[1].hp);
+    CHECK(b.trailn == a.trailn, "the trail came back %d long, expected %d",
+          b.trailn, a.trailn);
+    for (int i = 0; i < a.trailn; i++)
+        CHECK(b.trail_x[i] == a.trail_x[i] && b.trail_y[i] == a.trail_y[i],
+              "footprint %d moved across the save", i);
+
+    gg_game_free(&b);
+    gg_game_free(&a);
+    wipe_saves(who);
+}
+
+// ---------------------------------------------------------------------------
 // Content tables
 // ---------------------------------------------------------------------------
 static void every_terrain_and_item_has_a_name(void) {
@@ -3034,6 +3334,12 @@ int main(void) {
     RUN(a_dialogue_file_that_does_not_parse_loads_nothing);
     RUN(synonyms_ask_the_same_topic_and_show_one_label);
     RUN(the_vale_has_a_book_and_every_word_in_it_is_reachable);
+
+    RUN(a_companion_follows_through_a_door_without_blocking);
+    RUN(a_companion_in_the_way_swaps_places);
+    RUN(the_line_closes_when_somebody_leaves_it);
+    RUN(a_companion_is_recruited_by_a_topic_in_the_book);
+    RUN(a_party_survives_a_save_in_order);
 
     RUN(every_terrain_and_item_has_a_name);
     RUN(every_prop_has_a_plausible_footprint);

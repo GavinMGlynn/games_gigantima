@@ -55,6 +55,11 @@ typedef enum {
 #define GG_LOG_LINES 5
 #define GG_LOG_WIDTH 96
 
+// How far back the Avatar's footsteps are remembered. One per party slot, plus
+// a couple so the tail of the line is following a real path rather than the
+// leader's current tile.
+#define GG_TRAIL_MAX (GG_PARTY_MAX + 3)
+
 // How many words the player may collect. Generous: the vocabulary is the whole
 // of the story state, so running out would silently stop the plot.
 #define GG_KNOWN_MAX 64
@@ -99,10 +104,16 @@ typedef struct {
     uint32_t minutes;             // world clock, wrapping at GG_MINUTES_PER_DAY
     uint32_t day;
 
-    // The avatar. Named `hp`/`hp_max` rather than a stats block because the
-    // stats that matter are not settled yet - see the plan.
-    int  hp, hp_max;
-    int  level, exp;
+    // Experience is the party's, not one person's. Health and level live on
+    // the actor - see gg_actor.h - because a companion needs the same ones.
+    int  exp;
+
+    // Where the Avatar has just been, newest first. A companion in slot N walks
+    // to trail[N], which is what makes the party file through a doorway one at
+    // a time instead of shouldering each other at it. Saved, or a resumed party
+    // would bunch up on the first step.
+    int16_t trail_x[GG_TRAIL_MAX], trail_y[GG_TRAIL_MAX];
+    int     trailn;
 
     // What is carried, what the pack screen is looking at, and what is held.
     // `equipped` holds a pack index per slot, or -1. An index rather than an
@@ -198,6 +209,22 @@ void gg_log(gg_game *g, SDL_PRINTF_FORMAT_STRING const char *fmt, ...)
 // Maps a direction action to a tile delta. Returns false for non-movement
 // actions, which is how the caller tells them apart.
 bool gg_action_delta(gg_action a, int *dx, int *dy);
+
+// --- the party -------------------------------------------------------------
+// How many walk with the Avatar, not counting the Avatar.
+int gg_party_size(const gg_game *g);
+
+// The actor index in party slot `slot` (1-based), or -1.
+int gg_party_at(const gg_game *g, int slot);
+
+// Takes `who` into the party, giving them the next free slot and stopping them
+// keeping their daily schedule. Returns false if the party is full or they are
+// already in it.
+bool gg_party_join(gg_game *g, int who);
+
+// Puts `who` back to their own life, and closes the gap in the line so nobody
+// is left following an empty slot.
+void gg_party_leave(gg_game *g, int who);
 
 // --- conversation ----------------------------------------------------------
 // Does the player know this word? Case-insensitive: it came from a person.

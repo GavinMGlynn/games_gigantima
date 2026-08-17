@@ -502,6 +502,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
             // Like `pack`: a mode of the world rather than a screen, but a
             // page the player reads, so --shot has to be able to photograph it.
             { "talk",     GG_SCREEN_PLAY },
+            { "party",    GG_SCREEN_PLAY },
         };
         bool known = false;
         for (size_t k = 0; k < GG_COUNTOF(NAMED); k++)
@@ -753,6 +754,27 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
         // actions would close it again.
         if (app->screen_name && SDL_strcmp(app->screen_name, "pack") == 0)
             app->game.mode = GG_MODE_PACK;
+
+        // Takes the two nearest townsfolk along, so the line and the party's
+        // rows in the HUD can be photographed. The walk that follows is the
+        // ordinary one, so what the frame shows is real following.
+        if (app->screen_name && SDL_strcmp(app->screen_name, "party") == 0) {
+            int took = 0;
+            for (int i = 0; i < app->game.actors && took < 2; i++)
+                if (i != app->game.player && app->game.actor[i].active &&
+                    gg_party_join(&app->game, i))
+                    took++;
+            // Walk until something is in the way rather than into it: a
+            // blocked move costs no turn, so the frame would otherwise carry a
+            // log of nothing but "a brick wall bars the way".
+            static const gg_action WAY[] = { GG_ACT_S, GG_ACT_E };
+            for (size_t d = 0; d < GG_COUNTOF(WAY); d++)
+                for (int i = 0; i < 10; i++) {
+                    const uint32_t was = app->game.turn;
+                    gg_game_act(&app->game, WAY[d]);
+                    if (app->game.turn == was) break;
+                }
+        }
 
         // Walks up to the first townsperson and talks, so the conversation
         // panel can be photographed without anyone driving the game.

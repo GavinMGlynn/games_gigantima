@@ -8,6 +8,7 @@
 #   topic  WORD [WORD] a thing they will talk about, and its synonyms
 #     say  TEXT        a line of the answer; up to three
 #     teach WORD       asking this hands over a word you did not have
+#     joins            asking this takes them with thee
 #   bye    TEXT        what they say as you leave
 #
 # Everyone begins knowing NAME and JOB and nothing else. Every other word in
@@ -68,6 +69,11 @@ topic job
   say I am paid to stand here and look as though I would be trouble.
 topic stones
   say I would not go near them after dark. Nor would any man with sense.
+  say Though I would go with thee, if thou wert fool enough to ask. Say COME.
+  teach come
+topic come join
+  say Aye. Somebody has to keep thee alive out there.
+  joins
 bye Mind how thou goest.
 
 person Katrina
@@ -104,6 +110,11 @@ topic job
 topic north
   say Nothing has come down that road since the caravan failed - no trader,
   say no traveller, and no word of my husband. Someone must go and look.
+  say I will not wait here another season. Ask, and I will COME with thee.
+  teach come
+topic come join
+  say Then I am with thee. I can carry my own pack and my own trouble.
+  joins
 topic caravan
   say My husband walked with it. That is all I know and all I care to know.
 bye Fare thee well. Go north, if thou hast courage.

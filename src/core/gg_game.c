@@ -4,6 +4,73 @@
 #include <stdarg.h>
 
 // ---------------------------------------------------------------------------
+// The party
+//
+// A companion walks where the Avatar walked, not where the Avatar is. Each one
+// holds a slot, and slot N walks to the Nth footprint back - so the line files
+// through a doorway one at a time instead of four people all trying to stand in
+// it. That is the whole formation; there is no arrangement to choose, because
+// single file is the only one a one-tile door admits.
+// ---------------------------------------------------------------------------
+int gg_party_size(const gg_game *g) {
+    int n = 0;
+    for (int i = 0; i < g->actors; i++)
+        if (g->actor[i].active && g->actor[i].party != GG_NOT_IN_PARTY) n++;
+    return n;
+}
+
+int gg_party_at(const gg_game *g, int slot) {
+    for (int i = 0; i < g->actors; i++)
+        if (g->actor[i].active && g->actor[i].party == slot) return i;
+    return -1;
+}
+
+bool gg_party_join(gg_game *g, int who) {
+    if (who < 0 || who >= g->actors || who == g->player) return false;
+    if (!g->actor[who].active) return false;
+    if (g->actor[who].party != GG_NOT_IN_PARTY) return false;
+    if (gg_party_size(g) >= GG_PARTY_MAX) return false;
+
+    // The first free slot, so leaving and rejoining does not leave a hole for
+    // somebody behind to follow.
+    for (int slot = 1; slot <= GG_PARTY_MAX; slot++) {
+        if (gg_party_at(g, slot) >= 0) continue;
+        g->actor[who].party = (uint8_t)slot;
+        // A companion has given up their day. Keeping the schedule would have
+        // them wander off to bed in the middle of a journey.
+        g->actor[who].schedn = 0;
+        return true;
+    }
+    return false;
+}
+
+void gg_party_leave(gg_game *g, int who) {
+    if (who < 0 || who >= g->actors) return;
+    const uint8_t slot = g->actor[who].party;
+    if (slot == GG_NOT_IN_PARTY) return;
+
+    g->actor[who].party = GG_NOT_IN_PARTY;
+    // Close the gap, or whoever was behind them follows a footprint nobody is
+    // making and the line stretches out across the map.
+    for (int i = 0; i < g->actors; i++)
+        if (g->actor[i].party > slot) g->actor[i].party--;
+}
+
+// Remembers where the Avatar has just been. Newest first, so slot N reads
+// trail[N-1] and the person immediately behind walks in the Avatar's last
+// footprint rather than trying to share the current one.
+static void trail_push(gg_game *g, int x, int y) {
+    if (g->trailn > 0 && g->trail_x[0] == x && g->trail_y[0] == y) return;
+    for (int i = GG_TRAIL_MAX - 1; i > 0; i--) {
+        g->trail_x[i] = g->trail_x[i - 1];
+        g->trail_y[i] = g->trail_y[i - 1];
+    }
+    g->trail_x[0] = (int16_t)x;
+    g->trail_y[0] = (int16_t)y;
+    if (g->trailn < GG_TRAIL_MAX) g->trailn++;
+}
+
+// ---------------------------------------------------------------------------
 // Conversation
 //
 // The vocabulary is the state. There is no dialogue tree, no flags and no
@@ -98,6 +165,23 @@ void gg_conversation_ask(gg_game *g) {
     if (t->teach[0] && gg_learn(g, t->teach)) {
         gg_log(g, "Thou hast learned of %s.", t->teach);
         gg_conversation_refresh(g);
+    }
+
+    // Recruiting is the one thing a conversation does beyond handing over a
+    // word, and it is declared in the book rather than here.
+    if (t->joins && g->talking_to >= 0) {
+        gg_actor *a = &g->actor[g->talking_to];
+        if (a->party != GG_NOT_IN_PARTY) {
+            // The same word both ways. Asking somebody who is already with you
+            // to come is the only thing it can sensibly mean, and it saves the
+            // book needing a parting topic for every companion.
+            gg_party_leave(g, g->talking_to);
+            gg_log(g, "%s stays behind.", a->name);
+        } else if (gg_party_join(g, g->talking_to)) {
+            gg_log(g, "%s joins thee.", a->name);
+        } else {
+            gg_log(g, "Thou canst lead no more than %d.", GG_PARTY_MAX);
+        }
     }
 }
 
@@ -284,10 +368,40 @@ static void world_turn(gg_game *g, int minutes) {
         g->day++;
     }
 
+    // The party moves first, and in slot order, so slot 2 steps into the tile
+    // slot 1 has just left rather than finding it occupied. Doing this after
+    // the townsfolk would have the line shuffle one step per turn behind.
+    for (int slot = 1; slot <= GG_PARTY_MAX; slot++) {
+        const int i = gg_party_at(g, slot);
+        if (i < 0) continue;
+        gg_actor *a = &g->actor[i];
+
+        // The Nth footprint back. Before there are enough footprints - just
+        // recruited, or just loaded - the oldest one is the best there is.
+        const int want = slot - 1 < g->trailn ? slot - 1 : g->trailn - 1;
+        if (want < 0) continue;
+        const int tx = g->trail_x[want], ty = g->trail_y[want];
+        if (a->x == tx && a->y == ty) continue;
+
+        gg_walk_ctx ctx = { .g = g, .self = i };
+        int nx, ny;
+        if (gg_path_next_step(&g->path, path_passable, &ctx,
+                              a->x, a->y, tx, ty, GG_PATH_BUDGET, &nx, &ny) &&
+            gg_map_walkable(&g->map, nx, ny) &&
+            !gg_actor_occupied(g->actor, g->actors, nx, ny, i)) {
+            gg_actor_move_to(a, nx, ny);
+        } else {
+            gg_actor_step_toward(a, &g->map, g->actor, g->actors, tx, ty, &g->rng);
+        }
+    }
+
     const int hour = gg_game_hour(g);
     for (int i = 0; i < g->actors; i++) {
         gg_actor *a = &g->actor[i];
         if (i == g->player || !a->active) continue;
+        // Somebody walking with you has given up their day; they were moved
+        // above, by the trail rather than by a schedule.
+        if (a->party != GG_NOT_IN_PARTY) continue;
 
         int tx, ty;
         if (!gg_actor_target_at(a, hour, &tx, &ty)) continue;
@@ -330,6 +444,26 @@ static void do_move(gg_game *g, int dx, int dy) {
     for (int i = 0; i < g->actors; i++) {
         if (i == g->player || !g->actor[i].active) continue;
         if (g->actor[i].x == nx && g->actor[i].y == ny) {
+            // Somebody walking with you steps aside rather than being talked
+            // at. Without this the party can wall you into a doorway they
+            // followed you through, which is the exact failure the plan's
+            // verification is about.
+            if (g->actor[i].party != GG_NOT_IN_PARTY) {
+                gg_actor *c = &g->actor[i];
+                const int cx = c->x, cy = c->y;
+                const int px = p->x, py = p->y;
+                gg_actor_move_to(c, px, py);
+                gg_actor_move_to(p, cx, cy);
+
+                // The footprint is the tile the *Avatar* left, exactly as an
+                // ordinary step lays one. Pushing the tile they moved into
+                // instead sent the companion chasing the Avatar's own square,
+                // which it can never stand on - so it shuffled sideways every
+                // time the two swapped.
+                trail_push(g, px, py);
+                world_turn(g, GG_MINUTES_PER_TURN);
+                return;
+            }
             begin_conversation(g, i);
             return;
         }
@@ -355,6 +489,9 @@ static void do_move(gg_game *g, int dx, int dy) {
     const int cost = (c && GG_TERRAIN[c->terrain].cost)
                      ? GG_TERRAIN[c->terrain].cost : GG_MINUTES_PER_TURN;
 
+    // The footprint is the tile being left, not the one being entered: the
+    // person behind wants to stand where you were, not where you are.
+    trail_push(g, p->x, p->y);
     gg_actor_move_to(p, nx, ny);
     world_turn(g, cost);
 }
@@ -470,18 +607,19 @@ static void do_use(gg_game *g) {
         gg_log(g, "Thou canst think of nothing to do with %s.", d->one);
         return;
     }
-    if (g->hp >= g->hp_max) {
+    gg_actor *me = gg_player(g);
+    if (me->hp >= me->hp_max) {
         gg_log(g, "Thou art already hale.");
         return;
     }
 
-    const int before = g->hp;
-    g->hp = gg_clampi(g->hp + d->heal, 0, g->hp_max);
+    const int before = me->hp;
+    me->hp = (int16_t)gg_clampi(me->hp + d->heal, 0, me->hp_max);
     gg_pack_take(g, g->pack_cursor, 1);
 
     gg_log(g, d->use == GG_USE_EAT ? "Thou eatest %s, and art the better for it (+%d)."
                                    : "Thou drinkest %s, and art the better for it (+%d).",
-           d->one, g->hp - before);
+           d->one, me->hp - before);
     world_turn(g, GG_MINUTES_PER_TURN);
 }
 
@@ -690,6 +828,12 @@ static void place_townsfolk(gg_game *g) {
             a->sched[k].y = (int16_t)sy;
         }
         a->schedn = 4;
+        // Stats of their own, so a companion is somebody the world can hurt
+        // rather than a sprite that follows. Modest and uniform for now:
+        // what makes them differ is a later item than what makes them exist.
+        a->hp = a->hp_max = 18;
+        a->level = 1;
+        a->party = GG_NOT_IN_PARTY;
 
         // Start each of them where their day says they should be, so the
         // opening frame is a town mid-morning rather than a crowd at spawn.
@@ -716,8 +860,7 @@ static bool finish_new_game(gg_game *g, const char *profile) {
     // visibly doing something within the first few turns.
     g->minutes = 8 * 60;
     g->day = 1;
-    g->hp = g->hp_max = 30;
-    g->level = 1;
+    g->exp = 0;
 
     // What the Avatar sets out with. Everything below goes through the same
     // gg_pack_add a picked-up thing does, so the starting kit obeys the weight
@@ -747,6 +890,14 @@ static bool finish_new_game(gg_game *g, const char *profile) {
     p->facing = GG_FACE_DOWN;
     p->x = (int16_t)g->map.start_x;
     p->y = (int16_t)g->map.start_y;
+    p->hp = p->hp_max = 30;
+    p->level = 1;
+    p->party = GG_NOT_IN_PARTY;
+
+    // The first footprint, so a companion recruited before the Avatar has
+    // taken a step still has somewhere to stand.
+    g->trailn = 0;
+    trail_push(g, p->x, p->y);
     SDL_strlcpy(p->name, g->profile, sizeof p->name);
     g->player = 0;
     g->actors = 1;

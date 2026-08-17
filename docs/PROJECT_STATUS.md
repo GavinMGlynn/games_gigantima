@@ -16,7 +16,8 @@ journey, walk a generated continent, enter a town, go inside its houses, pick up
 what people have left lying about, eat it or carry it or set it down again, ask
 the eight townsfolk about what they know and collect the words that unlock what
 the rest of them know, and watch them path around the buildings to keep daily
-schedules under a day/night cycle. Hold a torch and it lights the room. Pausing, saving and
+schedules under a day/night cycle — or take two of them along, walking in single
+file behind you. Hold a torch and it lights the room. Pausing, saving and
 quitting are all on a menu, and every page works from a gamepad alone, naming
 included. There is **no story, no combat, no magic, no sound and no editor**.
 
@@ -414,6 +415,45 @@ world, "that will do" in a menu — and so has to be readable from either drain.
 
 *Verification: `the_pad_feeds_the_world_and_the_menus_separately`.*
 
+### The party
+
+Up to four walk with the Avatar. **Recruiting is content, not code**: a topic in
+`assets/dialogue.txt` carries `joins`, so who can be asked along — and what they
+have to be asked — is written in the book with everything else they say. The
+same word sends them home again, which saves every companion needing a parting
+topic of their own.
+
+They follow by **walking where the Avatar walked**, not toward where the Avatar
+is. Each holds a slot, and slot N walks to the Nth footprint back. That is the
+whole formation, and it is what makes the line file through a one-tile doorway
+instead of four people all trying to stand in it. The trail is saved, or a
+resumed party bunches up on the first step.
+
+**A companion in the way steps aside.** Walking into one swaps the two of you
+rather than starting a conversation — without that, a party that has just
+followed you through a door can wall you into it. That swap lays a footprint the
+same way an ordinary step does, and getting *that* wrong is the one bug this
+item produced: pushing the tile the Avatar moved *into* rather than the one they
+left sent the companion chasing a square it can never stand on, so it shuffled
+sideways on every swap. The test caught it.
+
+**Stats moved onto the actor** — health, level and the party slot — because a
+companion needs the same ones the Avatar has, and a second place to keep them is
+the split that bites the first time something hits the party. Experience stays
+on the game: it is the party's, not one person's.
+
+*Verification: `a_companion_follows_through_a_door_without_blocking` (the plan's
+own — in through a real generated doorway, then out and back four times, failing
+if the Avatar is ever blocked or shares a tile),
+`a_companion_in_the_way_swaps_places` (and that a townsperson who is *not* in
+the party is still talked to), `the_line_closes_when_somebody_leaves_it`,
+`a_companion_is_recruited_by_a_topic_in_the_book`,
+`a_party_survives_a_save_in_order`. Three were checked by breaking the rule they
+pin — removing the swap, not closing the gap, and letting a companion keep their
+daily schedule — and removing the swap fails with "the avatar could not move,
+blocked by its own party", which is the plan's verification stated as a failure.
+Plus a `--shot` frame of the line in single file with the party in the HUD.*
+
 ### Conversation
 
 Ultima's model, which is a **vocabulary rather than a dialogue tree**. Everyone
@@ -644,7 +684,7 @@ Named plainly, because a reader should not have to infer absence:
 | Conversation beyond words | topics and a vocabulary, but nobody reacts to anything — no quests, no trade, no one who does something because you asked |
 | Sound | nothing. `ext/sdl_mixer` is pinned but not linked, and the options page says so where the volume rows would be |
 | Level editor | nothing. The map format exists for it |
-| Party | the avatar is alone |
+| Party roles | up to four follow, and have health and a level, but nothing distinguishes one companion from another - no classes, no skills, no orders to give |
 | Screens not yet needed | no journal, character sheet or map page — there is nothing yet for them to show |
 
 ---

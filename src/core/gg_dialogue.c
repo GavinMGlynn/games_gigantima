@@ -12,6 +12,7 @@
 //       say  I keep the stall by the square.
 //       say  Ask of the CARAVAN if thou wouldst know why.
 //       teach caravan              <- asking this hands over the word
+//       joins                      <- asking this takes them with you
 //     bye    Fare thee well.
 //
 // Indentation is decoration; it is stripped. What binds a `say` to a topic is
@@ -185,6 +186,13 @@ bool gg_dialogue_load(const char *path) {
                 break;
             }
             SDL_strlcpy(topic->say[topic->says++], rest, GG_LINE_MAX);
+        } else if (word_eq(key, "joins")) {
+            if (!topic) {
+                complain(path, lineno, "`joins` outside any topic");
+                ok = false;
+                break;
+            }
+            topic->joins = true;
         } else if (word_eq(key, "teach")) {
             if (!topic) {
                 complain(path, lineno, "`teach` outside any topic");

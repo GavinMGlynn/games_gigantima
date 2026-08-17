@@ -81,7 +81,8 @@ static bool header_write(const gg_game *g, const char *base, const char *name) {
     ok = ok && gg_io_w32(io, GG_SAVE_VERSION);
     ok = ok && SDL_WriteIO(io, who, sizeof who) == sizeof who;
     ok = ok && gg_io_w32(io, g->day) && gg_io_w32(io, g->minutes);
-    ok = ok && gg_io_w32(io, g->turn) && gg_io_w32(io, (uint32_t)g->level);
+    ok = ok && gg_io_w32(io, g->turn) &&
+               gg_io_w32(io, gg_player_const(g)->level);
     ok = ok && SDL_WriteIO(io, place, sizeof place) == sizeof place;
 
     SDL_CloseIO(io);
@@ -126,6 +127,11 @@ static bool actor_write(SDL_IOStream *io, const gg_actor *a) {
     ok = ok && gg_io_w32(io, (uint32_t)(uint16_t)a->x);
     ok = ok && gg_io_w32(io, (uint32_t)(uint16_t)a->y);
     ok = ok && gg_io_w32(io, a->def);
+    // Stats and the place in the line. On the actor since the party item, so
+    // a companion's health is saved the same way the Avatar's is.
+    ok = ok && gg_io_w32(io, (uint32_t)(uint16_t)a->hp);
+    ok = ok && gg_io_w32(io, (uint32_t)(uint16_t)a->hp_max);
+    ok = ok && gg_io_w32(io, a->level) && gg_io_w32(io, a->party);
     ok = ok && gg_io_w32(io, a->schedn);
     for (int i = 0; ok && i < a->schedn; i++) {
         ok = gg_io_w32(io, a->sched[i].hour) &&
@@ -138,11 +144,14 @@ static bool actor_write(SDL_IOStream *io, const gg_actor *a) {
 static bool actor_read(SDL_IOStream *io, gg_actor *a) {
     SDL_zerop(a);
     uint32_t active = 0, art = 0, facing = 0, x = 0, y = 0, def = 0, n = 0;
+    uint32_t hp = 0, hpmax = 0, level = 0, party = 0;
     bool ok = gg_io_r32(io, &active) && gg_io_r32(io, &art) &&
               gg_io_r32(io, &facing);
     ok = ok && SDL_ReadIO(io, a->name, GG_ACTOR_NAME_MAX) == GG_ACTOR_NAME_MAX;
     a->name[GG_ACTOR_NAME_MAX - 1] = '\0';
     ok = ok && gg_io_r32(io, &x) && gg_io_r32(io, &y) && gg_io_r32(io, &def);
+    ok = ok && gg_io_r32(io, &hp) && gg_io_r32(io, &hpmax) &&
+               gg_io_r32(io, &level) && gg_io_r32(io, &party);
     ok = ok && gg_io_r32(io, &n) && n <= GG_SCHEDULE_MAX;
     if (!ok) return false;
 
@@ -156,6 +165,12 @@ static bool actor_read(SDL_IOStream *io, gg_actor *a) {
     a->from_x = a->x;
     a->from_y = a->y;
     a->def = (uint8_t)def;
+    a->hp = (int16_t)(uint16_t)hp;
+    a->hp_max = (int16_t)(uint16_t)hpmax;
+    a->level = (uint8_t)level;
+    // A slot past the end of the line would leave somebody following nobody,
+    // and this file may not be ours.
+    a->party = (uint8_t)(party <= GG_PARTY_MAX ? party : GG_NOT_IN_PARTY);
     a->schedn = (uint8_t)n;
 
     for (uint32_t i = 0; i < n; i++) {
@@ -196,8 +211,14 @@ bool gg_save_write(const gg_game *g, const char *base, const char *name) {
     ok = ok && gg_io_w32(io, g->rng.s);
     ok = ok && gg_io_w32(io, g->turn) && gg_io_w32(io, g->minutes) &&
                gg_io_w32(io, g->day);
-    ok = ok && gg_io_w32(io, (uint32_t)g->hp) && gg_io_w32(io, (uint32_t)g->hp_max);
-    ok = ok && gg_io_w32(io, (uint32_t)g->level) && gg_io_w32(io, (uint32_t)g->exp);
+    ok = ok && gg_io_w32(io, (uint32_t)g->exp);
+
+    // Where the Avatar has just been. Without it a resumed party has no
+    // footprints to follow and bunches up on the first step.
+    ok = ok && gg_io_w32(io, (uint32_t)g->trailn);
+    for (int i = 0; ok && i < g->trailn; i++)
+        ok = gg_io_w32(io, (uint32_t)(uint16_t)g->trail_x[i]) &&
+             gg_io_w32(io, (uint32_t)(uint16_t)g->trail_y[i]);
     // The pack, then what is held. Slot indices rather than item ids, which is
     // what the game holds, so a save and a running game say the same thing.
     ok = ok && gg_io_w32(io, (uint32_t)g->packn);
@@ -245,7 +266,7 @@ bool gg_save_read(gg_game *g, const char *base, const char *name) {
     tmp.mode = GG_MODE_PLAY;
 
     char magic[8];
-    uint32_t version = 0, rng = 0, hp = 0, hpmax = 0, lvl = 0, exp = 0;
+    uint32_t version = 0, rng = 0, exp = 0;
     uint32_t player = 0, actors = 0;
 
     bool ok = SDL_ReadIO(io, magic, 8) == 8 &&
@@ -266,8 +287,17 @@ bool gg_save_read(gg_game *g, const char *base, const char *name) {
     ok = gg_io_r32(io, &rng);
     ok = ok && gg_io_r32(io, &tmp.turn) && gg_io_r32(io, &tmp.minutes) &&
                gg_io_r32(io, &tmp.day);
-    ok = ok && gg_io_r32(io, &hp) && gg_io_r32(io, &hpmax) &&
-               gg_io_r32(io, &lvl) && gg_io_r32(io, &exp);
+    ok = ok && gg_io_r32(io, &exp);
+
+    uint32_t trailn = 0;
+    ok = ok && gg_io_r32(io, &trailn) && trailn <= GG_TRAIL_MAX;
+    for (uint32_t i = 0; ok && i < trailn; i++) {
+        uint32_t tx = 0, ty = 0;
+        ok = gg_io_r32(io, &tx) && gg_io_r32(io, &ty);
+        tmp.trail_x[i] = (int16_t)(uint16_t)tx;
+        tmp.trail_y[i] = (int16_t)(uint16_t)ty;
+    }
+    tmp.trailn = ok ? (int)trailn : 0;
     uint32_t packn = 0;
     ok = ok && gg_io_r32(io, &packn) && packn <= GG_PACK_MAX;
     for (uint32_t i = 0; ok && i < packn; i++) {
@@ -319,9 +349,6 @@ bool gg_save_read(gg_game *g, const char *base, const char *name) {
     }
 
     tmp.rng.s = rng ? rng : 1;           // a zero xorshift state never advances
-    tmp.hp = (int)hp;
-    tmp.hp_max = (int)hpmax;
-    tmp.level = (int)lvl;
     tmp.exp = (int)exp;
     tmp.minutes %= GG_MINUTES_PER_DAY;
     // The player index must land on a real actor, or every query through

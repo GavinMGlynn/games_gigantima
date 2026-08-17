@@ -14,11 +14,13 @@
 #include "core/gg_game.h"
 
 #define GG_SAVE_MAGIC   "GGSAVE\0\0"
-// Version 2 carries the words the player has learned, which is the whole of
-// the story state. There is no migration from 1: a version-1 save has a
-// different inventory in it as well, and guessing at either would resume
-// somebody into a world that is not the one they left.
-#define GG_SAVE_VERSION 2
+// Version 3. Each version so far has moved something that was nowhere into the
+// file - the pack, then the words learned, and now each actor's stats, who
+// walks with you and the footprints they follow. There is no migration between
+// any of them: guessing at a section that was not written would resume somebody
+// into a world that is not the one they left, and every version so far has
+// existed for days rather than years.
+#define GG_SAVE_VERSION 3
 
 #define GG_PROFILE_NAME_MAX 32
 #define GG_PROFILES_MAX     64
