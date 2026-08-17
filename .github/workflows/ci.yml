@@ -1,0 +1,178 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# The build needs SDL and SDL_image and nothing else. `ext/lpc-revised` is
+# 766 MB of source art and is only needed to *regenerate* the atlas, which is
+# committed - so CI never checks it out. That is also what keeps the claim in
+# README.md honest: a clone with only these two submodules builds and plays.
+env:
+  CI_SUBMODULES: ext/sdl ext/sdl_image
+
+jobs:
+  linux:
+    name: Linux x86_64 (GCC 14, Debian family)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with: { submodules: false }
+      - name: Checkout build submodules
+        run: git submodule update --init --depth 1 $CI_SUBMODULES
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-14 ninja-build \
+            libx11-dev libxext-dev libxrandr-dev libxi-dev libxcursor-dev \
+            libxfixes-dev libxss-dev libxkbcommon-dev libdecor-0-dev \
+            libwayland-dev wayland-protocols \
+            libgl-dev libegl-dev libpulse-dev libasound2-dev \
+            libdbus-1-dev libudev-dev libusb-1.0-0-dev
+
+      - name: Configure
+        run: cmake -B build -G Ninja -DCMAKE_C_COMPILER=gcc-14
+                   -DCMAKE_BUILD_TYPE=RelWithDebInfo -DGIGANTIMA_WERROR=ON
+      - name: Build
+        run: cmake --build build -j
+      - name: Unit tests
+        run: ctest --test-dir build --output-on-failure
+
+      # The tests cover the simulation; this covers everything the simulation
+      # deliberately cannot touch - the atlas loading, the renderer, the HUD
+      # and the asset path search. A game that passes ctest and cannot find its
+      # own art is still broken.
+      - name: Smoke test - render a frame headless
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_RENDER_DRIVER: software
+          SDL_AUDIODRIVER: dummy
+        run: |
+          ./build/gigantima --play --seed 7 --shot smoke.bmp --shot-at 12
+          test -s smoke.bmp || { echo "no frame was written"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-frame
+          path: smoke.bmp
+
+  rocky:
+    name: Linux x86_64 (GCC 14, RHEL family)
+    runs-on: ubuntu-latest
+    container: rockylinux:10
+    steps:
+      - name: Install dependencies
+        run: |
+          dnf install -y --setopt=install_weak_deps=False \
+            gcc cmake ninja-build git \
+            libX11-devel libXext-devel libXrandr-devel libXcursor-devel \
+            libXi-devel libXfixes-devel libXScrnSaver-devel \
+            wayland-devel wayland-protocols-devel libxkbcommon-devel \
+            mesa-libGL-devel mesa-libEGL-devel \
+            pulseaudio-libs-devel alsa-lib-devel \
+            dbus-devel systemd-devel libusb1-devel
+      - uses: actions/checkout@v5
+        with: { submodules: false }
+      - name: Checkout build submodules
+        run: |
+          git config --global --add safe.directory '*'
+          git submodule update --init --depth 1 $CI_SUBMODULES
+      - name: Configure
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+                   -DGIGANTIMA_WERROR=ON
+      - name: Build
+        run: cmake --build build -j
+      - name: Unit tests
+        run: ctest --test-dir build --output-on-failure
+
+  windows:
+    name: Windows x64 (MSVC)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+        with: { submodules: false }
+      - name: Checkout build submodules
+        shell: bash
+        run: git submodule update --init --depth 1 $CI_SUBMODULES
+      # No -G: the runner image changes which Visual Studio it ships, so let
+      # CMake pick the newest installed one rather than naming a version.
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DGIGANTIMA_WERROR=ON
+      - name: Build
+        run: cmake --build build --config RelWithDebInfo --parallel
+      - name: Unit tests
+        run: ctest --test-dir build --output-on-failure -C RelWithDebInfo
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: build/**/gigantima.exe
+
+  macos:
+    name: macOS arm64 (AppleClang)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+        with: { submodules: false }
+      - name: Checkout build submodules
+        run: git submodule update --init --depth 1 $CI_SUBMODULES
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DGIGANTIMA_WERROR=ON
+                   -DCMAKE_OSX_ARCHITECTURES=arm64
+      - name: Build
+        run: cmake --build build -j3
+      - name: Unit tests
+        run: ctest --test-dir build --output-on-failure
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64
+          path: build/gigantima
+
+  sanitizers:
+    name: Address + UB sanitizers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with: { submodules: false }
+      - name: Checkout build submodules
+        run: git submodule update --init --depth 1 $CI_SUBMODULES
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-14 ninja-build \
+            libx11-dev libxext-dev libxrandr-dev libxi-dev libxcursor-dev \
+            libxfixes-dev libxss-dev libxkbcommon-dev libdecor-0-dev \
+            libwayland-dev wayland-protocols \
+            libgl-dev libegl-dev libpulse-dev libasound2-dev \
+            libdbus-1-dev libudev-dev libusb-1.0-0-dev
+
+      # Debug rather than release: ASan's reports are only as good as the frame
+      # pointers and line numbers it has, and -O2 loses both.
+      - name: Configure
+        run: cmake -B build -G Ninja -DCMAKE_C_COMPILER=gcc-14
+                   -DCMAKE_BUILD_TYPE=Debug -DGIGANTIMA_ASAN=ON -DGIGANTIMA_WERROR=ON
+      - name: Build
+        run: cmake --build build -j
+
+      # halt_on_error keeps a UBSan report from being a line of output nobody
+      # reads: without it the job goes green with the defect printed halfway up.
+      - name: Unit tests under ASan/UBSan
+        env:
+          ASAN_OPTIONS: detect_leaks=1:abort_on_error=0:strict_string_checks=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+          LSAN_OPTIONS: suppressions=${{ github.workspace }}/.lsan-suppressions.txt
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Headless render under ASan/UBSan
+        env:
+          ASAN_OPTIONS: detect_leaks=1:abort_on_error=0
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+          LSAN_OPTIONS: suppressions=${{ github.workspace }}/.lsan-suppressions.txt
+          SDL_VIDEODRIVER: dummy
+          SDL_RENDER_DRIVER: software
+          SDL_AUDIODRIVER: dummy
+        run: ./build/gigantima --play --seed 3 --shot asan.bmp --shot-at 25

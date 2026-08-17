@@ -1,0 +1,29 @@
+# LeakSanitizer suppressions.
+#
+# Every entry here is a leak in a library we do not own, on a path we cannot
+# avoid taking. Nothing in src/ is suppressed, and nothing should ever be added
+# for our own code - a leak in gigantima is a bug to fix, not a line to add.
+#
+# Run with:
+#   LSAN_OPTIONS=suppressions=.lsan-suppressions.txt ./build/linux-debug/gigantima_tests
+
+# Graphics and audio drivers allocate process-lifetime state on first use and
+# deliberately never free it - Mesa's GLSL compiler caches, the X11 and Wayland
+# client libraries' atom tables, ALSA's global config tree. The unit tests use
+# the dummy drivers and so avoid most of this, but SDL_Init still touches the
+# platform layer.
+leak:libGLX_mesa
+leak:libGLX
+leak:libEGL
+leak:swrast_dri
+leak:libX11
+leak:libxcb
+leak:libwayland-client
+leak:libasound
+leak:libpulse
+leak:libdbus
+
+# SDL's own one-time global initialisation: the hint table and the environment
+# copy live until the process exits and are not torn down by SDL_Quit.
+leak:SDL_SetHintWithPriority
+leak:SDL_GetEnvironment
