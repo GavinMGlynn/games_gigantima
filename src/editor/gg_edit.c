@@ -100,6 +100,7 @@ static const char *const TOOL_NAME[GG_TOOL_COUNT] = {
     [GG_TOOL_SCHEDULE] = "their day",
     [GG_TOOL_REGION]   = "regions",
     [GG_TOOL_START]    = "start",
+    [GG_TOOL_PORTAL]   = "ways out",
 };
 
 const char *gg_tool_name(gg_tool t) {
@@ -165,6 +166,11 @@ const char *gg_edit_brush_name(const gg_editor *e) {
     case GG_TOOL_START:
         SDL_snprintf(buf, sizeof buf, "%d,%d", e->map.start_x, e->map.start_y);
         break;
+    case GG_TOOL_PORTAL:
+        SDL_snprintf(buf, sizeof buf, "%s %d,%d",
+                     e->portal_to[0] ? e->portal_to : "(nowhere)",
+                     e->portal_x, e->portal_y);
+        break;
     default:
         buf[0] = '\0';
         break;
@@ -179,6 +185,14 @@ int gg_edit_actor_at(const gg_editor *e, int x, int y) {
     for (int i = 0; i < e->map.actors; i++)
         if (e->map.actor[i].x == x && e->map.actor[i].y == y) return i;
     return -1;
+}
+
+void gg_edit_link_to(gg_editor *e, const char *map, int x, int y) {
+    SDL_strlcpy(e->portal_to, map ? map : "", sizeof e->portal_to);
+    e->portal_x = x;
+    e->portal_y = y;
+    say(e, "ways out lead to %s at %d,%d",
+        e->portal_to[0] ? e->portal_to : "nowhere", x, y);
 }
 
 void gg_edit_name_actor(gg_editor *e, const char *name) {
@@ -276,6 +290,30 @@ void gg_edit_apply(gg_editor *e, int x, int y) {
         say(e, "start at %d,%d", x, y);
         break;
 
+    case GG_TOOL_PORTAL: {
+        if (!e->portal_to[0]) {
+            say(e, "no map for it to lead to - set one first");
+            return;
+        }
+        if (gg_portal_at(&e->map, x, y)) {
+            say(e, "there is already a way out there");
+            return;
+        }
+        if (e->map.portals >= GG_PORTALS_MAX) {
+            say(e, "no room for another way out");
+            return;
+        }
+        gg_portal *p = &e->map.portal[e->map.portals++];
+        SDL_zerop(p);
+        p->x = (int16_t)x;
+        p->y = (int16_t)y;
+        p->to_x = (int16_t)e->portal_x;
+        p->to_y = (int16_t)e->portal_y;
+        SDL_strlcpy(p->to, e->portal_to, sizeof p->to);
+        say(e, "%d,%d leads to %s at %d,%d", x, y, p->to, p->to_x, p->to_y);
+        break;
+    }
+
     case GG_TOOL_REGION:
         // Regions are dragged, not clicked. A single click makes a one-tile
         // region, which is at least honest about what happened.
@@ -363,6 +401,17 @@ void gg_edit_erase(gg_editor *e, int x, int y) {
         e->sched_slot = a->schedn;
         say(e, "%s has %u hours left", a->name, a->schedn);
         break;
+    }
+
+    case GG_TOOL_PORTAL: {
+        for (int i = 0; i < e->map.portals; i++)
+            if (e->map.portal[i].x == x && e->map.portal[i].y == y) {
+                e->map.portal[i] = e->map.portal[--e->map.portals];
+                say(e, "the way out is closed");
+                e->dirty = true;
+                return;
+            }
+        return;
     }
 
     case GG_TOOL_REGION: {
@@ -458,6 +507,15 @@ int gg_edit_check(const gg_editor *e,
         const gg_ground_item *g = &e->map.ground[i];
         if (!gg_map_walkable(&e->map, g->x, g->y))
             PROBLEM("something at %d,%d cannot be reached", g->x, g->y);
+    }
+
+    for (int i = 0; i < e->map.portals; i++) {
+        const gg_portal *p = &e->map.portal[i];
+        if (!p->to[0])
+            PROBLEM("the way out at %d,%d leads nowhere", p->x, p->y);
+        // A way out you cannot walk onto is a way out nobody can take.
+        if (!gg_map_walkable(&e->map, p->x, p->y))
+            PROBLEM("the way out at %d,%d is inside something", p->x, p->y);
     }
 
     #undef PROBLEM

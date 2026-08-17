@@ -205,6 +205,19 @@ static void draw_map(gg_app *a) {
                            (float)WIN_W, (float)(dy * t));
     }
 
+    // Ways out, so a link is something you can see rather than something you
+    // have to remember placing.
+    for (int i = 0; i < m->portals; i++) {
+        const gg_portal *w = &m->portal[i];
+        const int dx = w->x - a->cam_x, dy = w->y - a->cam_y;
+        if (dx < 0 || dy < 0 || dx >= across || dy >= down) continue;
+        SDL_SetRenderDrawColor(a->ren, 220, 200, 120, 210);
+        const SDL_FRect box = { (float)(VIEW_X + dx * t), (float)(dy * t),
+                                (float)t, (float)t };
+        SDL_RenderRect(a->ren, &box);
+        gg_font_draw(a->ren, (int)box.x + 2, (int)box.y - 12, AMBER, w->to);
+    }
+
     // Where a new game begins.
     {
         const int dx = m->start_x - a->cam_x, dy = m->start_y - a->cam_y;
@@ -344,20 +357,27 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     app->grid = true;
 
     const char *open_path = nullptr;
-    int w = 128, h = 112, tool = -1;
+    int w = 128, h = 112, tool = -1, link_x = 0, link_y = 0;
+    const char *link_to = nullptr;
     for (int i = 1; i < argc; i++) {
         if (SDL_strcmp(argv[i], "--open") == 0 && i + 1 < argc)
             open_path = argv[++i];
         else if (SDL_strcmp(argv[i], "--size") == 0 && i + 2 < argc) {
             w = SDL_atoi(argv[++i]);
             h = SDL_atoi(argv[++i]);
+        } else if (SDL_strcmp(argv[i], "--link") == 0 && i + 3 < argc) {
+            // Where the portal tool's ways out lead. On the command line
+            // because the editor has no text entry - a named gap.
+            link_to = argv[++i];
+            link_x = SDL_atoi(argv[++i]);
+            link_y = SDL_atoi(argv[++i]);
         } else if (SDL_strcmp(argv[i], "--shot") == 0 && i + 1 < argc) {
             app->shot_path = argv[++i];
         } else if (SDL_strcmp(argv[i], "--tool") == 0 && i + 1 < argc) {
             tool = gg_clampi(SDL_atoi(argv[++i]), 0, GG_TOOL_COUNT - 1);
         } else if (SDL_strcmp(argv[i], "--help") == 0) {
             SDL_Log("gigantima_editor [--open FILE.ggmap] [--size W H] "
-                    "[--tool N] [--shot FILE.bmp]");
+                    "[--tool N] [--link MAP X Y] [--shot FILE.bmp]");
             return SDL_APP_SUCCESS;
         }
     }
@@ -391,6 +411,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     } else if (!gg_edit_new(&app->ed, w, h)) {
         return SDL_APP_FAILURE;
     }
+    if (link_to) gg_edit_link_to(&app->ed, link_to, link_x, link_y);
     if (tool >= 0) gg_edit_tool(&app->ed, (gg_tool)tool);
     return SDL_APP_CONTINUE;
 }

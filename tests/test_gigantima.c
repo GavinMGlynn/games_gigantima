@@ -5158,6 +5158,264 @@ static void the_vale_has_a_story_that_can_be_reached(void) {
 }
 
 // ---------------------------------------------------------------------------
+// Many maps
+// ---------------------------------------------------------------------------
+// Authors a small map with a way out of it, and saves it. Returns the path.
+static const char *author_linked_map(const char *leaf, const char *name,
+                                     const char *to, int to_x, int to_y,
+                                     int gate_x, int gate_y, const char *who)
+{
+    const char *path = gg_pref_file(leaf);
+
+    gg_editor e;
+    SDL_zero(e);
+    CHECK(gg_edit_new(&e, 40, 32), "could not make a map");
+    SDL_strlcpy(e.map.name, name, sizeof e.map.name);
+
+    gg_edit_tool(&e, GG_TOOL_START);
+    gg_edit_apply(&e, 8, 8);
+
+    if (who) {
+        gg_edit_tool(&e, GG_TOOL_ACTOR);
+        gg_edit_apply(&e, 12, 8);
+        gg_edit_name_actor(&e, who);
+        gg_edit_tool(&e, GG_TOOL_SCHEDULE);
+        gg_edit_apply(&e, 12, 8);
+    }
+
+    gg_edit_tool(&e, GG_TOOL_PORTAL);
+    gg_edit_link_to(&e, to, to_x, to_y);
+    gg_edit_apply(&e, gate_x, gate_y);
+    CHECK(e.map.portals == 1, "%s has %d ways out, expected one", name,
+          e.map.portals);
+
+    char problems[GG_EDIT_PROBLEMS_MAX][GG_EDIT_SAY_MAX];
+    const int bad = gg_edit_check(&e, problems);
+    for (int i = 0; i < bad && i < GG_EDIT_PROBLEMS_MAX; i++)
+        CHECK(false, "%s: %s", name, problems[i]);
+
+    CHECK(gg_edit_save(&e, path), "could not save %s: %s", name, e.say);
+    gg_edit_close(&e);
+    return path;
+}
+
+// The plan's own verification: walking between two authored maps preserves
+// party, clock and inventory.
+static void walking_between_two_maps_takes_everything_with_you(void) {
+    // Two maps, each with a gate into the other. Both authored through the
+    // editor's own operations, so this is content and not a fixture.
+    const char *east = author_linked_map("test_east.ggmap", "The East Field",
+                                         "test_west.ggmap", 20, 12,
+                                         30, 8, "Eadric");
+    char east_path[1024];
+    SDL_strlcpy(east_path, east, sizeof east_path);
+    const char *west = author_linked_map("test_west.ggmap", "The West Wood",
+                                         "test_east.ggmap", 9, 8,
+                                         4, 8, "Wystan");
+    char west_path[1024];
+    SDL_strlcpy(west_path, west, sizeof west_path);
+
+    gg_game g;
+    CHECK(gg_game_new_from_map(&g, east_path, "Traveller"), "the east would not open");
+    CHECK(SDL_strcmp(g.map.name, "The East Field") == 0,
+          "started in '%s'", g.map.name);
+
+    // Something to carry, somebody to walk with, something learned, and a
+    // quest under way - everything the crossing has to preserve.
+    g.packn = 0;
+    for (int s = 0; s < GG_SLOT_COUNT; s++) g.equipped[s] = -1;
+    CHECK(gg_pack_add(&g, GG_ITEM_SILVER, 2) == 2, "could not take silver");
+    CHECK(gg_pack_add(&g, GG_ITEM_TORCH, 1) == 1, "could not take a torch");
+    g.pack_cursor = gg_pack_find(&g, GG_ITEM_TORCH);
+    g.mode = GG_MODE_PACK;
+    gg_game_act(&g, GG_ACT_EQUIP);
+    g.mode = GG_MODE_PLAY;
+
+    int eadric = -1;
+    for (int i = 0; i < g.actors; i++)
+        if (SDL_strcmp(g.actor[i].name, "Eadric") == 0) eadric = i;
+    CHECK(eadric > 0, "Eadric is not in the east field");
+    CHECK(gg_party_join(&g, eadric), "Eadric would not come along");
+
+    gg_learn(&g, "somewhere");
+    gg_raise_flag(&g, "been_east");
+    gg_player(&g)->hp = 21;
+
+    const int carried = gg_pack_count(&g, GG_ITEM_SILVER);
+    const int held = gg_light_radius(&g);
+    const int party = gg_party_size(&g);
+    CHECK(party == 1, "the party is %d, expected one", party);
+
+    // Walk onto the gate. The simulation only *asks* to travel - it names the
+    // map and the frontend says where that map lives, which is the whole
+    // reason src/core does not know where content is kept.
+    gg_actor *p = gg_player(&g);
+    p->x = 29;
+    p->y = 8;
+    gg_game_act(&g, GG_ACT_E);
+    CHECK(g.want_travel, "stepping on a way out asked for nothing");
+    CHECK(SDL_strcmp(g.travel_to, "test_west.ggmap") == 0,
+          "it asks for '%s'", g.travel_to);
+
+    // Snapshot after the step, not before it: walking onto the gate is an
+    // ordinary move and costs an ordinary turn. What must not change is what
+    // the *crossing* does, which is what these are compared against.
+    const uint32_t minutes = g.minutes, day = g.day;
+    const uint32_t rng = g.rng.s;
+    const uint32_t turn = g.turn;
+
+    CHECK(gg_game_travel(&g, west_path, g.travel_x, g.travel_y),
+          "the crossing failed");
+    CHECK(!g.want_travel, "the request was not cleared");
+
+    // The world changed.
+    CHECK(SDL_strcmp(g.map.name, "The West Wood") == 0,
+          "arrived in '%s'", g.map.name);
+    CHECK(gg_player_const(&g)->x == 20 && gg_player_const(&g)->y == 12,
+          "arrived at %d,%d, not where the gate said",
+          gg_player_const(&g)->x, gg_player_const(&g)->y);
+
+    // Everything about the party did not.
+    CHECK(gg_pack_count(&g, GG_ITEM_SILVER) == carried,
+          "the silver did not come along (%d of %d)",
+          gg_pack_count(&g, GG_ITEM_SILVER), carried);
+    CHECK(gg_light_radius(&g) == held, "the readied torch was put out");
+    CHECK(g.minutes == minutes && g.day == day,
+          "the clock jumped to day %u %02u:%02u", g.day, g.minutes / 60,
+          g.minutes % 60);
+    CHECK(g.rng.s == rng, "the RNG was reseeded by walking through a gate");
+    CHECK(g.turn == turn, "the crossing itself cost %u turns", g.turn - turn);
+    CHECK(gg_party_size(&g) == party, "the party is %d, was %d",
+          gg_party_size(&g), party);
+    CHECK(gg_knows(&g, "somewhere"), "what was learned was forgotten");
+    CHECK(gg_flag(&g, "been_east"), "a flag was lost in the crossing");
+    CHECK(gg_player_const(&g)->hp == 21, "health came back as %d",
+          gg_player_const(&g)->hp);
+
+    // The companion came, and stands somewhere real rather than on top of you.
+    int companion = -1;
+    for (int i = 0; i < g.actors; i++)
+        if (SDL_strcmp(g.actor[i].name, "Eadric") == 0) companion = i;
+    CHECK(companion > 0, "Eadric did not come through");
+    if (companion > 0) {
+        CHECK(g.actor[companion].party != GG_NOT_IN_PARTY,
+              "Eadric arrived but left the party");
+        CHECK(gg_map_walkable(&g.map, g.actor[companion].x, g.actor[companion].y),
+              "Eadric arrived inside something");
+    }
+
+    // And the new map's own people are here, while the old map's are not.
+    int wystans = 0, eadrics = 0;
+    for (int i = 0; i < g.actors; i++) {
+        if (!g.actor[i].active) continue;
+        if (SDL_strcmp(g.actor[i].name, "Wystan") == 0) wystans++;
+        if (SDL_strcmp(g.actor[i].name, "Eadric") == 0) eadrics++;
+    }
+    CHECK(wystans == 1, "the west wood holds %d Wystans", wystans);
+    CHECK(eadrics == 1, "there are %d Eadrics - one should have come along and "
+          "none should have been left behind", eadrics);
+
+    // And back again, which is the other half of "linked".
+    p = gg_player(&g);
+    p->x = 5;
+    p->y = 8;
+    gg_game_act(&g, GG_ACT_W);
+    CHECK(g.want_travel, "the way back asked for nothing");
+    CHECK(gg_game_travel(&g, east_path, g.travel_x, g.travel_y),
+          "the way back failed");
+    CHECK(SDL_strcmp(g.map.name, "The East Field") == 0,
+          "came back to '%s'", g.map.name);
+    CHECK(gg_pack_count(&g, GG_ITEM_SILVER) == carried,
+          "the silver was lost on the way back");
+    CHECK(gg_party_size(&g) == party, "the party was lost on the way back");
+
+    // And the world still turns where it left off.
+    const uint32_t before = g.turn;
+    for (int i = 0; i < 10; i++) gg_game_act(&g, GG_ACT_WAIT);
+    CHECK(g.turn == before + 10, "the world stopped turning after a crossing");
+
+    gg_game_free(&g);
+    SDL_RemovePath(east_path);
+    SDL_RemovePath(west_path);
+}
+
+static void a_way_out_that_leads_nowhere_is_refused(void) {
+    const char *path = author_linked_map("test_broken.ggmap", "Nowhere",
+                                         "test_no_such_map.ggmap", 5, 5,
+                                         20, 8, nullptr);
+    char map_path[1024];
+    SDL_strlcpy(map_path, path, sizeof map_path);
+
+    gg_game g;
+    CHECK(gg_game_new_from_map(&g, map_path, "Lost"), "the map would not open");
+
+    const char *was = g.map.name;
+    (void)was;
+    gg_actor *p = gg_player(&g);
+    p->x = 19;
+    p->y = 8;
+    gg_game_act(&g, GG_ACT_E);
+    CHECK(g.want_travel, "stepping on the gate asked for nothing");
+
+    // The frontend cannot find it, and the world is left exactly as it was
+    // rather than half-changed.
+    CHECK(!gg_game_travel(&g, gg_pref_file("test_no_such_map.ggmap"),
+                          g.travel_x, g.travel_y),
+          "travelling into a map that is not there reported success");
+    CHECK(SDL_strcmp(g.map.name, "Nowhere") == 0,
+          "a failed crossing left the world as '%s'", g.map.name);
+    CHECK(g.map.cell != nullptr, "a failed crossing freed the map");
+    CHECK(!g.want_travel, "a failed crossing left the request standing");
+
+    // Still playable.
+    for (int i = 0; i < 5; i++) gg_game_act(&g, GG_ACT_WAIT);
+    CHECK(g.turn > 0, "the world stopped after a failed crossing");
+
+    gg_game_free(&g);
+    SDL_RemovePath(map_path);
+}
+
+// The editor refuses a way out nobody could take.
+static void the_editor_refuses_a_gate_nobody_can_reach(void) {
+    gg_editor e;
+    SDL_zero(e);
+    CHECK(gg_edit_new(&e, 24, 24), "could not make a map");
+    SDL_strlcpy(e.map.name, "Gated", sizeof e.map.name);
+
+    gg_edit_tool(&e, GG_TOOL_PORTAL);
+    gg_edit_apply(&e, 5, 5);
+    CHECK(e.map.portals == 0, "a way out to nowhere was placed");
+    CHECK(SDL_strstr(e.say, "lead to") != nullptr, "it did not say why: %s", e.say);
+
+    gg_edit_link_to(&e, "somewhere.ggmap", 3, 3);
+    gg_edit_apply(&e, 5, 5);
+    CHECK(e.map.portals == 1, "the way out was not placed");
+    gg_edit_apply(&e, 5, 5);
+    CHECK(e.map.portals == 1, "two ways out were stacked on one tile");
+
+    // Wall it in, and the editor says so.
+    char problems[GG_EDIT_PROBLEMS_MAX][GG_EDIT_SAY_MAX];
+    CHECK(gg_edit_check(&e, problems) == 0, "already broken: %s", problems[0]);
+
+    gg_edit_tool(&e, GG_TOOL_TERRAIN);
+    while (e.terrain != GG_TILE_MOUNTAIN) gg_edit_brush(&e, 1);
+    gg_edit_apply(&e, 5, 5);
+    const int bad = gg_edit_check(&e, problems);
+    CHECK(bad > 0, "a way out inside a mountain is not a problem");
+    bool said = false;
+    for (int i = 0; i < bad && i < GG_EDIT_PROBLEMS_MAX; i++)
+        if (SDL_strstr(problems[i], "way out")) said = true;
+    CHECK(said, "the problem was not the one about the way out");
+
+    // And it rubs out.
+    gg_edit_tool(&e, GG_TOOL_PORTAL);
+    gg_edit_erase(&e, 5, 5);
+    CHECK(e.map.portals == 0, "the way out would not be closed");
+
+    gg_edit_close(&e);
+}
+
+// ---------------------------------------------------------------------------
 // Content tables
 // ---------------------------------------------------------------------------
 static void every_terrain_and_item_has_a_name(void) {
@@ -5374,6 +5632,10 @@ int main(void) {
     RUN(killing_things_moves_a_quest_on);
     RUN(a_quest_file_that_does_not_parse_loads_nothing);
     RUN(the_vale_has_a_story_that_can_be_reached);
+
+    RUN(walking_between_two_maps_takes_everything_with_you);
+    RUN(a_way_out_that_leads_nowhere_is_refused);
+    RUN(the_editor_refuses_a_gate_nobody_can_reach);
 
     RUN(every_terrain_and_item_has_a_name);
     RUN(every_prop_has_a_plausible_footprint);

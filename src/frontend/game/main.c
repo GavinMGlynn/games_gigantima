@@ -534,6 +534,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
             { "fight",    GG_SCREEN_PLAY },
             { "spells",   GG_SCREEN_PLAY },
             { "journal",  GG_SCREEN_PLAY },
+            { "travel",   GG_SCREEN_PLAY },
         };
         bool known = false;
         for (size_t k = 0; k < GG_COUNTOF(NAMED); k++)
@@ -742,6 +743,28 @@ static bool step_once(gg_app *app) {
         return true;
     }
 
+    // A way out was stepped on. The simulation named the map; this is where
+    // maps live, which is knowledge src/core is not allowed to have. Maps ship
+    // in assets/maps/, and one saved by the editor sits beside the profiles -
+    // both are tried, so a map you authored is playable without installing it.
+    if (app->started && app->game.want_travel) {
+        char leaf[GG_MAP_NAME_MAX + 8];
+        SDL_snprintf(leaf, sizeof leaf, "maps/%s", app->game.travel_to);
+
+        const char *where = gg_asset_path(leaf);
+        SDL_IOStream *probe = SDL_IOFromFile(where, "rb");
+        if (probe) SDL_CloseIO(probe);
+        else       where = gg_pref_file(app->game.travel_to);
+
+        if (gg_game_travel(&app->game, where, app->game.travel_x,
+                           app->game.travel_y))
+            SDL_Log("gigantima: walked into %s (%s)", app->game.map.name,
+                    app->game.travel_to);
+        else
+            SDL_Log("gigantima: cannot walk into %s", app->game.travel_to);
+        app->game.want_travel = false;
+    }
+
     if (app->started) {
         // Whatever the world had to say since the last tick. The simulation
         // does not know audio exists; this is the only place the two meet.
@@ -795,6 +818,24 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
         // actions would close it again.
         if (app->screen_name && SDL_strcmp(app->screen_name, "pack") == 0)
             app->game.mode = GG_MODE_PACK;
+
+        // Walks north up the road until the way out is stepped on, so a
+        // crossing can be photographed. The walk is the ordinary one and the
+        // crossing is the ordinary crossing; only the direction is chosen.
+        if (app->screen_name && SDL_strcmp(app->screen_name, "travel") == 0) {
+            for (int i = 0; i < 80 && !app->game.want_travel; i++) {
+                const uint32_t was = app->game.turn;
+                gg_game_act(&app->game, GG_ACT_N);
+                if (app->game.turn == was) break;
+            }
+            if (app->game.want_travel) {
+                char leaf[GG_MAP_NAME_MAX + 8];
+                SDL_snprintf(leaf, sizeof leaf, "maps/%s", app->game.travel_to);
+                if (gg_game_travel(&app->game, gg_asset_path(leaf),
+                                   app->game.travel_x, app->game.travel_y))
+                    SDL_Log("gigantima: walked into %s", app->game.map.name);
+            }
+        }
 
         // Learns what the vale has to teach and kills something, so the
         // journal has a story in it to photograph. Everything after the

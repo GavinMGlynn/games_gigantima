@@ -777,6 +777,17 @@ static void do_move(gg_game *g, int dx, int dy) {
     // person behind wants to stand where you were, not where you are.
     trail_push(g, p->x, p->y);
     gg_actor_move_to(p, nx, ny);
+
+    // A way out. The simulation says where to; the frontend says where that
+    // map lives, and calls gg_game_travel - src/core must not know where
+    // content is kept on disk.
+    const gg_portal *way = gg_portal_at(&g->map, nx, ny);
+    if (way && way->to[0]) {
+        SDL_strlcpy(g->travel_to, way->to, sizeof g->travel_to);
+        g->travel_x = way->to_x;
+        g->travel_y = way->to_y;
+        g->want_travel = true;
+    }
     gg_emit(g, (c && (c->flags & GG_CELL_DOOR)) ? GG_EV_DOOR : GG_EV_STEP);
     world_turn(g, cost);
 }
@@ -1221,6 +1232,40 @@ static void place_townsfolk(gg_game *g) {
     }
 }
 
+// Whoever lives in the map that is loaded.
+//
+// `book_may_supply` is true only for a *generated* world. The book's residents
+// belong to the town the generator builds; an authored map is the whole of who
+// lives in it, including when the answer is nobody. Without that distinction,
+// walking into an empty authored map brought eight townsfolk along and stood
+// them on a hillside - which is what the first crossing actually did.
+static void populate_from_map(gg_game *g, bool book_may_supply) {
+    if (g->map.actors > 0) {
+        for (int i = 0; i < g->map.actors && g->actors < GG_ACTORS_MAX; i++) {
+            const gg_map_actor *m = &g->map.actor[i];
+            gg_actor *a = &g->actor[g->actors++];
+            SDL_zerop(a);
+            a->active = true;
+            a->art = m->art < GG_ACTOR_COUNT ? m->art : 0;
+            a->def = GG_ACTOR_NO_DEF;
+            a->facing = GG_FACE_DOWN;
+            a->x = m->x;
+            a->y = m->y;
+            a->from_x = a->x;
+            a->from_y = a->y;
+            a->hp = a->hp_max = 18;
+            a->level = 1;
+            a->party = GG_NOT_IN_PARTY;
+            SDL_strlcpy(a->name, m->name, sizeof a->name);
+            a->schedn = m->schedn;
+            for (int k = 0; k < m->schedn && k < GG_SCHEDULE_MAX; k++)
+                a->sched[k] = m->sched[k];
+        }
+    } else if (book_may_supply) {
+        place_townsfolk(g);
+    }
+}
+
 // Everything a new game needs once its map exists, however the map got there.
 static bool finish_new_game(gg_game *g, const char *profile) {
     if (!gg_path_init(&g->path, g->map.w, g->map.h)) {
@@ -1277,34 +1322,7 @@ static bool finish_new_game(gg_game *g, const char *profile) {
     g->player = 0;
     g->actors = 1;
 
-    // Anybody the map itself records comes first, and if it records any then
-    // the generator's own table stays out of it - a map authored in the editor
-    // is the whole of who lives there, not a suggestion on top of eight people
-    // it never asked for.
-    if (g->map.actors > 0) {
-        for (int i = 0; i < g->map.actors && g->actors < GG_ACTORS_MAX; i++) {
-            const gg_map_actor *m = &g->map.actor[i];
-            gg_actor *a = &g->actor[g->actors++];
-            SDL_zerop(a);
-            a->active = true;
-            a->art = m->art < GG_ACTOR_COUNT ? m->art : 0;
-            a->def = GG_ACTOR_NO_DEF;
-            a->facing = GG_FACE_DOWN;
-            a->x = m->x;
-            a->y = m->y;
-            a->from_x = a->x;
-            a->from_y = a->y;
-            a->hp = a->hp_max = 18;
-            a->level = 1;
-            a->party = GG_NOT_IN_PARTY;
-            SDL_strlcpy(a->name, m->name, sizeof a->name);
-            a->schedn = m->schedn;
-            for (int k = 0; k < m->schedn && k < GG_SCHEDULE_MAX; k++)
-                a->sched[k] = m->sched[k];
-        }
-    } else {
-        place_townsfolk(g);
-    }
+    populate_from_map(g, g->generated);
 
     // Trouble in the wilderness, well away from the town gate. How many of
     // what comes out of the bestiary - nothing here knows a brigand from a
@@ -1362,6 +1380,7 @@ bool gg_game_new(gg_game *g, uint32_t seed, const char *profile) {
     SDL_zerop(g);
     gg_rng_seed(&g->rng, seed);
     g->talking_to = -1;
+    g->generated = true;
 
     if (!gg_map_generate(&g->map, 192, 160, seed)) return false;
     return finish_new_game(g, profile);
@@ -1376,6 +1395,94 @@ bool gg_game_new_from_map(gg_game *g, const char *path, const char *profile) {
     // has a reproducible RNG for whatever the simulation decides afterwards.
     gg_rng_seed(&g->rng, g->map.seed);
     return finish_new_game(g, profile);
+}
+
+bool gg_game_travel(gg_game *g, const char *path, int x, int y) {
+    gg_map fresh;
+    SDL_zero(fresh);
+    if (!gg_map_load(&fresh, path)) {
+        gg_log(g, "The way is shut.");
+        g->want_travel = false;
+        return false;
+    }
+
+    // Who comes along: the Avatar and anybody walking with them, in order, so
+    // the line arrives in the same order it left.
+    gg_actor going[1 + GG_PARTY_MAX];
+    int goings = 0;
+    going[goings++] = g->actor[g->player];
+    for (int slot = 1; slot <= GG_PARTY_MAX; slot++) {
+        const int who = gg_party_at(g, slot);
+        if (who >= 0) going[goings++] = g->actor[who];
+    }
+
+    // The world is replaced; everything about the party is not. The pack, the
+    // words, the quests, the flags, the clock and the RNG all live on the game
+    // rather than on the map, so they simply are not touched here.
+    gg_map_free(&g->map);
+    g->map = fresh;
+    g->actors = 0;
+    g->talking_to = -1;
+    g->speaker = nullptr;
+    g->saids = 0;
+    g->askables = 0;
+    g->mode = GG_MODE_PLAY;
+
+    // The pathfinder is sized to the map, so a map of another size needs a new
+    // one. Freed first, or travelling leaks one per journey.
+    gg_path_free(&g->path);
+    if (!gg_path_init(&g->path, g->map.w, g->map.h)) {
+        SDL_Log("gigantima: could not allocate the pathfinder");
+        return false;
+    }
+
+    // The Avatar first, so g->player stays 0 as everything else assumes.
+    g->player = 0;
+    g->actor[0] = going[0];
+    g->actor[0].x = (int16_t)gg_clampi(x, 0, g->map.w - 1);
+    g->actor[0].y = (int16_t)gg_clampi(y, 0, g->map.h - 1);
+    g->actor[0].from_x = g->actor[0].x;
+    g->actor[0].from_y = g->actor[0].y;
+    g->actor[0].step = 0;
+    g->actors = 1;
+
+    // The party, put down on the nearest clear ground - they cannot all stand
+    // on the tile the Avatar arrived on.
+    for (int i = 1; i < goings; i++) {
+        gg_actor *a = &g->actor[g->actors];
+        *a = going[i];
+        a->step = 0;
+
+        bool placed = false;
+        for (int r = 1; r < 8 && !placed; r++)
+            for (int oy = -r; oy <= r && !placed; oy++)
+                for (int ox = -r; ox <= r && !placed; ox++) {
+                    const int nx = g->actor[0].x + ox, ny = g->actor[0].y + oy;
+                    if (!gg_map_walkable(&g->map, nx, ny)) continue;
+                    if (gg_actor_occupied(g->actor, g->actors, nx, ny, -1)) continue;
+                    a->x = (int16_t)nx;
+                    a->y = (int16_t)ny;
+                    placed = true;
+                }
+        // Nowhere to stand is not a reason to lose somebody: they arrive on
+        // top of the Avatar and walk off on the next turn.
+        if (!placed) { a->x = g->actor[0].x; a->y = g->actor[0].y; }
+        a->from_x = a->x;
+        a->from_y = a->y;
+        g->actors++;
+    }
+
+    // The footprints are from a map that is no longer under anybody's feet.
+    g->trailn = 0;
+    trail_push(g, g->actor[0].x, g->actor[0].y);
+
+    // And whoever lives here - the map's own people and nobody else.
+    populate_from_map(g, false);
+
+    g->want_travel = false;
+    g->travel_to[0] = '\0';
+    gg_log(g, "%s.", g->map.name[0] ? g->map.name : "Somewhere else");
+    return true;
 }
 
 void gg_game_free(gg_game *g) {

@@ -83,6 +83,48 @@ editor.
 `off_map_tiles_are_never_walkable`, `water_and_mountain_are_impassable`,
 `a_prop_blocks_its_tile_but_ground_cover_does_not`.*
 
+### Many maps
+
+A map carries **ways out**: a tile, the name of another map, and where to arrive
+in it. Stepping on one crosses over. The vale and the standing stones ship as
+two authored maps with a road between them, both written by the editor.
+
+**The simulation names the map; the frontend says where that map lives.** A way
+out sets a request — the same arrangement `want_save` already had — and the
+frontend resolves `maps/<name>` under the assets, falling back to the
+preferences directory so a map you authored yourself is playable without
+installing it. `src/core` never learns where content is kept.
+
+What crosses over is **the party and everything about it**: who they are, what
+they carry, what they know, how far along every quest is, every flag, the hour,
+the day and the RNG. What is replaced is the world — the map, the people who
+live in it, and what is lying about. The crossing costs no turn of its own; the
+step onto the gate is an ordinary step and costs an ordinary turn.
+
+A failed crossing **changes nothing**. The new map is read before the old one is
+let go, so a way out pointing at a map that is not there leaves the world
+exactly as it was and still playable.
+
+The book's residents belong to a **generated** town. An authored map is the
+whole of who lives in it, including when the answer is nobody — without that
+distinction the first crossing brought eight townsfolk along and stood them on a
+hillside, which is what the screenshot showed.
+
+**A map you leave forgets what you did there.** It is re-read from disk on the
+way back, so an item taken off its floor and a brigand killed on it are both
+undone by leaving and returning. Carrying every visited map in the save is a
+named item in the plan, and it is the honest gap in this one.
+
+*Verification: `walking_between_two_maps_takes_everything_with_you` (the plan's
+own, over two maps authored through the editor's own operations, checking the
+pack, the readied torch, the companion, the clock, the day, the RNG, the turn
+count, the words learned and a flag - and back again),
+`a_way_out_that_leads_nowhere_is_refused`,
+`the_editor_refuses_a_gate_nobody_can_reach`. Three were checked by breaking the
+rule they pin: leaving the party behind, freeing the map on a failed crossing,
+and reseeding the RNG on arrival. Plus a `--shot` frame of the walk from the
+vale to the stones, taken in CI.*
+
 ### The editor
 
 A second binary on the same core, `gigantima_editor`. Seven tools — ground,

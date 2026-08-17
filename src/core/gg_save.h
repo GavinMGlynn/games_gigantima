@@ -20,11 +20,13 @@
 // then any light the Avatar has conjured and how long it has left, and now
 // then which row of the bestiary each creature came from in place of the loot
 // that used to be stamped on it, and now how far along each quest is, every
-// flag raised, and how many have fallen.
+// flag raised, and how many have fallen. Version 8 is the map format beneath
+// it changing again - a save carries a whole map inside it, so a new map
+// version is a new save version whether or not the game's own half moved.
 // There is no migration between any of them - guessing at a section that was
 // never written would resume somebody into a world that is not the one they
 // left, and every version so far has existed for days rather than years.
-#define GG_SAVE_VERSION 7
+#define GG_SAVE_VERSION 8
 
 #define GG_PROFILE_NAME_MAX 32
 #define GG_PROFILES_MAX     64

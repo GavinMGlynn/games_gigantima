@@ -738,6 +738,17 @@ bool gg_map_write(const gg_map *m, SDL_IOStream *io) {
              gg_io_w32(io, it->kind) && gg_io_w32(io, it->count);
     }
 
+    // The ways out, then the people, last, for the same reason.
+    ok = ok && gg_io_w32(io, (uint32_t)m->portals);
+    for (int i = 0; ok && i < m->portals; i++) {
+        const gg_portal *p = &m->portal[i];
+        ok = gg_io_w32(io, (uint32_t)(uint16_t)p->x) &&
+             gg_io_w32(io, (uint32_t)(uint16_t)p->y);
+        ok = ok && SDL_WriteIO(io, p->to, GG_MAP_NAME_MAX) == GG_MAP_NAME_MAX;
+        ok = ok && gg_io_w32(io, (uint32_t)(uint16_t)p->to_x) &&
+                   gg_io_w32(io, (uint32_t)(uint16_t)p->to_y);
+    }
+
     // And the people, last, for the same reason.
     ok = ok && gg_io_w32(io, (uint32_t)m->actors);
     for (int i = 0; ok && i < m->actors; i++) {
@@ -837,6 +848,22 @@ bool gg_map_read(gg_map *m, SDL_IOStream *io) {
     }
     m->grounds = ok ? (int)grounds : 0;
 
+    uint32_t portals = 0;
+    ok = ok && gg_io_r32(io, &portals) && portals <= GG_PORTALS_MAX;
+    for (uint32_t i = 0; ok && i < portals; i++) {
+        gg_portal *p = &m->portal[i];
+        uint32_t px = 0, py = 0, tx = 0, ty = 0;
+        ok = gg_io_r32(io, &px) && gg_io_r32(io, &py);
+        ok = ok && SDL_ReadIO(io, p->to, GG_MAP_NAME_MAX) == GG_MAP_NAME_MAX;
+        p->to[GG_MAP_NAME_MAX - 1] = '\0';
+        ok = ok && gg_io_r32(io, &tx) && gg_io_r32(io, &ty);
+        p->x = (int16_t)(int32_t)px;
+        p->y = (int16_t)(int32_t)py;
+        p->to_x = (int16_t)(int32_t)tx;
+        p->to_y = (int16_t)(int32_t)ty;
+    }
+    m->portals = ok ? (int)portals : 0;
+
     uint32_t actors = 0;
     ok = ok && gg_io_r32(io, &actors) && actors <= GG_MAP_ACTORS_MAX;
     for (uint32_t i = 0; ok && i < actors; i++) {
@@ -879,6 +906,12 @@ bool gg_map_read(gg_map *m, SDL_IOStream *io) {
             m->cell[i].prop = GG_NO_PROP;
     }
     return true;
+}
+
+const gg_portal *gg_portal_at(const gg_map *m, int x, int y) {
+    for (int i = 0; i < m->portals; i++)
+        if (m->portal[i].x == x && m->portal[i].y == y) return &m->portal[i];
+    return nullptr;
 }
 
 bool gg_map_load(gg_map *m, const char *path) {

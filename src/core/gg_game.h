@@ -126,6 +126,12 @@ typedef struct {
     gg_rng   rng;
     gg_mode  mode;
 
+    // This world was made by the generator rather than read from a file. It
+    // decides who the town is peopled with: the book's residents belong to a
+    // generated town, and an authored map is the whole of who lives in it -
+    // including when the answer is nobody.
+    bool generated;
+
     // Scratch for NPC pathfinding, reused every turn. Held here rather than
     // inside gg_path so the allocation happens once per game, not once per
     // step - a search touches thousands of cells.
@@ -213,6 +219,13 @@ typedef struct {
     // Set when something happened that the frontend should react to; the
     // frontend clears them. Keeps SDL out of the simulation.
     bool want_save;
+
+    // The Avatar stepped onto a way out. The simulation says which map and
+    // where in it; the frontend says where that map lives on disk, because
+    // src/core must not know where content is kept. Cleared by gg_game_travel.
+    bool want_travel;
+    char travel_to[GG_MAP_NAME_MAX];
+    int  travel_x, travel_y;
     bool blocked_bump;            // walked into a wall: worth a rumble
 
     // What just happened that is worth hearing. Drained by the frontend every
@@ -235,6 +248,21 @@ bool gg_game_new(gg_game *g, uint32_t seed, const char *profile);
 bool gg_game_new_from_map(gg_game *g, const char *path, const char *profile);
 
 void gg_game_free(gg_game *g);
+
+// Walks out of this map and into the one at `path`, arriving at (x, y).
+//
+// Everything about the party goes with them - who they are, what they carry,
+// what they know, how far along every quest is, the hour and the day and the
+// RNG. What is replaced is the world: the map, the people who live in it, and
+// what is lying about in it.
+//
+// **A map you leave forgets what you did there.** It is re-read from disk on
+// the way back, so an item taken off the floor of one map and a brigand killed
+// in it are both undone by leaving and returning. Carrying every visited map in
+// the save is a named item in docs/COMPLETION_PLAN.md.
+//
+// Returns false and changes nothing if the map cannot be read.
+bool gg_game_travel(gg_game *g, const char *path, int x, int y);
 
 // Restores what a save file cannot carry: the greeting pointers, rebuilt from
 // each actor's `def` index. Called by the save loader; harmless otherwise.

@@ -200,9 +200,21 @@ that is reachable while content is C, so the editor comes before the content.
       *Verification: a two-stage quest completed, its journal updated, and the
       state surviving a save/load — plus that a quest cannot skip a stage, and
       that one quest's flag opens another.*
-- [ ] **World of many maps** with linked transitions, while keeping each map
-      seamless internally. *Verification: walking between two authored maps
-      preserves party, clock and inventory.*
+- [x] **World of many maps** with linked transitions, while keeping each map
+      seamless internally. A map carries ways out — a tile, a map to go to, and
+      where to arrive — placed in the editor. The vale and the standing stones
+      ship as two authored maps with a road between them. **A map you leave
+      forgets what you did there**; carrying every visited map is the item
+      below.
+      *Verification: walking between two authored maps preserves party, clock,
+      inventory, words learned, quest progress and the RNG — and a way out that
+      leads nowhere leaves the world exactly as it was.*
+- [ ] **A world that remembers.** Today a map is re-read from disk on the way
+      back into it, so an item taken off one map's floor and a brigand killed on
+      it are both undone by leaving and returning. Every visited map has to be
+      carried in the save.
+      *Verification: drop something in one map, cross to another and back, and
+      find it where it was left.*
 - [ ] **The main storyline.** *Verification: playable start to finish.*
 
 ## Phase 4 — Fit and finish

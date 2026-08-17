@@ -73,6 +73,19 @@ typedef struct {
     uint8_t schedn;
 } gg_map_actor;
 
+// A way out of this map and into another. Stepping on (x, y) takes you to
+// `to` at (to_x, to_y) - a cave mouth, a gate, the edge of a road.
+//
+// `to` is a leaf name, not a path: the simulation must not know where content
+// lives on disk, so it says which map and the frontend says where that is.
+#define GG_PORTALS_MAX 32
+
+typedef struct {
+    int16_t x, y;
+    char    to[GG_MAP_NAME_MAX];
+    int16_t to_x, to_y;
+} gg_portal;
+
 typedef struct {
     int  w, h;
     gg_cell *cell;                     // w*h, row-major
@@ -87,6 +100,9 @@ typedef struct {
 
     gg_map_actor   actor[GG_MAP_ACTORS_MAX];
     int            actors;
+
+    gg_portal      portal[GG_PORTALS_MAX];
+    int            portals;
 } gg_map;
 
 // --- things on the ground --------------------------------------------------
@@ -100,6 +116,10 @@ bool gg_ground_drop(gg_map *m, int x, int y, gg_item_id kind, int count);
 
 // Removes the pile at `index`, closing the gap.
 void gg_ground_remove(gg_map *m, int index);
+
+// The portal on (x, y), or nullptr. Linear over at most GG_PORTALS_MAX, and
+// asked once per step.
+const gg_portal *gg_portal_at(const gg_map *m, int x, int y);
 
 // --- terrain properties ----------------------------------------------------
 // One row per gg_tile_id. Kept as a table rather than a switch so the level
@@ -185,11 +205,11 @@ bool gg_map_generate(gg_map *m, int w, int h, uint32_t seed);
 // neither has map content compiled in. See docs/COMPLETION_PLAN.md for why
 // this exists before there is much content to put in it.
 #define GG_MAP_MAGIC   "GGMAP\0\0\0"
-// Version 2 added the things lying on the ground; version 3 added the people.
-// There is no migration between any of them: no map file older than the current
-// one exists outside a test, and a reader that guesses at a missing section is
-// worse than one that says no.
-#define GG_MAP_VERSION 3
+// Version 2 added the things lying on the ground, 3 the people, 4 the ways out
+// into other maps. There is no migration between any of them: no map file older
+// than the current one exists outside a test, and a reader that guesses at a
+// missing section is worse than one that says no.
+#define GG_MAP_VERSION 4
 
 bool gg_map_save(const gg_map *m, const char *path);
 bool gg_map_load(gg_map *m, const char *path);

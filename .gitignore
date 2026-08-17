@@ -23,5 +23,8 @@ __pycache__/
 
 # Saves and generated maps land in the pref directory, but a stray one here
 # would be committed by a careless `git add -A`.
+# Maps a person makes while playing about are theirs, not the project's - but
+# the ones the vale actually ships are content, and are committed.
 *.ggmap
+!assets/maps/*.ggmap
 *.ggsave

@@ -23,6 +23,7 @@ typedef enum {
     GG_TOOL_SCHEDULE,   // give the selected person somewhere to be
     GG_TOOL_REGION,     // drag out a named area
     GG_TOOL_START,      // where a new game begins
+    GG_TOOL_PORTAL,     // a way out, into another map
     GG_TOOL_COUNT
 } gg_tool;
 
@@ -47,6 +48,12 @@ typedef struct {
     // hours is being placed next.
     int actor;
     int sched_slot;
+
+    // Where the portal tool's next way out leads. Set with gg_edit_link_to
+    // rather than typed, because the editor has no text entry yet - a named
+    // gap, and the reason the editor takes --link on its command line.
+    char portal_to[GG_MAP_NAME_MAX];
+    int  portal_x, portal_y;
 
     // A region being dragged out. Two corners, and the second follows the
     // mouse until it is let go.
@@ -92,6 +99,10 @@ int gg_edit_actor_at(const gg_editor *e, int x, int y);
 
 // Names the selected person. Ignored if nobody is selected.
 void gg_edit_name_actor(gg_editor *e, const char *name);
+
+// Where the portal tool's next way out will lead: a map's leaf name and a tile
+// in it. Portals placed after this all go there until it is changed again.
+void gg_edit_link_to(gg_editor *e, const char *map, int x, int y);
 
 // --- checking --------------------------------------------------------------
 // Everything wrong with the map that would matter to the game, written into

@@ -87,6 +87,22 @@ jobs:
             test -s "screen-$s.bmp" || { echo "$s drew nothing"; exit 1; }
           done
 
+      # Two shipped maps with ways out into each other. The crossing itself is
+      # checked by the unit tests; this is that the maps on disk are ones the
+      # game will actually open and walk between.
+      - name: Smoke test - walking between two maps
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_RENDER_DRIVER: software
+          SDL_AUDIODRIVER: dummy
+        run: |
+          ./build/gigantima --map assets/maps/vale.ggmap --profile CIWalk --new \
+            --play --shot-at 0 --screen travel --shot travel.bmp > travel.log 2>&1
+          cat travel.log
+          test -s travel.bmp || { echo "the crossing drew nothing"; exit 1; }
+          grep -q "The Standing Stones" travel.log || {
+            echo "walking north did not arrive at the other map"; exit 1; }
+
       # The editor is a second binary on the same core, and it has to keep
       # building and drawing. The map it authors being playable is checked by
       # the unit tests; this is the window.
@@ -150,6 +166,7 @@ jobs:
             smoke.bmp
             screen-*.bmp
             editor.bmp
+            travel.bmp
 
   rocky:
     name: Linux x86_64 (GCC 14, RHEL family)
