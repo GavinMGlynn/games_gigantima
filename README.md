@@ -4,14 +4,14 @@ An Ultima VI-style seamless-world RPG in C23 and SDL3.
 
 [![ci](https://github.com/GavinMGlynn/games_gigantima/actions/workflows/ci.yml/badge.svg)](https://github.com/GavinMGlynn/games_gigantima/actions/workflows/ci.yml)
 
-> **Status: early.** The engine works end to end — a generated continent with
-> autotiled shorelines and terrain, a town of houses you can walk into,
-> townsfolk who path around the buildings to keep daily schedules, a world
-> clock with lit rooms at night, and a HUD. There is no story, no combat, no
-> magic, no inventory interaction, no saving and no sound yet.
-> `docs/PROJECT_STATUS.md` is the single source of truth for what works;
-> `docs/COMPLETION_PLAN.md` is the road to the rest. Nothing here claims more
-> than it has earned.
+> **Status: early.** The engine works end to end — a title screen and named
+> journeys that save and resume, a generated continent with autotiled shorelines
+> and terrain, a town of houses you can walk into, townsfolk who path around the
+> buildings to keep daily schedules, a world clock with lit rooms at night, and
+> things you can pick up, carry, eat and set down again. There is no story, no
+> combat, no magic, no sound and no editor yet. `docs/PROJECT_STATUS.md` is the
+> single source of truth for what works; `docs/COMPLETION_PLAN.md` is the road
+> to the rest. Nothing here claims more than it has earned.
 
 ## What "Ultima VI-style" means here
 
@@ -79,6 +79,9 @@ by being the thing CI actually runs.
 | `T` | talk to whoever you face |
 | `L` | look at what you stand on |
 | `O` | open |
+| `G` | take what is underfoot |
+| `I` | what thou carriest |
+| `U` / `R` / `P` | use it, ready it, put it down |
 | `Space` / `.` | wait a turn |
 | `F5` | save |
 | `F1` | debug window |
@@ -86,8 +89,10 @@ by being the thing CI actually runs.
 | `Esc` | pause |
 
 A gamepad works for all of it, hot-plugged, with the sticks and the d-pad both
-driving movement: **A** talks, **B** waits, **X** looks, **Y** opens, and
-**Start** pauses.
+driving movement: **A** talks, **B** waits, **X** looks, **Y** opens, **Back**
+opens the pack and **Start** pauses. Inside the pack those same four face
+buttons carry the pack's verbs instead — **A** uses, **Y** readies, **X** sets
+down, **B** closes.
 
 The game opens on a title screen. Continue picks up the most recent journey,
 New journey asks for a name, and Journeys lists everything saved with its day,
@@ -104,6 +109,11 @@ the title; `--new` starts that profile over rather than resuming.
 Walking into somebody talks to them, as Ultima VI did — the common case needs
 no key at all.
 
+People leave things about their houses, and apples fall under trees. Everything
+you carry has a weight, and thirty stone is all anyone can manage — a bar of
+silver is four of them, so a hoard is a decision rather than a total. Ready a
+torch and it lights the room; put it away and the night closes back in.
+
 ### Command line
 
 ```
@@ -119,10 +129,11 @@ window, writes a single frame and exits, which is how CI checks that the game
 can still find and draw its own art — it photographs whatever the other flags
 select, so `--shot` alone gets the title screen and `--debug --shot` gets the
 debug view; `--screen NAME` opens a named page — `title`, `profiles`, `name`,
-`options`, `play` or `pause` — so each one can be photographed in turn. `--at X,Y` and `--time HH:MM` put the avatar somewhere specific at
-a specific hour, because verifying a change to how water is drawn means getting
-to water, and checking that a lit room differs from the street at night means
-getting to night without walking there. `--map` plays an authored `.ggmap`,
+`options`, `play`, `pause` or `pack` — so each one can be photographed in turn.
+`--at X,Y` and `--time HH:MM` put the avatar somewhere specific at a specific
+hour, because verifying a change to how water is drawn means getting to water,
+and checking that a lit room differs from the street at night means getting to
+night without walking there. `--map` plays an authored `.ggmap`,
 which is how the shoreline corners were checked against coastlines the
 generator would smooth away.
 

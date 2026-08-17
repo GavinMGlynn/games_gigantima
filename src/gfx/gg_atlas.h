@@ -57,6 +57,16 @@ static const gg_rect GG_PROP_RECT[GG_PROP_COUNT] = {
     [GG_PROP_HOUSE_PANELED] = {  192,  384, 160, 160 },
 };
 
+// atlas_items.png - the things that can be picked up.
+static const gg_rect GG_ITEM_RECT[GG_ITEM_COUNT] = {
+    [GG_ITEM_BREAD] = {    0,    0,  32,  32 },
+    [GG_ITEM_APPLE] = {   32,    0,  32,  32 },
+    [GG_ITEM_POTION] = {   64,    0,  32,  32 },
+    [GG_ITEM_TORCH] = {   96,    0,  32,  64 },
+    [GG_ITEM_GOLD] = {  128,    0,  32,  32 },
+    [GG_ITEM_SILVER] = {  160,    0,  32,  32 },
+};
+
 #define GG_ACTOR_FRAME   64
 // Top-left of each actor's block; add facing*FRAME to y, frame*FRAME to x.
 static const gg_rect GG_ACTOR_RECT[GG_ACTOR_COUNT] = {

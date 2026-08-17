@@ -12,11 +12,12 @@ buried in a later clause. See `CLAUDE.md`.
 ## In one line
 
 An engine, not yet a game: from a title screen you can start or resume a named
-journey, walk a generated continent, enter a town, go inside its houses, and
+journey, walk a generated continent, enter a town, go inside its houses, pick up
+what people have left lying about, eat it or carry it or set it down again, and
 watch eight townsfolk path around the buildings to keep daily schedules under a
-day/night cycle. Pausing, saving and quitting are all on a menu, and every page
-works from a gamepad alone, naming included. There is **no story, no combat, no
-magic, no usable inventory, no sound and no editor**.
+day/night cycle. Hold a torch and it lights the room. Pausing, saving and
+quitting are all on a menu, and every page works from a gamepad alone, naming
+included. There is **no story, no combat, no magic, no sound and no editor**.
 
 ---
 
@@ -78,11 +79,16 @@ editor.
 
 ### Map file format
 
-Version 1, little-endian, fixed-width. Round-trips byte for byte. A file that
-is not a map, is truncated, is a future version, or claims implausible
-dimensions is rejected with a named message and without leaking the partial
-allocation. Terrain and prop ids are clamped on load, so a corrupt file cannot
-index off the end of the tile tables.
+Version 2, little-endian, fixed-width. Round-trips byte for byte — the cells and
+the things lying on the ground alike. A file that is not a map, is truncated, is
+a different version, or claims implausible dimensions is rejected with a named
+message and without leaking the partial allocation. Terrain and prop ids are
+clamped on load, and an item id past the table or a pile lying off the map is
+refused outright, so a corrupt file cannot index off the end of anything.
+
+Version 2 added the ground items and does **not** read version 1. Nothing
+outside a test ever wrote one, and a reader that guesses at a missing section is
+worse than one that says no.
 
 **Nothing writes one yet except the tests.** The editor that is the point of
 having a format does not exist.
@@ -407,6 +413,74 @@ world, "that will do" in a menu — and so has to be readable from either drain.
 
 *Verification: `the_pad_feeds_the_world_and_the_menus_separately`.*
 
+### Things, and carrying them
+
+An **item** is a kind generated from the art by the same pass that bakes the
+props — `GG_ITEM[]` in `gg_ids.c` carries its name, weight, what using it does,
+and where it can be held — so adding one is a line in `tools/make_atlas.py`, not
+a code change. Six exist: bread, apples, a phial of red liquor, torches, gold
+coins and bars of silver.
+
+**Things lying on the ground live in the map**, not in the game, as a list of
+(x, y, kind, count). That is what makes picking one up take it *out of the
+world* rather than out of a parallel bookkeeping, and it is why the editor will
+be able to place treasure. Map format version 2 carries them.
+
+**The pack is slots**, each a kind and a count, rather than a counter per kind.
+That is the shape a container model grows out of without the save file changing
+meaning. What is held is a **pack index** per slot, not an item id, so holding
+one of three torches is unambiguous — and emptying a slot repairs the indices,
+because the last slot moves down into the gap and a held torch would otherwise
+silently become a held loaf.
+
+**Weight is in hundredths of a stone.** That unit is chosen so a coin weighs 1
+and stays an integer: a purse is light, a bar of silver is four stone, and
+thirty stone is all anyone can carry. Picking up is deliberately partial — a
+player standing on a hoard gets an armful rather than a refusal.
+
+The verbs are **get, drop, use, ready** — Ultima's own, less the ones WASD has
+claimed, so dropping is `P` and equipping is `R`. `G` takes, `I` opens the pack,
+and inside it the same four face buttons a pad uses in the world carry the
+pack's verbs instead, so neither device is the poor relation. **The pack cursor
+lives in the simulation**, not the UI, so a replay file will drive all of it
+through the same door as a keypress.
+
+Two things the world taught, both found by probing a generated town rather than
+by reasoning:
+
+- The first scattering rule put **one item in a 192×160 map**. Six houses, a
+  one-in-three chance each. It is now one or two per house, plus windfalls under
+  trees and lost change on roads.
+- A tile can hold **more than one kind**, and the lookup only ever finds the
+  first — so taking one and stopping stranded the rest for good. Taking now
+  clears the tile.
+
+**A torch is the only thing that can be held**, and it is the one piece of
+equipment that does something: the avatar's light radius comes from it, so
+holding one lights a room and stowing it puts the light out. That is the same
+rule every other emitter follows — light comes from an object — applied to the
+object the player carries. Empty hands still reach one tile, so a player who
+drops their last torch is in the dark but never blind. There are no weapons or
+armour, because there is no combat for them to affect and a control that
+modifies nothing is worse than one that is absent.
+
+*Verification:
+`an_item_taken_off_the_ground_is_in_the_pack_and_gone_from_the_map` (the plan's
+own, including the save round trip), `what_is_set_down_is_where_it_was_set_down`,
+`taking_from_a_tile_clears_everything_on_it`,
+`a_second_pile_on_one_tile_joins_the_first`,
+`a_pack_will_not_hold_more_than_it_can_carry`,
+`eating_costs_the_food_and_mends_the_eater`,
+`what_is_held_stays_held_through_the_pack_shifting`,
+`only_things_meant_to_be_held_can_be_held`,
+`every_item_is_one_the_rules_can_handle`, and
+`the_avatar_carries_a_light_that_falls_off` (rewritten: empty hands reach one
+tile, a held torch reaches the torch's radius, and stowing it puts the light
+out). Three of these were checked by breaking the rule they pin — dropping the
+held-index repair, the map removal, and the weight check — and confirming each
+failed. Plus `--shot` frames of an apple lying where it fell, the pack panel,
+and the same night scene with a torch held and stowed.*
+
 ### Screens
 
 Six: title, journeys, naming, options, world, paused. The pages own their own
@@ -521,12 +595,13 @@ Named plainly, because a reader should not have to infer absence:
 | Story, quests, journal | nothing at all |
 | Combat | nothing at all |
 | Magic | nothing at all |
-| Inventory | a table of six counters shown in the HUD; nothing can be used, picked up or dropped |
+| Weapons and armour | nothing. The slot system takes any number of slots; a light is the only one anything fills, because there is no combat for a sword to affect |
+| Trade | nothing. Items carry a value in copper, and no one buys or sells |
 | Conversation | a greeting and a panel. No keywords, no topics, no branching |
 | Sound | nothing. `ext/sdl_mixer` is pinned but not linked, and the options page says so where the volume rows would be |
 | Level editor | nothing. The map format exists for it |
 | Party | the avatar is alone |
-| Screens not yet needed | no journal, character sheet, pack or map page — there is nothing yet for them to show |
+| Screens not yet needed | no journal, character sheet or map page — there is nothing yet for them to show |
 
 ---
 

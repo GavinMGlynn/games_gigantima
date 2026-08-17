@@ -102,10 +102,16 @@ found, not when someone remembers.
       *Verification: every screen reachable and leavable by keyboard and by
       gamepad alone, including naming a new journey; and a `--shot` frame per
       screen, taken in CI.*
-- [ ] **Inventory that exists.** Pick up, drop, use, equip; weight or bulk. The
-      current six counters are display only.
+- [x] **Inventory that exists.** Pick up, drop, use, equip, and a weight limit
+      that bites. Items are things in the world with their own art, scattered
+      through houses and under trees; the kinds are generated from the art
+      alongside the props, so adding one is not a code change. **The only thing
+      that can be held is a light** — a torch, which lights what you can see —
+      because a sword that modified nothing would be a control that does
+      nothing; weapons and armour land with combat.
       *Verification: an item picked off the ground appears in the pack and is
-      gone from the map, and survives a save/load.*
+      gone from the map, and survives a save/load; and the pack tests, which
+      were each checked by breaking the rule they pin and watching them fail.*
 - [ ] **Keyword conversation.** Ultima's topic system: ask about a word, learn
       new words, some gated on flags. Dialogue in data, not C.
       *Verification: a conversation defined entirely in a data file, with a

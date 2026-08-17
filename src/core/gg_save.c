@@ -198,8 +198,14 @@ bool gg_save_write(const gg_game *g, const char *base, const char *name) {
                gg_io_w32(io, g->day);
     ok = ok && gg_io_w32(io, (uint32_t)g->hp) && gg_io_w32(io, (uint32_t)g->hp_max);
     ok = ok && gg_io_w32(io, (uint32_t)g->level) && gg_io_w32(io, (uint32_t)g->exp);
-    for (int i = 0; ok && i < GG_ITEM_COUNT; i++)
-        ok = gg_io_w32(io, (uint32_t)g->item[i]);
+    // The pack, then what is held. Slot indices rather than item ids, which is
+    // what the game holds, so a save and a running game say the same thing.
+    ok = ok && gg_io_w32(io, (uint32_t)g->packn);
+    for (int i = 0; ok && i < g->packn; i++)
+        ok = gg_io_w32(io, (uint32_t)g->pack[i].kind) &&
+             gg_io_w32(io, (uint32_t)g->pack[i].count);
+    for (int s = 0; ok && s < GG_SLOT_COUNT; s++)
+        ok = gg_io_w32(io, (uint32_t)(g->equipped[s] + 1));   // biased: 0 is "nothing"
     ok = ok && gg_io_w32(io, (uint32_t)g->player);
     ok = ok && SDL_WriteIO(io, g->profile, sizeof g->profile) == sizeof g->profile;
 
@@ -256,10 +262,30 @@ bool gg_save_read(gg_game *g, const char *base, const char *name) {
                gg_io_r32(io, &tmp.day);
     ok = ok && gg_io_r32(io, &hp) && gg_io_r32(io, &hpmax) &&
                gg_io_r32(io, &lvl) && gg_io_r32(io, &exp);
-    for (int i = 0; ok && i < GG_ITEM_COUNT; i++) {
-        uint32_t v = 0;
-        ok = gg_io_r32(io, &v);
-        tmp.item[i] = (int)v;
+    uint32_t packn = 0;
+    ok = ok && gg_io_r32(io, &packn) && packn <= GG_PACK_MAX;
+    for (uint32_t i = 0; ok && i < packn; i++) {
+        uint32_t kind = 0, count = 0;
+        ok = gg_io_r32(io, &kind) && gg_io_r32(io, &count);
+        // This file may not be ours: a kind past the table would index off the
+        // end of GG_ITEM the moment anything asked what it weighed.
+        if (ok && (kind >= GG_ITEM_COUNT || count == 0 || count > 255)) {
+            SDL_Log("gigantima: %s carries an item this build does not know", path);
+            ok = false;
+        }
+        if (ok) {
+            tmp.pack[i].kind = (uint8_t)kind;
+            tmp.pack[i].count = (uint8_t)count;
+        }
+    }
+    tmp.packn = ok ? (int)packn : 0;
+    for (int s = 0; ok && s < GG_SLOT_COUNT; s++) {
+        uint32_t held = 0;
+        ok = gg_io_r32(io, &held);
+        // Biased by one on the way out, so zero means nothing is held. Anything
+        // pointing past the pack is treated as nothing rather than trusted.
+        tmp.equipped[s] = (ok && held > 0 && (int)held <= tmp.packn)
+                        ? (int)held - 1 : -1;
     }
     ok = ok && gg_io_r32(io, &player);
     ok = ok && SDL_ReadIO(io, tmp.profile, sizeof tmp.profile) == sizeof tmp.profile;

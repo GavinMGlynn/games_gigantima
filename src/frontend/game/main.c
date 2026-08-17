@@ -192,6 +192,8 @@ static void draw(gg_app *app) {
         gg_ui_hud(&app->game, app->ren);
         if (app->game.mode == GG_MODE_CONVERSE)
             gg_ui_converse(&app->game, app->ren);
+        else if (app->game.mode == GG_MODE_PACK)
+            gg_ui_pack(&app->game, app->ren, gg_render_items());
     }
 
     if (app->screens.id != GG_SCREEN_PLAY)
@@ -486,6 +488,10 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
             { "options",  GG_SCREEN_OPTIONS },
             { "pause",    GG_SCREEN_PAUSE },
             { "play",     GG_SCREEN_PLAY },
+            // The pack is a mode of the world rather than a screen of its own,
+            // but it is a page the player looks at, so --shot has to be able to
+            // photograph it like the rest.
+            { "pack",     GG_SCREEN_PLAY },
         };
         bool known = false;
         for (size_t k = 0; k < GG_COUNTOF(NAMED); k++)
@@ -725,6 +731,11 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
         if (app->started && app->game.turn < app->shot_at)
             SDL_Log("gigantima: capture stalled at turn %u of %u",
                     app->game.turn, app->shot_at);
+        // Opened after the turns have been played, not before: the loop above
+        // acts on the world, and in the pack those same actions close it.
+        if (app->screen_name && SDL_strcmp(app->screen_name, "pack") == 0)
+            app->game.mode = GG_MODE_PACK;
+
         // With --debug, capture the debug window rather than the game: that is
         // the view you wanted a picture of, and it is otherwise unreachable
         // from a headless run. Same convention as gavaga.

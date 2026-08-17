@@ -183,6 +183,41 @@ bool gg_prop_interior_contains(gg_prop_id p, int ax, int ay, int x, int y) {
 // to run against. The hand-authored world arrives with the editor; see
 // docs/COMPLETION_PLAN.md.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Things on the ground
+// ---------------------------------------------------------------------------
+int gg_ground_at(const gg_map *m, int x, int y) {
+    for (int i = 0; i < m->grounds; i++)
+        if (m->ground[i].x == x && m->ground[i].y == y) return i;
+    return -1;
+}
+
+void gg_ground_remove(gg_map *m, int index) {
+    if (index < 0 || index >= m->grounds) return;
+    m->ground[index] = m->ground[--m->grounds];
+}
+
+bool gg_ground_drop(gg_map *m, int x, int y, gg_item_id kind, int count) {
+    if (count <= 0 || !gg_map_in_bounds(m, x, y)) return false;
+
+    // Merge with what is already underfoot when it is the same kind, so a
+    // player dropping coins twice does not leave two piles on one tile.
+    const int here = gg_ground_at(m, x, y);
+    if (here >= 0 && m->ground[here].kind == kind) {
+        const int total = m->ground[here].count + count;
+        m->ground[here].count = (uint8_t)(total > 255 ? 255 : total);
+        return true;
+    }
+    if (m->grounds >= GG_GROUND_MAX) return false;
+
+    gg_ground_item *g = &m->ground[m->grounds++];
+    g->x = (int16_t)x;
+    g->y = (int16_t)y;
+    g->kind = (uint8_t)kind;
+    g->count = (uint8_t)(count > 255 ? 255 : count);
+    return true;
+}
+
 static void set_terrain(gg_map *m, int x, int y, gg_tile_id t) {
     gg_cell *c = gg_map_at(m, x, y);
     if (!c) return;
@@ -415,6 +450,62 @@ static void furnish(gg_map *m, gg_rng *rng, gg_prop_id house, int hx, int hy) {
         // one fewer item rather than a stack of them.
         gg_map_place_prop(m, x, y, STUFF[gg_rand_belowi(rng, (int)GG_COUNTOF(STUFF))]);
     }
+
+    // Somebody lives here, so there is something of theirs on the floor. Small
+    // things, and only sometimes - a house with a bar of silver lying in it
+    // every time is a house nobody would ever leave.
+    static const struct { uint8_t kind; uint8_t least, most; } LEFT_ABOUT[] = {
+        { GG_ITEM_BREAD,  1, 2 },
+        { GG_ITEM_APPLE,  1, 3 },
+        { GG_ITEM_GOLD,   3, 20 },
+        { GG_ITEM_TORCH,  1, 2 },
+        { GG_ITEM_POTION, 1, 1 },
+    };
+    // One or two things per house. Sparser than this and a player can search
+    // a whole town and find nothing, which is how the first pass went: six
+    // houses, a one-in-three chance each, and a single pile in the map.
+    const int things = gg_rand_range(rng, 1, 2);
+    for (int i = 0; i < things; i++) {
+        const int k = gg_rand_belowi(rng, (int)GG_COUNTOF(LEFT_ABOUT));
+        const int x = gg_rand_range(rng, rx0, rx1);
+        const int y = gg_rand_range(rng, ry0, ry1);
+        if (x != door_col && gg_map_walkable(m, x, y))
+            gg_ground_drop(m, x, y, (gg_item_id)LEFT_ABOUT[k].kind,
+                           gg_rand_range(rng, LEFT_ABOUT[k].least,
+                                         LEFT_ABOUT[k].most));
+    }
+}
+
+// Windfalls under the trees, and the odd coin dropped on the road. The point is
+// that the wilderness is worth looking at, not that it is a larder: an apple
+// beside a trunk reads as something that fell, and a coin on a road as
+// something somebody lost.
+static void scatter_windfall(gg_map *m, gg_rng *rng, int count) {
+    for (int i = 0; i < count; i++) {
+        const int x = gg_rand_belowi(rng, m->w);
+        const int y = gg_rand_belowi(rng, m->h);
+        if (!gg_map_walkable(m, x, y)) continue;
+        if (gg_ground_at(m, x, y) >= 0) continue;
+
+        const gg_cell *c = gg_map_at_const(m, x, y);
+        if (!c || (c->flags & GG_CELL_INDOORS)) continue;
+
+        // A tree next door makes it a windfall; a road makes it lost change.
+        bool wooded = false;
+        for (int oy = -1; oy <= 1 && !wooded; oy++)
+            for (int ox = -1; ox <= 1 && !wooded; ox++) {
+                const gg_cell *n = gg_map_at_const(m, x + ox, y + oy);
+                if (n && GG_HAS_PROP(n)) {
+                    const gg_prop_id p = GG_PROP_OF(n);
+                    wooded = (p >= GG_PROP_TREE_OAK && p <= GG_PROP_TREE_BARE);
+                }
+            }
+
+        if (wooded)
+            gg_ground_drop(m, x, y, GG_ITEM_APPLE, gg_rand_range(rng, 1, 2));
+        else if (c->terrain == GG_TILE_ROAD)
+            gg_ground_drop(m, x, y, GG_ITEM_GOLD, gg_rand_range(rng, 1, 6));
+    }
 }
 
 // Puts a house down with its anchor at (x, y), and lays a patch of trodden
@@ -531,6 +622,7 @@ bool gg_map_generate(gg_map *m, int w, int h, uint32_t seed) {
 
     scatter_forest(m, &rng, w * h / 900);
     scatter_undergrowth(m, &rng, w * h / 220);
+    scatter_windfall(m, &rng, w * h / 260);
 
     const int tw = 34, th = 26;
     const int tx = gg_clampi(w / 2 - tw / 2, 2, w - tw - 2);
@@ -615,6 +707,15 @@ bool gg_map_write(const gg_map *m, SDL_IOStream *io) {
 
     const size_t bytes = (size_t)m->w * (size_t)m->h * sizeof *m->cell;
     ok = ok && SDL_WriteIO(io, m->cell, bytes) == bytes;
+
+    // Things lying about, after the cells: a reader that gave up on the grid
+    // never reaches them, and the grid is the part worth failing fast on.
+    ok = ok && gg_io_w32(io, (uint32_t)m->grounds);
+    for (int i = 0; ok && i < m->grounds; i++) {
+        const gg_ground_item *it = &m->ground[i];
+        ok = gg_io_w32(io, (uint32_t)it->x) && gg_io_w32(io, (uint32_t)it->y) &&
+             gg_io_w32(io, it->kind) && gg_io_w32(io, it->count);
+    }
     return ok;
 }
 
@@ -677,6 +778,28 @@ bool gg_map_read(gg_map *m, SDL_IOStream *io) {
 
     const size_t bytes = (size_t)m->w * (size_t)m->h * sizeof *m->cell;
     ok = ok && SDL_ReadIO(io, m->cell, bytes) == bytes;
+
+    uint32_t grounds = 0;
+    ok = ok && gg_io_r32(io, &grounds) && grounds <= GG_GROUND_MAX;
+    for (uint32_t i = 0; ok && i < grounds; i++) {
+        uint32_t gx = 0, gy = 0, kind = 0, count = 0;
+        ok = gg_io_r32(io, &gx) && gg_io_r32(io, &gy) &&
+             gg_io_r32(io, &kind) && gg_io_r32(io, &count);
+        // This file may not be ours. A kind past the table would index off the
+        // end of GG_ITEM, and a pile off the map could never be picked up.
+        if (ok && (kind >= GG_ITEM_COUNT || count == 0 || count > 255 ||
+                   !gg_map_in_bounds(m, (int)(int32_t)gx, (int)(int32_t)gy))) {
+            SDL_Log("gigantima: the map holds an item this build cannot place");
+            ok = false;
+        }
+        if (ok) {
+            m->ground[i].x = (int16_t)(int32_t)gx;
+            m->ground[i].y = (int16_t)(int32_t)gy;
+            m->ground[i].kind = (uint8_t)kind;
+            m->ground[i].count = (uint8_t)count;
+        }
+    }
+    m->grounds = ok ? (int)grounds : 0;
 
     if (!ok) {
         SDL_Log("gigantima: the map is truncated");

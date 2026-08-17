@@ -16,6 +16,7 @@ typedef enum {
     GG_MODE_TITLE,       // title screen, before a world exists
     GG_MODE_PLAY,        // walking the world
     GG_MODE_CONVERSE,    // talking to somebody
+    GG_MODE_PACK,        // looking through what you carry
     GG_MODE_GAMEOVER,
 } gg_mode;
 
@@ -30,6 +31,18 @@ typedef enum {
     GG_ACT_TALK,
     GG_ACT_LOOK,
     GG_ACT_OPEN,
+
+    // The pack. GET acts on the ground; the rest act on whichever slot the
+    // pack's cursor is on, and the cursor is moved with the ordinary direction
+    // actions while the pack is open. Keeping the cursor in the simulation
+    // rather than in the UI is what lets a replay file drive all of this
+    // through the same door as a keypress - see the deterministic-replay item.
+    GG_ACT_GET,
+    GG_ACT_PACK,
+    GG_ACT_USE,
+    GG_ACT_EQUIP,
+    GG_ACT_DROP,
+
     GG_ACT_COUNT
 } gg_action;
 
@@ -41,16 +54,27 @@ typedef enum {
 #define GG_LOG_LINES 5
 #define GG_LOG_WIDTH 96
 
-// Inventory is a fixed table for now. A container model - Ultima VII's bags
-// inside bags - is a named item in docs/COMPLETION_PLAN.md; this is the flat
-// version that the HUD and the save file can be built against meanwhile.
-typedef enum {
-    GG_ITEM_FOOD, GG_ITEM_GOLD, GG_ITEM_TORCH, GG_ITEM_KEY,
-    GG_ITEM_GEM, GG_ITEM_POTION,
-    GG_ITEM_COUNT
-} gg_item_id;
+// --- the pack --------------------------------------------------------------
+// `gg_item_id` and the table describing each kind are generated from the art by
+// tools/make_atlas.py - see core/gg_ids.h. What lives here is what the player
+// is carrying.
+//
+// Slots rather than a counter per kind: a slot holds one kind and a count, and
+// two slots may hold the same kind once stacking is refused. That is the shape
+// a container model - Ultima VII's bags inside bags, a named plan item - grows
+// out of without the save file having to change meaning.
+#define GG_PACK_MAX 24
 
-extern const char *const GG_ITEM_NAME[GG_ITEM_COUNT];
+// What can be carried, in the hundredths of a stone the item table uses: 30
+// stone. A constant rather than a function of strength because there is no
+// strength stat yet. When there is, this becomes a function of it and nothing
+// else here changes.
+#define GG_CARRY_MAX 3000
+
+typedef struct {
+    uint8_t kind;      // gg_item_id
+    uint8_t count;     // never zero: an empty slot is removed, not kept
+} gg_pack_slot;
 
 typedef struct {
     gg_map   map;
@@ -74,7 +98,14 @@ typedef struct {
     // stats that matter are not settled yet - see the plan.
     int  hp, hp_max;
     int  level, exp;
-    int  item[GG_ITEM_COUNT];
+
+    // What is carried, what the pack screen is looking at, and what is held.
+    // `equipped` holds a pack index per slot, or -1. An index rather than an
+    // item id, so that holding one of three torches is unambiguous.
+    gg_pack_slot pack[GG_PACK_MAX];
+    int          packn;
+    int          pack_cursor;
+    int          equipped[GG_SLOT_COUNT];
 
     // Who we are talking to, while mode == GG_MODE_CONVERSE.
     int  talking_to;
@@ -142,5 +173,37 @@ void gg_log(gg_game *g, SDL_PRINTF_FORMAT_STRING const char *fmt, ...)
 // Maps a direction action to a tile delta. Returns false for non-movement
 // actions, which is how the caller tells them apart.
 bool gg_action_delta(gg_action a, int *dx, int *dy);
+
+// --- the pack --------------------------------------------------------------
+// How many of a kind are carried, across every slot holding it.
+int gg_pack_count(const gg_game *g, gg_item_id kind);
+
+// What is carried, in hundredths of a stone. Compare against GG_CARRY_MAX.
+int gg_pack_weight(const gg_game *g);
+
+// The first slot holding `kind`, or -1.
+int gg_pack_find(const gg_game *g, gg_item_id kind);
+
+// Puts `count` of `kind` in the pack, stacking where the kind allows it.
+// Returns how many were actually taken - fewer than asked if the weight or the
+// slots ran out, and zero if none would fit. Partial rather than all-or-nothing
+// because a player standing on a hundred coins should get as many as they can
+// carry, not none of them.
+int gg_pack_add(gg_game *g, gg_item_id kind, int count);
+
+// Takes `count` from slot `index`. Returns how many were removed. Keeps
+// `equipped` correct: emptying a slot unequips it, and the indices above it
+// shift down.
+int gg_pack_take(gg_game *g, int index, int count);
+
+// Whether the slot holds something, and what is in it.
+static inline bool gg_pack_slot_ok(const gg_game *g, int i) {
+    return i >= 0 && i < g->packn;
+}
+
+// How far the player's own light reaches: from whatever is held in the light
+// slot, or a hand's breadth if nothing is. Never zero, so a player who drops
+// their last torch underground is in the dark but not blind.
+int gg_light_radius(const gg_game *g);
 
 #endif // GG_GAME_H

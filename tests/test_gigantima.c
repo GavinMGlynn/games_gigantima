@@ -168,6 +168,22 @@ static void a_saved_map_reloads_byte_for_byte(void) {
                      (size_t)a.w * (size_t)a.h * sizeof *a.cell) == 0,
           "cells changed across the round trip");
 
+    // Things lying on the ground are part of the map, so they are part of what
+    // "byte for byte" has to mean. Deliberately built up first if the generator
+    // happened to leave none: a round-trip test of an empty list proves nothing.
+    if (a.grounds == 0) {
+        CHECK(gg_ground_drop(&a, 1, 1, GG_ITEM_GOLD, 7), "could not seed a pile");
+        CHECK(gg_map_save(&a, path), "second save failed");
+        gg_map_free(&b);
+        CHECK(gg_map_load(&b, path), "second load failed");
+    }
+    CHECK(a.grounds > 0, "nothing on the ground, so this proves nothing");
+    CHECK(a.grounds == b.grounds, "%d things on the ground became %d",
+          a.grounds, b.grounds);
+    CHECK(SDL_memcmp(a.ground, b.ground,
+                     (size_t)a.grounds * sizeof *a.ground) == 0,
+          "what was lying about changed across the round trip");
+
     SDL_RemovePath(path);
     gg_map_free(&a);
     gg_map_free(&b);
@@ -819,8 +835,20 @@ static bool games_match(const gg_game *a, const gg_game *b, const char **why) {
     if (a->rng.s != b->rng.s)     { *why = "rng"; return false; }
     if (a->player != b->player)   { *why = "player index"; return false; }
     if (a->actors != b->actors)   { *why = "actor count"; return false; }
-    for (int i = 0; i < GG_ITEM_COUNT; i++)
-        if (a->item[i] != b->item[i]) { *why = "inventory"; return false; }
+    if (a->packn != b->packn)     { *why = "pack size"; return false; }
+    for (int i = 0; i < a->packn; i++)
+        if (a->pack[i].kind != b->pack[i].kind ||
+            a->pack[i].count != b->pack[i].count) { *why = "pack"; return false; }
+    for (int s = 0; s < GG_SLOT_COUNT; s++)
+        if (a->equipped[s] != b->equipped[s]) { *why = "what is held"; return false; }
+    if (a->map.grounds != b->map.grounds) { *why = "things on the ground"; return false; }
+    for (int i = 0; i < a->map.grounds; i++)
+        if (a->map.ground[i].x != b->map.ground[i].x ||
+            a->map.ground[i].y != b->map.ground[i].y ||
+            a->map.ground[i].kind != b->map.ground[i].kind ||
+            a->map.ground[i].count != b->map.ground[i].count) {
+            *why = "a pile on the ground"; return false;
+        }
     if (SDL_strcmp(a->profile, b->profile) != 0) { *why = "profile"; return false; }
 
     for (int i = 0; i < a->actors; i++) {
@@ -858,7 +886,16 @@ static void a_saved_game_resumes_exactly_where_it_was_left(void) {
     // Play a while, so the save is of a world in motion rather than a fresh
     // one: the clock has turned, residents have walked, the RNG has advanced.
     for (int t = 0; t < 250; t++) gg_game_act(&a, GG_ACT_WAIT);
-    a.item[GG_ITEM_GOLD] = 137;
+    // Alter what is carried, hold something, and leave something underfoot, so
+    // the save is asked to carry all three and not merely the clock.
+    gg_pack_add(&a, GG_ITEM_GOLD, 137);
+    gg_pack_add(&a, GG_ITEM_TORCH, 1);
+    a.pack_cursor = gg_pack_find(&a, GG_ITEM_TORCH);
+    gg_game_act(&a, GG_ACT_PACK);
+    gg_game_act(&a, GG_ACT_EQUIP);
+    gg_game_act(&a, GG_ACT_PACK);
+    gg_ground_drop(&a.map, gg_player_const(&a)->x, gg_player_const(&a)->y,
+                   GG_ITEM_SILVER, 2);
     a.hp = 21;
 
     CHECK(gg_save_write(&a, save_base(), who), "save failed");
@@ -1744,7 +1781,9 @@ static void a_room_is_lit_at_midnight_and_the_street_is_not(void) {
     for (int y = 0; y < g.map.h && (rx < 0 || sx < 0); y++)
         for (int x = 0; x < g.map.w && (rx < 0 || sx < 0); x++) {
             const gg_cell *c = gg_map_at_const(&g.map, x, y);
-            if (gg_dist_cheb(p->x, p->y, x, y) <= GG_LIGHT_CARRY_RADIUS) continue;
+            // Clear of whatever the avatar happens to be holding, plus a
+            // margin: the point of this test is the lamp, not the torch.
+            if (gg_dist_cheb(p->x, p->y, x, y) <= gg_light_radius(&g) + 2) continue;
             if (rx < 0 && (c->flags & GG_CELL_INDOORS)) { rx = x; ry = y; }
             if (sx < 0 && c->terrain == GG_TILE_ROAD)   { sx = x; sy = y; }
         }
@@ -1782,20 +1821,51 @@ static void the_avatar_carries_a_light_that_falls_off(void) {
                       p->x + ox, p->y + oy);
         }
 
+    // Empty-handed first. The reach is an arm's length, deliberately: a player
+    // with no torch is in the dark, but is never blind.
+    g.packn = 0;
+    for (int s = 0; s < GG_SLOT_COUNT; s++) g.equipped[s] = -1;
+    CHECK(gg_light_radius(&g) == 1,
+          "empty hands should reach one tile, got %d", gg_light_radius(&g));
+    CHECK(gg_light_at(&g, p->x, p->y, day) == GG_LIGHT_FULL,
+          "the avatar's own tile should be lit even with nothing in hand");
+    CHECK(gg_light_at(&g, p->x + 3, p->y, day) == 0,
+          "empty hands lit a tile three away");
+
+    // Now hold a torch. The radius is the torch's, out of the item table -
+    // light comes from the object, and this is the object the player carries.
+    const int torch_r = GG_ITEM[GG_ITEM_TORCH].light;
+    CHECK(gg_pack_add(&g, GG_ITEM_TORCH, 1) == 1, "could not take a torch");
+    g.pack_cursor = gg_pack_find(&g, GG_ITEM_TORCH);
+    g.mode = GG_MODE_PACK;
+    gg_game_act(&g, GG_ACT_EQUIP);
+    g.mode = GG_MODE_PLAY;
+    CHECK(gg_light_radius(&g) == torch_r,
+          "a held torch should reach %d tiles, got %d", torch_r,
+          gg_light_radius(&g));
+
     const uint8_t here = gg_light_at(&g, p->x, p->y, day);
     CHECK(here == GG_LIGHT_FULL, "the avatar's own tile should be fully lit, got %u",
           here);
 
     // Strictly decreasing out to the radius, then nothing.
     uint8_t prev = here;
-    for (int d = 1; d <= GG_LIGHT_CARRY_RADIUS; d++) {
+    for (int d = 1; d <= torch_r; d++) {
         const uint8_t at = gg_light_at(&g, p->x + d, p->y, day);
         CHECK(at < prev, "light at %d tiles (%u) did not fall below %d tiles (%u)",
               d, at, d - 1, prev);
         prev = at;
     }
-    CHECK(gg_light_at(&g, p->x + GG_LIGHT_CARRY_RADIUS + 3, p->y, day) == 0,
+    CHECK(gg_light_at(&g, p->x + torch_r + 3, p->y, day) == 0,
           "the carried light reaches further than its radius");
+
+    // And putting it away puts the light out again, which is what makes a
+    // torch worth carrying at all.
+    gg_game_act(&g, GG_ACT_PACK);
+    gg_game_act(&g, GG_ACT_EQUIP);
+    gg_game_act(&g, GG_ACT_PACK);
+    CHECK(gg_light_radius(&g) == 1,
+          "putting the torch away left the light on (%d)", gg_light_radius(&g));
     gg_game_free(&g);
 }
 
@@ -2203,6 +2273,303 @@ static void the_coastline_has_no_isolated_puddles(void) {
 }
 
 // ---------------------------------------------------------------------------
+// The pack
+// ---------------------------------------------------------------------------
+// The plan's own verification, and the one that matters: a thing taken off the
+// ground is in the pack and gone from the world, and both facts survive a save.
+static void an_item_taken_off_the_ground_is_in_the_pack_and_gone_from_the_map(void) {
+    const char *who = "Taker";
+    wipe_saves(who);
+
+    gg_game g;
+    CHECK(gg_game_new(&g, 11, who), "new game failed");
+
+    // Put a pile under the avatar's feet. Built explicitly rather than hunted
+    // for in the generated world: a test that depends on what the generator
+    // happened to scatter is a test that sometimes tests nothing.
+    const gg_actor *p = gg_player_const(&g);
+    const int x = p->x, y = p->y;
+    CHECK(gg_ground_at(&g.map, x, y) < 0, "the avatar started on top of a pile");
+    CHECK(gg_ground_drop(&g.map, x, y, GG_ITEM_SILVER, 2), "could not place the pile");
+
+    const int before = gg_pack_count(&g, GG_ITEM_SILVER);
+    gg_game_act(&g, GG_ACT_GET);
+
+    CHECK(gg_pack_count(&g, GG_ITEM_SILVER) == before + 2,
+          "the pack holds %d bars, expected %d",
+          gg_pack_count(&g, GG_ITEM_SILVER), before + 2);
+    CHECK(gg_ground_at(&g.map, x, y) < 0,
+          "the pile is still on the map after being picked up");
+
+    // And it survives the round trip, which is the half a pack in memory only
+    // would pass without.
+    CHECK(gg_save_write(&g, save_base(), who), "save failed");
+    gg_game b;
+    SDL_zero(b);
+    CHECK(gg_save_read(&b, save_base(), who), "load failed");
+    CHECK(gg_pack_count(&b, GG_ITEM_SILVER) == before + 2,
+          "the resumed game carries %d bars, expected %d",
+          gg_pack_count(&b, GG_ITEM_SILVER), before + 2);
+    CHECK(gg_ground_at(&b.map, x, y) < 0,
+          "the resumed map put the pile back on the ground");
+
+    gg_game_free(&b);
+    gg_game_free(&g);
+    wipe_saves(who);
+}
+
+static void what_is_set_down_is_where_it_was_set_down(void) {
+    gg_game g;
+    CHECK(gg_game_new(&g, 12, "Dropper"), "new game failed");
+
+    const gg_actor *p = gg_player_const(&g);
+    const int x = p->x, y = p->y;
+
+    CHECK(gg_pack_add(&g, GG_ITEM_POTION, 3) == 3, "could not take three phials");
+    const int slot = gg_pack_find(&g, GG_ITEM_POTION);
+    CHECK(slot >= 0, "the phials are not in the pack");
+
+    g.pack_cursor = slot;
+    g.mode = GG_MODE_PACK;
+    gg_game_act(&g, GG_ACT_DROP);
+
+    CHECK(gg_pack_count(&g, GG_ITEM_POTION) == 0,
+          "setting the phials down left %d in the pack",
+          gg_pack_count(&g, GG_ITEM_POTION));
+
+    const int here = gg_ground_at(&g.map, x, y);
+    CHECK(here >= 0, "nothing was set down");
+    CHECK(g.map.ground[here].kind == GG_ITEM_POTION, "the wrong thing was set down");
+    CHECK(g.map.ground[here].count == 3, "%u were set down, expected 3",
+          g.map.ground[here].count);
+
+    // Taking them back leaves the tile clear again - the two verbs are each
+    // other's inverse, which is the property that stops items leaking.
+    g.mode = GG_MODE_PLAY;
+    gg_game_act(&g, GG_ACT_GET);
+    CHECK(gg_pack_count(&g, GG_ITEM_POTION) == 3, "they did not come back");
+    CHECK(gg_ground_at(&g.map, x, y) < 0, "the tile still holds something");
+
+    gg_game_free(&g);
+}
+
+// A tile can hold more than one kind, and gg_ground_at only ever finds the
+// first - so taking one and stopping would strand the rest for good. Found by
+// probing a generated town and seeing two piles on the same square.
+static void taking_from_a_tile_clears_everything_on_it(void) {
+    gg_game g;
+    CHECK(gg_game_new(&g, 18, "Sweeper"), "new game failed");
+    const gg_actor *p = gg_player_const(&g);
+    const int x = p->x, y = p->y;
+
+    g.packn = 0;
+    for (int s = 0; s < GG_SLOT_COUNT; s++) g.equipped[s] = -1;
+
+    CHECK(gg_ground_drop(&g.map, x, y, GG_ITEM_BREAD, 2), "drop 1 failed");
+    CHECK(gg_ground_drop(&g.map, x, y, GG_ITEM_POTION, 1), "drop 2 failed");
+    CHECK(gg_ground_drop(&g.map, x, y, GG_ITEM_APPLE, 3), "drop 3 failed");
+
+    gg_game_act(&g, GG_ACT_GET);
+
+    CHECK(gg_ground_at(&g.map, x, y) < 0,
+          "something was left on the tile after taking");
+    CHECK(gg_pack_count(&g, GG_ITEM_BREAD) == 2, "the bread was not taken");
+    CHECK(gg_pack_count(&g, GG_ITEM_POTION) == 1, "the phial was not taken");
+    CHECK(gg_pack_count(&g, GG_ITEM_APPLE) == 3, "the apples were not taken");
+
+    gg_game_free(&g);
+}
+
+static void a_second_pile_on_one_tile_joins_the_first(void) {
+    gg_game g;
+    CHECK(gg_game_new(&g, 13, "Piler"), "new game failed");
+    const gg_actor *p = gg_player_const(&g);
+
+    CHECK(gg_ground_drop(&g.map, p->x, p->y, GG_ITEM_GOLD, 10), "first drop failed");
+    const int was = g.map.grounds;
+    CHECK(gg_ground_drop(&g.map, p->x, p->y, GG_ITEM_GOLD, 5), "second drop failed");
+
+    CHECK(g.map.grounds == was, "two piles of the same kind on one tile");
+    const int i = gg_ground_at(&g.map, p->x, p->y);
+    CHECK(i >= 0 && g.map.ground[i].count == 15,
+          "the joined pile holds %u, expected 15", i >= 0 ? g.map.ground[i].count : 0);
+
+    gg_game_free(&g);
+}
+
+// Weight is the thing that makes a pack a decision rather than a list.
+static void a_pack_will_not_hold_more_than_it_can_carry(void) {
+    gg_game g;
+    CHECK(gg_game_new(&g, 14, "Hauler"), "new game failed");
+
+    // Silver is deliberately the heavy one. Ask for far more than a person
+    // could lift and see how much actually goes in.
+    g.packn = 0;
+    for (int s = 0; s < GG_SLOT_COUNT; s++) g.equipped[s] = -1;
+
+    const int each = GG_ITEM[GG_ITEM_SILVER].weight;
+    CHECK(each > 0, "silver weighs nothing, so this test proves nothing");
+
+    const int taken = gg_pack_add(&g, GG_ITEM_SILVER, 1000);
+    CHECK(taken > 0, "not one bar could be carried");
+    CHECK(taken == GG_CARRY_MAX / each,
+          "took %d bars, but %d is what fits", taken, GG_CARRY_MAX / each);
+    CHECK(gg_pack_weight(&g) <= GG_CARRY_MAX,
+          "carrying %d, over the limit of %d", gg_pack_weight(&g), GG_CARRY_MAX);
+
+    // One more must be refused, not squeezed in.
+    CHECK(gg_pack_add(&g, GG_ITEM_SILVER, 1) == 0, "one bar too many went in");
+
+    // And picking up off the ground obeys the same limit, taking what it can
+    // rather than all or nothing - a player standing on a hoard should get an
+    // armful, not a refusal.
+    const gg_actor *p = gg_player_const(&g);
+    gg_pack_take(&g, gg_pack_find(&g, GG_ITEM_SILVER), 2);
+    CHECK(gg_ground_drop(&g.map, p->x, p->y, GG_ITEM_SILVER, 9), "drop failed");
+    gg_game_act(&g, GG_ACT_GET);
+
+    CHECK(gg_pack_weight(&g) <= GG_CARRY_MAX,
+          "picking up went over the limit: %d", gg_pack_weight(&g));
+    const int left = gg_ground_at(&g.map, p->x, p->y);
+    CHECK(left >= 0 && g.map.ground[left].count == 7,
+          "expected 7 bars left on the ground, found %d",
+          left >= 0 ? g.map.ground[left].count : 0);
+
+    gg_game_free(&g);
+}
+
+static void eating_costs_the_food_and_mends_the_eater(void) {
+    gg_game g;
+    CHECK(gg_game_new(&g, 15, "Eater"), "new game failed");
+
+    g.hp = 5;
+    CHECK(gg_pack_add(&g, GG_ITEM_BREAD, 2) == 2, "could not take bread");
+    const int slot = gg_pack_find(&g, GG_ITEM_BREAD);
+    g.pack_cursor = slot;
+    g.mode = GG_MODE_PACK;
+
+    const int had = gg_pack_count(&g, GG_ITEM_BREAD);
+    gg_game_act(&g, GG_ACT_USE);
+
+    CHECK(g.hp == 5 + GG_ITEM[GG_ITEM_BREAD].heal,
+          "eating bread took health from %d to %d, expected %d", 5, g.hp,
+          5 + GG_ITEM[GG_ITEM_BREAD].heal);
+    CHECK(gg_pack_count(&g, GG_ITEM_BREAD) == had - 1,
+          "eating did not use up a loaf");
+
+    // At full health it is refused rather than wasted.
+    g.hp = g.hp_max;
+    const int spare = gg_pack_count(&g, GG_ITEM_BREAD);
+    gg_game_act(&g, GG_ACT_USE);
+    CHECK(gg_pack_count(&g, GG_ITEM_BREAD) == spare,
+          "a hale avatar ate anyway");
+
+    // And a thing with no use says so rather than vanishing.
+    gg_pack_add(&g, GG_ITEM_SILVER, 1);
+    g.pack_cursor = gg_pack_find(&g, GG_ITEM_SILVER);
+    gg_game_act(&g, GG_ACT_USE);
+    CHECK(gg_pack_count(&g, GG_ITEM_SILVER) == 1, "a bar of silver was consumed");
+
+    gg_game_free(&g);
+}
+
+static void what_is_held_stays_held_through_the_pack_shifting(void) {
+    gg_game g;
+    CHECK(gg_game_new(&g, 16, "Holder"), "new game failed");
+
+    g.packn = 0;
+    for (int s = 0; s < GG_SLOT_COUNT; s++) g.equipped[s] = -1;
+
+    // Three kinds, so emptying the first slot moves the last one into its
+    // place - which is exactly when a held index goes stale.
+    gg_pack_add(&g, GG_ITEM_BREAD, 1);
+    gg_pack_add(&g, GG_ITEM_APPLE, 1);
+    gg_pack_add(&g, GG_ITEM_TORCH, 1);
+    CHECK(g.packn == 3, "expected three slots, got %d", g.packn);
+
+    g.pack_cursor = gg_pack_find(&g, GG_ITEM_TORCH);
+    g.mode = GG_MODE_PACK;
+    gg_game_act(&g, GG_ACT_EQUIP);
+    CHECK(g.equipped[GG_SLOT_LIGHT] == gg_pack_find(&g, GG_ITEM_TORCH),
+          "the torch is not in hand");
+    CHECK(gg_light_radius(&g) == GG_ITEM[GG_ITEM_TORCH].light,
+          "holding the torch did not light anything");
+
+    // Empty the first slot. The torch must still be the thing in hand.
+    gg_pack_take(&g, gg_pack_find(&g, GG_ITEM_BREAD), 1);
+    const int torch = gg_pack_find(&g, GG_ITEM_TORCH);
+    CHECK(torch >= 0, "the torch left the pack");
+    CHECK(g.equipped[GG_SLOT_LIGHT] == torch,
+          "the pack shifted and the held slot now points at %d, not the torch at %d",
+          g.equipped[GG_SLOT_LIGHT], torch);
+    CHECK(gg_light_radius(&g) == GG_ITEM[GG_ITEM_TORCH].light,
+          "the light went out when an unrelated slot emptied");
+
+    // Losing the torch itself puts the light out and holds nothing.
+    gg_pack_take(&g, torch, 1);
+    CHECK(g.equipped[GG_SLOT_LIGHT] == -1, "a torch that is gone is still held");
+    CHECK(gg_light_radius(&g) == 1, "the light outlived the torch");
+
+    gg_game_free(&g);
+}
+
+// A thing that cannot be held says so, rather than occupying a slot silently.
+static void only_things_meant_to_be_held_can_be_held(void) {
+    gg_game g;
+    CHECK(gg_game_new(&g, 17, "Wielder"), "new game failed");
+
+    gg_pack_add(&g, GG_ITEM_BREAD, 1);
+    g.pack_cursor = gg_pack_find(&g, GG_ITEM_BREAD);
+    g.mode = GG_MODE_PACK;
+    gg_game_act(&g, GG_ACT_EQUIP);
+
+    for (int s = 0; s < GG_SLOT_COUNT; s++)
+        CHECK(g.equipped[s] == -1, "a loaf of bread ended up held in slot %d", s);
+
+    // Holding a second torch replaces the first rather than holding both.
+    gg_pack_add(&g, GG_ITEM_TORCH, 1);
+    g.pack_cursor = gg_pack_find(&g, GG_ITEM_TORCH);
+    gg_game_act(&g, GG_ACT_EQUIP);
+    const int first = g.equipped[GG_SLOT_LIGHT];
+    CHECK(first >= 0, "the torch was not held");
+
+    // Choosing it again puts it away, which is the other half of one key.
+    gg_game_act(&g, GG_ACT_EQUIP);
+    CHECK(g.equipped[GG_SLOT_LIGHT] == -1, "choosing a held torch again did not stow it");
+
+    gg_game_free(&g);
+}
+
+// Every item the table describes has to be usable by the rules that read it.
+static void every_item_is_one_the_rules_can_handle(void) {
+    for (int i = 0; i < GG_ITEM_COUNT; i++) {
+        const gg_item_def *d = &GG_ITEM[i];
+        CHECK(d->tiles_w >= 1 && d->tiles_h >= 1, "item %d is zero-sized", i);
+        CHECK(d->slot < GG_SLOT_COUNT, "item %d claims slot %u, past the end",
+              i, d->slot);
+        CHECK(d->light <= GG_LIGHT_MAX_RADIUS,
+              "item %d lights %u tiles, past what the renderer scans", i, d->light);
+
+        // A thing that can be used has to do something, and a thing that does
+        // something has to be usable - either half alone is a dead control.
+        CHECK((d->use == GG_USE_NONE) == (d->heal == 0),
+              "item %d has use %u and heal %u, which do not agree",
+              i, d->use, d->heal);
+
+        // Nothing may weigh more than a person can carry, or it could be
+        // dropped and never picked up again.
+        CHECK(d->weight <= GG_CARRY_MAX,
+              "item %d weighs %u, more than the %d anyone can carry",
+              i, d->weight, GG_CARRY_MAX);
+
+        // The light slot is for things that light; anything else in it would
+        // be held and do nothing.
+        if (d->slot == GG_SLOT_LIGHT)
+            CHECK(d->light > 0, "item %d is held as a light but gives none", i);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Content tables
 // ---------------------------------------------------------------------------
 static void every_terrain_and_item_has_a_name(void) {
@@ -2210,8 +2577,11 @@ static void every_terrain_and_item_has_a_name(void) {
     // as a crash rather than a blank.
     for (int i = 0; i < GG_TILE_COUNT; i++)
         CHECK(GG_TERRAIN[i].name != nullptr, "terrain %d has no name", i);
-    for (int i = 0; i < GG_ITEM_COUNT; i++)
-        CHECK(GG_ITEM_NAME[i] != nullptr, "item %d has no name", i);
+    for (int i = 0; i < GG_ITEM_COUNT; i++) {
+        CHECK(GG_ITEM[i].one != nullptr, "item %d has no singular name", i);
+        CHECK(GG_ITEM[i].many != nullptr, "item %d has no plural name", i);
+        CHECK(GG_ITEM[i].short_name != nullptr, "item %d has no short name", i);
+    }
 }
 
 static void every_prop_has_a_plausible_footprint(void) {
@@ -2338,6 +2708,16 @@ int main(void) {
     RUN(equal_ranks_do_not_transition);
     RUN(water_and_masonry_take_no_overlay);
     RUN(the_map_edge_grows_no_verge);
+
+    RUN(an_item_taken_off_the_ground_is_in_the_pack_and_gone_from_the_map);
+    RUN(what_is_set_down_is_where_it_was_set_down);
+    RUN(a_second_pile_on_one_tile_joins_the_first);
+    RUN(taking_from_a_tile_clears_everything_on_it);
+    RUN(a_pack_will_not_hold_more_than_it_can_carry);
+    RUN(eating_costs_the_food_and_mends_the_eater);
+    RUN(what_is_held_stays_held_through_the_pack_shifting);
+    RUN(only_things_meant_to_be_held_can_be_held);
+    RUN(every_item_is_one_the_rules_can_handle);
 
     RUN(every_terrain_and_item_has_a_name);
     RUN(every_prop_has_a_plausible_footprint);

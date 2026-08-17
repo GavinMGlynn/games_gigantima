@@ -42,6 +42,20 @@ typedef struct {
 
 enum { GG_REGION_WILD, GG_REGION_TOWN, GG_REGION_DUNGEON, GG_REGION_CASTLE };
 
+// Something lying on the ground, waiting to be picked up.
+//
+// A list rather than another byte in gg_cell, for two reasons: a cell is four
+// bytes and full, and a pile wants a count. It lives in the map rather than in
+// the game so that the editor can place treasure and so that picking a thing up
+// takes it *out of the world* rather than out of a parallel bookkeeping.
+#define GG_GROUND_MAX 512
+
+typedef struct {
+    int16_t x, y;
+    uint8_t kind;      // gg_item_id
+    uint8_t count;     // how many are in the pile; never zero
+} gg_ground_item;
+
 typedef struct {
     int  w, h;
     gg_cell *cell;                     // w*h, row-major
@@ -50,7 +64,22 @@ typedef struct {
     int  regions;
     int  start_x, start_y;             // where a new game begins
     uint32_t seed;                     // the seed this map was generated from
+
+    gg_ground_item ground[GG_GROUND_MAX];
+    int            grounds;
 } gg_map;
+
+// --- things on the ground --------------------------------------------------
+// The index of the pile at (x, y), or -1. Linear: a map holds at most
+// GG_GROUND_MAX of them and nothing here is on a hot path.
+int gg_ground_at(const gg_map *m, int x, int y);
+
+// Leaves `count` of `kind` at (x, y), merging with a pile already there if it
+// is the same kind. Returns false if the map's list is full.
+bool gg_ground_drop(gg_map *m, int x, int y, gg_item_id kind, int count);
+
+// Removes the pile at `index`, closing the gap.
+void gg_ground_remove(gg_map *m, int index);
 
 // --- terrain properties ----------------------------------------------------
 // One row per gg_tile_id. Kept as a table rather than a switch so the level
@@ -136,7 +165,10 @@ bool gg_map_generate(gg_map *m, int w, int h, uint32_t seed);
 // neither has map content compiled in. See docs/COMPLETION_PLAN.md for why
 // this exists before there is much content to put in it.
 #define GG_MAP_MAGIC   "GGMAP\0\0\0"
-#define GG_MAP_VERSION 1
+// Version 2 added the list of things lying on the ground. There is no
+// migration from 1: no map file older than this exists outside a test, and a
+// reader that guesses at a missing section is worse than one that says no.
+#define GG_MAP_VERSION 2
 
 bool gg_map_save(const gg_map *m, const char *path);
 bool gg_map_load(gg_map *m, const char *path);

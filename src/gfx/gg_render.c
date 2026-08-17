@@ -18,6 +18,7 @@
 #include <SDL3_image/SDL_image.h>
 
 static SDL_Texture *g_tiles, *g_props, *g_actors, *g_edges, *g_overlays;
+static SDL_Texture *g_items;
 static SDL_Renderer *g_ren;
 
 static SDL_Texture *load(SDL_Renderer *ren, const char *name) {
@@ -40,17 +41,21 @@ bool gg_render_init(SDL_Renderer *ren) {
     g_edges  = load(ren, "atlas_edges.png");
     g_overlays = load(ren, "atlas_overlays.png");
     g_props  = load(ren, "atlas_props.png");
+    g_items  = load(ren, "atlas_items.png");
     g_actors = load(ren, "atlas_actors.png");
-    return g_tiles && g_edges && g_overlays && g_props && g_actors;
+    return g_tiles && g_edges && g_overlays && g_props && g_items && g_actors;
 }
+
+SDL_Texture *gg_render_items(void) { return g_items; }
 
 void gg_render_quit(void) {
     SDL_DestroyTexture(g_tiles);
     SDL_DestroyTexture(g_edges);
     SDL_DestroyTexture(g_overlays);
     SDL_DestroyTexture(g_props);
+    SDL_DestroyTexture(g_items);
     SDL_DestroyTexture(g_actors);
-    g_tiles = g_edges = g_overlays = g_props = g_actors = nullptr;
+    g_tiles = g_edges = g_overlays = g_props = g_items = g_actors = nullptr;
     g_ren = nullptr;
 }
 
@@ -257,11 +262,13 @@ uint8_t gg_light_at(const gg_game *g, int x, int y, uint8_t day) {
     // The sky reaches everything that is not under a roof.
     uint8_t lit = inside ? 0 : day;
 
-    // The avatar carries a light: an object in the world like any other, and
-    // the reason the player is never left standing in the dark.
+    // The avatar's own light, whose radius is whatever is in hand: a torch
+    // reaches across a room, and empty hands reach one tile. This is the same
+    // rule as every other emitter - light comes from an object - applied to
+    // the one object the player carries about with them.
     const gg_actor *p = gg_player_const(g);
     const uint8_t carried = falloff(gg_dist_cheb(p->x, p->y, x, y),
-                                    GG_LIGHT_CARRY_RADIUS);
+                                    gg_light_radius(g));
     if (carried > lit) lit = carried;
 
     // Everything else that gives light does so because somebody put it there.
@@ -343,7 +350,11 @@ void gg_render_screen_to_tile(const gg_game *g, int sx, int sy, int *tx, int *ty
 #define GATHER_PAD_B 8
 #define GATHER_X (GG_VIEW_TILES_X + GATHER_PAD_L + GATHER_PAD_R)
 #define GATHER_Y (GG_VIEW_TILES_Y + GATHER_PAD_T + GATHER_PAD_B)
-#define MAX_SPRITES (GATHER_X * GATHER_Y + GG_ACTORS_MAX)
+// Plus one per visible cell for things lying on the ground: a cell can hold a
+// prop and a dropped item at once, so items need room of their own rather than
+// sharing the props' budget.
+#define MAX_SPRITES (GATHER_X * GATHER_Y + GG_ACTORS_MAX + \
+                     GG_VIEW_TILES_X * GG_VIEW_TILES_Y)
 
 typedef struct {
     int32_t  key;        // sort key: the pixel row the sprite stands on
@@ -474,6 +485,29 @@ void gg_render_world(const gg_game *g, SDL_Renderer *ren) {
                 .dst = { (float)px, (float)py, (float)r->w, (float)r->h },
             };
         }
+    }
+
+    // Things lying about, into the same list. They sort by the row they lie on
+    // exactly as a prop does, so an apple on the far side of a barrel is behind
+    // it and a torch dropped in a doorway is in front of the wall.
+    for (int i = 0; i < g->map.grounds && n < MAX_SPRITES; i++) {
+        const gg_ground_item *it = &g->map.ground[i];
+        if (it->x < cam_tx - 1 || it->x > cam_tx + GG_VIEW_TILES_X ||
+            it->y < cam_ty - 2 || it->y > cam_ty + GG_VIEW_TILES_Y)
+            continue;
+
+        const gg_rect *r = &GG_ITEM_RECT[it->kind];
+        // Drawn from its bottom edge, so a two-tile torch stands on the cell
+        // rather than hovering a tile above it.
+        const int px = it->x * GG_TILE - cam_px;
+        const int py = (it->y + 1) * GG_TILE - r->h - cam_py;
+
+        list[n++] = (gg_sprite){
+            .key = (it->y + 1) * GG_TILE,
+            .tex = g_items,
+            .src = { (float)r->x, (float)r->y, (float)r->w, (float)r->h },
+            .dst = { (float)px, (float)py, (float)r->w, (float)r->h },
+        };
     }
 
     for (int i = 0; i < g->actors && n < MAX_SPRITES; i++) {

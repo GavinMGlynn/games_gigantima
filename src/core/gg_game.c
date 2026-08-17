@@ -3,14 +3,94 @@
 
 #include <stdarg.h>
 
-const char *const GG_ITEM_NAME[GG_ITEM_COUNT] = {
-    [GG_ITEM_FOOD]   = "food",
-    [GG_ITEM_GOLD]   = "gold",
-    [GG_ITEM_TORCH]  = "torches",
-    [GG_ITEM_KEY]    = "keys",
-    [GG_ITEM_GEM]    = "gems",
-    [GG_ITEM_POTION] = "potions",
-};
+// ---------------------------------------------------------------------------
+// The pack
+// ---------------------------------------------------------------------------
+int gg_pack_count(const gg_game *g, gg_item_id kind) {
+    int n = 0;
+    for (int i = 0; i < g->packn; i++)
+        if (g->pack[i].kind == kind) n += g->pack[i].count;
+    return n;
+}
+
+int gg_pack_find(const gg_game *g, gg_item_id kind) {
+    for (int i = 0; i < g->packn; i++)
+        if (g->pack[i].kind == kind) return i;
+    return -1;
+}
+
+int gg_pack_weight(const gg_game *g) {
+    int w = 0;
+    for (int i = 0; i < g->packn; i++)
+        w += GG_ITEM[g->pack[i].kind].weight * g->pack[i].count;
+    return w;
+}
+
+int gg_pack_add(gg_game *g, gg_item_id kind, int count) {
+    if (count <= 0 || kind >= GG_ITEM_COUNT) return 0;
+
+    const gg_item_def *d = &GG_ITEM[kind];
+    int taken = 0;
+
+    while (taken < count) {
+        // Weight first: it refuses the next one whatever the slots say.
+        if (d->weight && gg_pack_weight(g) + d->weight > GG_CARRY_MAX) break;
+
+        int slot = -1;
+        if (d->stack) {
+            for (int i = 0; i < g->packn; i++)
+                if (g->pack[i].kind == kind && g->pack[i].count < 255) {
+                    slot = i;
+                    break;
+                }
+        }
+        if (slot < 0) {
+            if (g->packn >= GG_PACK_MAX) break;
+            slot = g->packn++;
+            g->pack[slot].kind = (uint8_t)kind;
+            g->pack[slot].count = 0;
+        }
+        g->pack[slot].count++;
+        taken++;
+    }
+    return taken;
+}
+
+int gg_pack_take(gg_game *g, int index, int count) {
+    if (!gg_pack_slot_ok(g, index) || count <= 0) return 0;
+
+    const int had = g->pack[index].count;
+    const int gone = count < had ? count : had;
+    g->pack[index].count = (uint8_t)(had - gone);
+    if (g->pack[index].count > 0) return gone;
+
+    // The slot is empty, so it goes. Anything held in it stops being held, and
+    // the last slot moves down into the gap - which means every index above it
+    // has to be repaired, or a held torch would silently become a held loaf.
+    for (int s = 0; s < GG_SLOT_COUNT; s++)
+        if (g->equipped[s] == index) g->equipped[s] = -1;
+
+    const int last = g->packn - 1;
+    g->pack[index] = g->pack[last];
+    g->packn--;
+    for (int s = 0; s < GG_SLOT_COUNT; s++)
+        if (g->equipped[s] == last) g->equipped[s] = index;
+
+    if (g->pack_cursor >= g->packn) g->pack_cursor = g->packn - 1;
+    if (g->pack_cursor < 0) g->pack_cursor = 0;
+    return gone;
+}
+
+int gg_light_radius(const gg_game *g) {
+    const int held = g->equipped[GG_SLOT_LIGHT];
+    if (gg_pack_slot_ok(g, held)) {
+        const int r = GG_ITEM[g->pack[held].kind].light;
+        if (r > 0) return r;
+    }
+    // Nothing held: an arm's length, so a player who drops their last torch is
+    // in the dark rather than blind.
+    return 1;
+}
 
 // ---------------------------------------------------------------------------
 // Message log
@@ -210,6 +290,139 @@ static void do_talk(gg_game *g) {
            g->actor[who].greeting ? g->actor[who].greeting : "Hail.");
 }
 
+// How a quantity of something reads in a sentence: "a loaf of bread", or
+// "3 loaves of bread". One place, so every message agrees.
+static void say_amount(char *out, size_t n, gg_item_id kind, int count) {
+    const gg_item_def *d = &GG_ITEM[kind];
+    if (count == 1) SDL_strlcpy(out, d->one, n);
+    else            SDL_snprintf(out, n, "%d %s", count, d->many);
+}
+
+static void do_get(gg_game *g) {
+    const gg_actor *p = gg_player_const(g);
+    if (gg_ground_at(&g->map, p->x, p->y) < 0) {
+        gg_log(g, "There is nothing here to take.");
+        return;
+    }
+
+    // A tile may hold more than one kind - a house floor with bread on it and
+    // a phial beside it - and gg_ground_at only ever finds the first. Taking
+    // one and stopping would leave the rest of the tile unreachable for good,
+    // so this clears what it can and only then gives up.
+    int got = 0;
+    char what[96];
+    for (;;) {
+        const int i = gg_ground_at(&g->map, p->x, p->y);
+        if (i < 0) break;
+
+        const gg_item_id kind = (gg_item_id)g->map.ground[i].kind;
+        const int there = g->map.ground[i].count;
+        const int taken = gg_pack_add(g, kind, there);
+
+        if (taken == 0) {
+            // Too heavy, or the pack is full. Say so about this pile and stop:
+            // a lighter one underneath is not worth the message it would take
+            // to explain, and the player can see what is left.
+            say_amount(what, sizeof what, kind, there);
+            gg_log(g, got ? "Thou canst carry no more; %s remains."
+                          : "Thou canst not carry %s.", what);
+            break;
+        }
+
+        say_amount(what, sizeof what, kind, taken);
+        got++;
+        if (taken < there) {
+            g->map.ground[i].count = (uint8_t)(there - taken);
+            gg_log(g, "Thou takest %s, and canst carry no more.", what);
+            break;
+        }
+        gg_ground_remove(&g->map, i);
+        gg_log(g, "Thou takest %s.", what);
+    }
+
+    if (got) world_turn(g, GG_MINUTES_PER_TURN);
+}
+
+static void do_drop(gg_game *g) {
+    if (!gg_pack_slot_ok(g, g->pack_cursor)) {
+        gg_log(g, "Thou carriest nothing to set down.");
+        return;
+    }
+    const gg_actor *p = gg_player_const(g);
+    const gg_item_id kind = (gg_item_id)g->pack[g->pack_cursor].kind;
+    const int count = g->pack[g->pack_cursor].count;
+
+    // The whole slot at once. Dropping one of a stack wants a number to be
+    // typed, and there is nowhere to type it that a gamepad can reach.
+    if (!gg_ground_drop(&g->map, p->x, p->y, kind, count)) {
+        gg_log(g, "There is no room here to set that down.");
+        return;
+    }
+    gg_pack_take(g, g->pack_cursor, count);
+
+    char what[96];
+    say_amount(what, sizeof what, kind, count);
+    gg_log(g, "Thou settest down %s.", what);
+    world_turn(g, GG_MINUTES_PER_TURN);
+}
+
+static void do_use(gg_game *g) {
+    if (!gg_pack_slot_ok(g, g->pack_cursor)) {
+        gg_log(g, "Thou carriest nothing to use.");
+        return;
+    }
+    const gg_item_id kind = (gg_item_id)g->pack[g->pack_cursor].kind;
+    const gg_item_def *d = &GG_ITEM[kind];
+
+    if (d->use == GG_USE_NONE) {
+        gg_log(g, "Thou canst think of nothing to do with %s.", d->one);
+        return;
+    }
+    if (g->hp >= g->hp_max) {
+        gg_log(g, "Thou art already hale.");
+        return;
+    }
+
+    const int before = g->hp;
+    g->hp = gg_clampi(g->hp + d->heal, 0, g->hp_max);
+    gg_pack_take(g, g->pack_cursor, 1);
+
+    gg_log(g, d->use == GG_USE_EAT ? "Thou eatest %s, and art the better for it (+%d)."
+                                   : "Thou drinkest %s, and art the better for it (+%d).",
+           d->one, g->hp - before);
+    world_turn(g, GG_MINUTES_PER_TURN);
+}
+
+static void do_equip(gg_game *g) {
+    if (!gg_pack_slot_ok(g, g->pack_cursor)) {
+        gg_log(g, "Thou carriest nothing to take up.");
+        return;
+    }
+    const int here = g->pack_cursor;
+    const gg_item_id kind = (gg_item_id)g->pack[here].kind;
+    const gg_item_def *d = &GG_ITEM[kind];
+
+    if (d->slot == GG_SLOT_NONE) {
+        gg_log(g, "Thou canst not hold %s ready.", d->one);
+        return;
+    }
+    if (g->equipped[d->slot] == here) {
+        g->equipped[d->slot] = -1;
+        gg_log(g, "Thou puttest away %s.", d->one);
+    } else {
+        g->equipped[d->slot] = here;
+        gg_log(g, "Thou holdest %s.", d->one);
+    }
+    world_turn(g, GG_MINUTES_PER_TURN);
+}
+
+// The pack's cursor, moved with the same directions that walk the world. Only
+// up and down do anything: it is a column.
+static void pack_move(gg_game *g, int dy) {
+    if (g->packn <= 0) return;
+    g->pack_cursor = (g->pack_cursor + dy + g->packn) % g->packn;
+}
+
 static void do_open(gg_game *g) {
     gg_actor *p = gg_player(g);
     static const int DX[4] = { 0, -1, 0, 1 };
@@ -231,6 +444,31 @@ void gg_game_act(gg_game *g, gg_action a) {
         g->talking_to = -1;
         return;
     }
+
+    // The pack is open: the directions steer its cursor instead of the avatar,
+    // and the verbs act on whatever the cursor is on. Time still passes when
+    // something actually happens - eating is a turn - but scrolling is free.
+    if (g->mode == GG_MODE_PACK) {
+        int dx, dy;
+        if (gg_action_delta(a, &dx, &dy)) {
+            pack_move(g, dy);
+            return;
+        }
+        // The pad's four face buttons carry world verbs, and in here they carry
+        // the pack's - which is why each case takes two actions. A uses, Y
+        // readies, X sets down, B closes: the same four shapes as the
+        // keyboard's U, R, P and I, so neither device is the poor relation.
+        switch (a) {
+        case GG_ACT_USE:   case GG_ACT_TALK: do_use(g); break;
+        case GG_ACT_EQUIP: case GG_ACT_OPEN: do_equip(g); break;
+        case GG_ACT_DROP:  case GG_ACT_LOOK: do_drop(g); break;
+        case GG_ACT_GET:   do_get(g); break;
+        case GG_ACT_PACK:  case GG_ACT_WAIT: g->mode = GG_MODE_PLAY; break;
+        default: break;
+        }
+        return;
+    }
+
     if (g->mode != GG_MODE_PLAY) return;
 
     int dx, dy;
@@ -244,6 +482,26 @@ void gg_game_act(gg_game *g, gg_action a) {
     case GG_ACT_LOOK: do_look(g); break;
     case GG_ACT_TALK: do_talk(g); break;
     case GG_ACT_OPEN: do_open(g); break;
+    case GG_ACT_GET:  do_get(g); break;
+
+    case GG_ACT_PACK:
+        g->mode = GG_MODE_PACK;
+        if (g->pack_cursor >= g->packn) g->pack_cursor = 0;
+        break;
+
+    // The three that need a chosen thing open the pack rather than refusing:
+    // the player asked to use something, and the next question is which.
+    case GG_ACT_USE:
+    case GG_ACT_EQUIP:
+    case GG_ACT_DROP:
+        if (g->packn == 0) {
+            gg_log(g, "Thou carriest nothing at all.");
+            break;
+        }
+        g->mode = GG_MODE_PACK;
+        if (g->pack_cursor >= g->packn) g->pack_cursor = 0;
+        break;
+
     default: break;
     }
 }
@@ -355,9 +613,18 @@ static bool finish_new_game(gg_game *g, const char *profile) {
     g->day = 1;
     g->hp = g->hp_max = 30;
     g->level = 1;
-    g->item[GG_ITEM_FOOD] = 20;
-    g->item[GG_ITEM_GOLD] = 100;
-    g->item[GG_ITEM_TORCH] = 3;
+
+    // What the Avatar sets out with. Everything below goes through the same
+    // gg_pack_add a picked-up thing does, so the starting kit obeys the weight
+    // limit like anything else and cannot quietly exceed it.
+    g->packn = 0;
+    g->pack_cursor = 0;
+    for (int s = 0; s < GG_SLOT_COUNT; s++) g->equipped[s] = -1;
+
+    gg_pack_add(g, GG_ITEM_BREAD, 3);
+    gg_pack_add(g, GG_ITEM_APPLE, 2);
+    gg_pack_add(g, GG_ITEM_TORCH, 2);
+    gg_pack_add(g, GG_ITEM_GOLD, 100);
 
     // The player is actor 0 so that `player` never has to be re-found.
     gg_actor *p = &g->actor[0];

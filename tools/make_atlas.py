@@ -6,13 +6,19 @@ a human opening them in an editor. The game wants the opposite: a handful of
 textures, and a table saying where every sprite sits inside them. This script is
 the seam between the two, and it is the *only* place that knows an LPC path.
 
-It writes four textures and one header:
+It writes six textures and three generated sources:
 
-    assets/atlas_tiles.png    32x32 terrain and structure tiles
-    assets/atlas_props.png    variable-size scenery, shelf-packed
-    assets/atlas_actors.png   64x64 character frames, 8 per direction
-    assets/atlas_font.png     the UI font, rasterised from assets/fonts/
-    src/gg_atlas.h            GENERATED enums and rect tables for all four
+    assets/atlas_tiles.png     32x32 terrain and structure tiles
+    assets/atlas_edges.png     3x3 blob rings for shorelines
+    assets/atlas_overlays.png  the rings again, for land meeting land
+    assets/atlas_props.png     variable-size scenery, shelf-packed
+    assets/atlas_items.png     the things that can be picked up
+    assets/atlas_actors.png    64x64 character frames, 8 per direction
+    assets/atlas_font.png      the UI font, rasterised from assets/fonts/
+
+    src/core/gg_ids.h    GENERATED vocabulary: what a tile, prop or item IS
+    src/core/gg_ids.c    GENERATED tables the simulation links against
+    src/gfx/gg_atlas.h   GENERATED rectangles: where each sprite SITS
 
 Nothing here runs as part of the build. The outputs are committed, so a clone
 builds and plays without the art submodule present - `ext/lpc-revised` is 766
@@ -166,6 +172,74 @@ def prop(name, sheet, col, row, w, h, foot=None, door=NO_DOOR, hollow=False,
     if foot is None:
         foot = ((w - 1) // 2, h - 1, 1, 1)
     return (name, sheet, col, row, w, h, foot, door, hollow, light)
+
+
+# ---------------------------------------------------------------------------
+# Items - the things that can be picked up
+#
+# An item is a prop you can carry, so it is declared the same way: a cell of a
+# sheet, measured rather than eyeballed. What makes it an item is the rest of
+# the row - what it weighs, what using it does, and whether it can be worn.
+#
+# Weight is in HUNDREDTHS OF A STONE, which is the unit that makes a coin come
+# out at 1 and stay an integer. A stone of gold is a hundred coins, which is
+# roughly true and, more to the point, means a purse is light and a bar of
+# silver is not.
+# ---------------------------------------------------------------------------
+FOOD = f"{SMALL}/Food"
+ORES = f"{SMALL}/Ores & Ingots"
+
+# What using an item does. Mirrored into gg_ids.h.
+USE_NONE, USE_EAT, USE_DRINK = 0, 1, 2
+# Where an item can be worn or held. GG_SLOT_NONE means it cannot be.
+SLOT_NONE, SLOT_LIGHT = 0, 1
+
+
+def item(name, sheet, col, row, w, h, one, many, short, weight,
+         stack=True, use=USE_NONE, heal=0, slot=SLOT_NONE, light=0, value=0):
+    """One kind of carryable thing.
+
+    `one`/`many` are how it reads in a sentence - "thou takest a loaf of
+    bread", "thou takest 3 loaves of bread" - and `short` is the bare noun the
+    pack lists. Three strings rather than one plus an "s", because "loaves"
+    exists and a game that says "3 breads" has stopped being written.
+
+    `stack` is whether several of them share one slot in the pack. A torch does
+    not stack once it is lit, but nothing here burns down yet, so they all do
+    except where it would be odd.
+
+    `use` is what happens when the player uses it, `heal` how much health that
+    restores. `slot` and `light` are for things that can be held: a lit torch
+    is the only equipment that exists, and it is the one that does something -
+    see docs/PROJECT_STATUS.md on why there is no sword yet.
+
+    `value` is worth in copper, for when there is trade. Recorded now because
+    it is a property of the thing, not of the shop.
+    """
+    return (name, sheet, col, row, w, h, one, many, short, weight,
+            1 if stack else 0, use, heal, slot, light, value)
+
+
+ITEMS = [
+    item("BREAD",  f"{FOOD}/Bread A.png",  2, 0, 1, 1,
+         "a loaf of bread", "loaves of bread", "bread",
+         weight=40, use=USE_EAT, heal=4, value=5),
+    item("APPLE",  f"{FOOD}/Fruit A.png",  3, 0, 1, 1,
+         "an apple", "apples", "apples",
+         weight=15, use=USE_EAT, heal=2, value=2),
+    item("POTION", f"{SMALL}/Kitchen Clutter A.png", 2, 4, 1, 1,
+         "a phial of red liquor", "phials of red liquor", "phials",
+         weight=60, use=USE_DRINK, heal=15, value=40),
+    item("TORCH",  f"{WALLITEM}/Lighting, Wall.png", 2, 0, 1, 2,
+         "a torch", "torches", "torches",
+         weight=90, slot=SLOT_LIGHT, light=4, value=8),
+    item("GOLD",   f"{ORES}/Ore, Gold.png", 1, 2, 1, 1,
+         "a gold coin", "gold coins", "gold",
+         weight=1, value=10),
+    item("SILVER", f"{ORES}/Alloys.png",    2, 0, 1, 1,
+         "a bar of silver", "bars of silver", "silver",
+         weight=400, value=200),
+]
 
 
 PROPS = [
@@ -648,6 +722,48 @@ def build_props():
     return packer.render(), entries
 
 
+def build_items():
+    """Items are packed like props, and measured to the same bar.
+
+    An item is drawn at its bottom row, the same as a prop stands on its
+    anchor cell, so that a torch lying on the ground and a torch bracketed to
+    a wall are the same picture in the same place.
+    """
+    packer = Shelf(512)
+    entries = []
+    cache = {}
+    for (name, rel, c, r, wt, ht, one, many, short, weight,
+         stack, use, heal, slot, light, value) in ITEMS:
+        if rel not in cache:
+            cache[rel] = sheet(rel)
+        img = cache[rel].crop((c * TILE, r * TILE, (c + wt) * TILE, (r + ht) * TILE))
+
+        # The bottom row is what sits on the ground, so that is the cell that
+        # has to carry the picture - the same rule, and the same 5% bar, as a
+        # prop's anchor. The wall torch is exactly why: its top row is nine
+        # texels of flame tip.
+        cell = img.crop((0, (ht - 1) * TILE, TILE, ht * TILE))
+        drawn = sum(1 for a in cell.getchannel("A").get_flattened_data() if a > 16)
+        percent = 100 * drawn // (TILE * TILE)
+        if percent < 5:
+            sys.exit(f"item {name}: only {percent}% of its ground cell is drawn "
+                     f"at {rel} ({c},{r}) - the pick is wrong")
+
+        if slot != SLOT_NONE and light > GG_LIGHT_MAX_RADIUS:
+            sys.exit(f"item {name} lights {light} tiles, past the "
+                     f"{GG_LIGHT_MAX_RADIUS} the renderer scans for emitters")
+        if use != USE_NONE and heal == 0:
+            sys.exit(f"item {name} can be used but does nothing - either give it "
+                     f"an effect or make it USE_NONE")
+        if heal and use == USE_NONE:
+            sys.exit(f"item {name} heals {heal} but cannot be used")
+
+        x, y, w, h = packer.add(name, img)
+        entries.append((name, x, y, w, h, wt, ht, one, many, short, weight,
+                        stack, use, heal, slot, light, value))
+    return packer.render(), entries
+
+
 def build_actors():
     sheet_w = FRAME * WALK_FRAMES
     out = Image.new("RGBA", (sheet_w, FRAME * DIRS * len(ACTORS)), (0, 0, 0, 0))
@@ -738,7 +854,7 @@ def banner(filename, what):
 """
 
 
-def emit_ids(tiles, props, actors, path):
+def emit_ids(tiles, props, actors, items, path):
     """The content vocabulary: what a tile, prop or actor *is*.
 
     Split out from the rectangles deliberately. `src/core/` reasons about
@@ -770,6 +886,41 @@ def emit_ids(tiles, props, actors, path):
         o.append(f"    GG_ACTOR_{name},")
     o.append("    GG_ACTOR_COUNT")
     o.append("} gg_actor_id;")
+    o.append("")
+
+    o.append("typedef enum {")
+    for name, *_ in items:
+        o.append(f"    GG_ITEM_{name},")
+    o.append("    GG_ITEM_COUNT")
+    o.append("} gg_item_id;")
+    o.append("")
+    o.append("// What using a thing does.")
+    o.append("typedef enum { GG_USE_NONE, GG_USE_EAT, GG_USE_DRINK } gg_item_use;")
+    o.append("")
+    o.append("// Where a thing can be held. One slot so far, and it is the one")
+    o.append("// that does something: a torch you are holding lights the world.")
+    o.append("typedef enum { GG_SLOT_NONE, GG_SLOT_LIGHT, GG_SLOT_COUNT } gg_slot_id;")
+    o.append("")
+    o.append("// A kind of carryable thing.")
+    o.append("//")
+    o.append("//   one/many/short  how it reads in a sentence, and bare in a list")
+    o.append("//   tiles_w/h       the sprite, in tiles, drawn from its bottom row")
+    o.append("//   weight          in HUNDREDTHS OF A STONE - the unit that makes a")
+    o.append("//                   coin weigh 1 and stay an integer")
+    o.append("//   stack           whether several share one slot in the pack")
+    o.append("//   use/heal        what using it does, and how much health it gives")
+    o.append("//   slot/light      where it is held, and how far it lights while held")
+    o.append("//   value           worth in copper, for when there is trade")
+    o.append("typedef struct {")
+    o.append("    const char *one, *many, *short_name;")
+    o.append("    uint8_t  tiles_w, tiles_h;")
+    o.append("    uint16_t weight;")
+    o.append("    uint8_t  stack;")
+    o.append("    uint8_t  use, heal;")
+    o.append("    uint8_t  slot, light;")
+    o.append("    uint16_t value;")
+    o.append("} gg_item_def;")
+    o.append("extern const gg_item_def GG_ITEM[GG_ITEM_COUNT];")
     o.append("")
     o.append("// Row order within an actor's block, matching LPC's Walk.png.")
     o.append("typedef enum { GG_FACE_UP, GG_FACE_LEFT, GG_FACE_DOWN, "
@@ -806,20 +957,34 @@ def emit_ids(tiles, props, actors, path):
         f.write("\n".join(o) + "\n")
 
 
-def emit_sizes(props, path):
-    """The one generated .c file - a table the simulation links against."""
-    o = [banner("gg_ids.c", "Prop geometry, for the simulation's collision."),
+def emit_sizes(props, items, path):
+    """The one generated .c file - tables the simulation links against."""
+    o = [banner("gg_ids.c", "Prop geometry and the item table, for the "
+                            "simulation."),
          '#include "core/gg_ids.h"', "",
          "const gg_prop_size GG_PROP_SIZE[GG_PROP_COUNT] = {"]
     for name, x, y, w, h, wt, ht, ax, ay, fw, fh, door, hollow, light in props:
         o.append(f"    [GG_PROP_{name}] = {{ {wt}, {ht}, {ax}, {ay}, "
                  f"{fw}, {fh}, {door}, {hollow}, {light} }},")
     o.append("};")
+    o.append("")
+
+    o.append("const gg_item_def GG_ITEM[GG_ITEM_COUNT] = {")
+    for (name, x, y, w, h, wt, ht, one, many, short, weight,
+         stack, use, heal, slot, light, value) in items:
+        uses = ["GG_USE_NONE", "GG_USE_EAT", "GG_USE_DRINK"][use]
+        slots = ["GG_SLOT_NONE", "GG_SLOT_LIGHT"][slot]
+        o.append(f"    [GG_ITEM_{name}] = {{")
+        o.append(f'        "{one}", "{many}", "{short}",')
+        o.append(f"        {wt}, {ht}, {weight}, {stack},")
+        o.append(f"        {uses}, {heal}, {slots}, {light}, {value},")
+        o.append("    },")
+    o.append("};")
     with open(path, "w") as f:
         f.write("\n".join(o) + "\n")
 
 
-def emit_atlas(tiles, props, actors, edges, overlays, font_meta, path):
+def emit_atlas(tiles, props, actors, items, edges, overlays, font_meta, path):
     first, last, cw, ch, fcols, adv = font_meta
     o = [banner("gg_atlas.h", "Where every sprite sits inside the four atlas "
                               "textures in assets/."),
@@ -836,6 +1001,13 @@ def emit_atlas(tiles, props, actors, edges, overlays, font_meta, path):
     o.append("static const gg_rect GG_PROP_RECT[GG_PROP_COUNT] = {")
     for name, x, y, w, h, *_rest in props:
         o.append(f"    [GG_PROP_{name}] = {{ {x:4d}, {y:4d}, {w:3d}, {h:3d} }},")
+    o.append("};")
+    o.append("")
+
+    o.append("// atlas_items.png - the things that can be picked up.")
+    o.append("static const gg_rect GG_ITEM_RECT[GG_ITEM_COUNT] = {")
+    for name, x, y, w, h, *_rest in items:
+        o.append(f"    [GG_ITEM_{name}] = {{ {x:4d}, {y:4d}, {w:3d}, {h:3d} }},")
     o.append("};")
     o.append("")
 
@@ -925,6 +1097,7 @@ def emit_credits(path):
     """
     used = sorted({os.path.dirname(rel) for _n, rel, *_ in TILES} |
                   {os.path.dirname(rel) for _n, rel, *_ in PROPS} |
+                  {os.path.dirname(rel) for _n, rel, *_ in ITEMS} |
                   {os.path.dirname(rel) for _n, rel, *_ in EDGES} |
                   {os.path.dirname(s[1]) for s in OVERLAYS if len(s) == 4} |
                   {"Characters"})
@@ -971,6 +1144,10 @@ def main():
     props_img.save(os.path.join(ASSETS, "atlas_props.png"))
     print(f"  props   {props_img.size[0]:4d}x{props_img.size[1]:<4d} {len(props):3d} entries")
 
+    items_img, items = build_items()
+    items_img.save(os.path.join(ASSETS, "atlas_items.png"))
+    print(f"  items   {items_img.size[0]:4d}x{items_img.size[1]:<4d} {len(items):3d} entries")
+
     actors_img, actors = build_actors()
     actors_img.save(os.path.join(ASSETS, "atlas_actors.png"))
     print(f"  actors  {actors_img.size[0]:4d}x{actors_img.size[1]:<4d} {len(actors):3d} entries")
@@ -981,9 +1158,9 @@ def main():
           f"cell {font_meta[2]}x{font_meta[3]}")
 
     src = os.path.join(ROOT, "src")
-    emit_ids(tiles, props, actors, os.path.join(src, "core", "gg_ids.h"))
-    emit_sizes(props, os.path.join(src, "core", "gg_ids.c"))
-    emit_atlas(tiles, props, actors, edges, overlays, font_meta,
+    emit_ids(tiles, props, actors, items, os.path.join(src, "core", "gg_ids.h"))
+    emit_sizes(props, items, os.path.join(src, "core", "gg_ids.c"))
+    emit_atlas(tiles, props, actors, items, edges, overlays, font_meta,
                os.path.join(src, "gfx", "gg_atlas.h"))
     emit_credits(os.path.join(ASSETS, "CREDITS.md"))
     print("  wrote src/core/gg_ids.{h,c}, src/gfx/gg_atlas.h, assets/CREDITS.md")

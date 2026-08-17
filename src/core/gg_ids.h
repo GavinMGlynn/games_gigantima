@@ -66,6 +66,44 @@ typedef enum {
     GG_ACTOR_COUNT
 } gg_actor_id;
 
+typedef enum {
+    GG_ITEM_BREAD,
+    GG_ITEM_APPLE,
+    GG_ITEM_POTION,
+    GG_ITEM_TORCH,
+    GG_ITEM_GOLD,
+    GG_ITEM_SILVER,
+    GG_ITEM_COUNT
+} gg_item_id;
+
+// What using a thing does.
+typedef enum { GG_USE_NONE, GG_USE_EAT, GG_USE_DRINK } gg_item_use;
+
+// Where a thing can be held. One slot so far, and it is the one
+// that does something: a torch you are holding lights the world.
+typedef enum { GG_SLOT_NONE, GG_SLOT_LIGHT, GG_SLOT_COUNT } gg_slot_id;
+
+// A kind of carryable thing.
+//
+//   one/many/short  how it reads in a sentence, and bare in a list
+//   tiles_w/h       the sprite, in tiles, drawn from its bottom row
+//   weight          in HUNDREDTHS OF A STONE - the unit that makes a
+//                   coin weigh 1 and stay an integer
+//   stack           whether several share one slot in the pack
+//   use/heal        what using it does, and how much health it gives
+//   slot/light      where it is held, and how far it lights while held
+//   value           worth in copper, for when there is trade
+typedef struct {
+    const char *one, *many, *short_name;
+    uint8_t  tiles_w, tiles_h;
+    uint16_t weight;
+    uint8_t  stack;
+    uint8_t  use, heal;
+    uint8_t  slot, light;
+    uint16_t value;
+} gg_item_def;
+extern const gg_item_def GG_ITEM[GG_ITEM_COUNT];
+
 // Row order within an actor's block, matching LPC's Walk.png.
 typedef enum { GG_FACE_UP, GG_FACE_LEFT, GG_FACE_DOWN, GG_FACE_RIGHT } gg_facing;
 

@@ -14,6 +14,11 @@ void gg_render_quit(void);
 // choose what they want.
 void gg_render_world(const gg_game *g, SDL_Renderer *ren);
 
+// The item atlas, for the pack panel: the UI shows each thing's own picture
+// rather than its name, and this is the one texture it needs that the world
+// renderer already owns.
+SDL_Texture *gg_render_items(void);
+
 // Top-left of the view **in world pixels**, not tiles.
 //
 // Pixels matter: a tile-quantised camera makes the whole world jump 32 px
@@ -28,9 +33,9 @@ void gg_render_screen_to_tile(const gg_game *g, int sx, int sy, int *tx, int *ty
 
 // --- light -----------------------------------------------------------------
 #define GG_LIGHT_FULL          255
-// How far the avatar's own light reaches, in tiles. Small: the point is that
-// the player is never in the dark, not that night stops mattering.
-#define GG_LIGHT_CARRY_RADIUS  4
+// How far the avatar's own light reaches is not a constant any more: it comes
+// from whatever is held in the light slot - see gg_light_radius. A torch is a
+// thing in the world like a lamp on a table, and it lights the same way.
 // The largest radius any emitter may have. The renderer scans a box this big
 // around each cell looking for them, so a brighter one would simply be
 // clipped - tools/make_atlas.py refuses one rather than let that happen.
