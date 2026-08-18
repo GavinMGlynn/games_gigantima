@@ -276,16 +276,21 @@ and **LeakSanitizer** catches, at 1.9 MB in 230 allocations. Plus `--ask` and a
 
 ### Map file format
 
-Version 3, little-endian, fixed-width. Round-trips byte for byte — the cells,
+Version 5, little-endian, fixed-width. Round-trips byte for byte — the cells,
 the things lying on the ground, and the people with their days. A file that is not a map, is truncated, is
 a different version, or claims implausible dimensions is rejected with a named
 message and without leaking the partial allocation. Terrain and prop ids are
 clamped on load, and an item id past the table or a pile lying off the map is
 refused outright, so a corrupt file cannot index off the end of anything.
 
-Version 2 added the ground items, version 3 the people, and no version reads
-another. Nothing outside a test ever wrote an older one, and a reader that
-guesses at a missing section is worse than one that says no.
+Version 2 added the ground items, version 3 the people, 4 the ways out, and 5 is
+the bridge — a new terrain in the middle of the enum shifts every id after it,
+so a version 4 file read as a version 5 one would turn every wooden floor into a
+plank deck over nothing. No version reads another. Nothing outside a test ever
+wrote an older one, and a reader that guesses at a missing section is worse than
+one that says no. **A map written as text is immune to all of this**: it names
+its terrain rather than numbering it, which is one more reason the shipped maps
+are text.
 
 The editor writes them, which is what the format was for.
 
@@ -481,6 +486,46 @@ inventory plan item.
 `a_lamp_indoors_does_not_light_the_street`, `noon_lights_the_whole_outdoors`;
 and `--shot` frames of the same town at noon, dusk and midnight, of the campfire
 on the square, and of a lit room with a dark street round it.*
+
+### Roads, and the bridge
+
+A road is a drunkard's walk stamped two tiles wide — one tile does not survive
+the grass overlay, which bleeds in from both sides at once and swallows it.
+
+**Where a road meets water it now bridges.** The three states this went through
+are worth keeping, because each fixed the last one's damage: paving the water
+put a brown causeway across the middle of the lake; skipping it left the north
+road ending in a puddle, which the generator hid by aiming that road off to one
+side; and a plank deck is neither. The road goes straight north again.
+
+`GG_TILE_BRIDGE` is ordinary walkable ground as far as the rules are concerned,
+which is the whole point of it, and laying one clears the cell's water flag. Two
+things had to follow it:
+
+- **A bridge shelves the water it crosses.** Deep water is never allowed to
+  touch anything that is not water — the shoreline is a 3×3 ring with a
+  shallow-to-land set and no deep-to-land one — so deep water beside a deck
+  would render as a hard square edge. Laying a deck demotes deep water in the
+  eight cells around it to shallow.
+- **Nothing grows on the road.** `dress_shoreline` runs *after* the roads are
+  carved and puts reeds on any dry cell beside water; reeds block, so a road
+  along a shore grew a hedge across itself and a bridge grew one in the middle
+  of the lake.
+
+Two bugs in the road itself came out with it. The walk stops *at* its target
+rather than after it, so the road ended one stamp short of where it was aimed —
+which for a road aimed at the top of the map meant it never got there. And the
+2×2 stamps overlap, so a cell bridged on one step was visited again on the next,
+found dry, and paved over with road: a causeway with planks at one end.
+
+*Verification: `a_road_crosses_the_water_rather_than_stopping_at_it` — twelve
+worlds, every one of which bridges; every bridge tile walkable and none of them
+still flagged as water; the road reaching the top of the map in each; and the
+town reachable from there by a flood fill over walkable ground rather than by
+the pathfinder, whose node budget answers "no" for its own reasons. The
+deep-water invariant is checked over twenty-five worlds by
+`deep_water_is_never_adjacent_to_land`, which is what caught the shelving. Plus
+a `--shot` of the crossing.*
 
 ### Shorelines
 
@@ -1997,8 +2042,5 @@ Named plainly, because a reader should not have to infer absence:
 
 Deliberate, documented, with the cost to close:
 
-- **Roads stop at water** rather than bridging it. Paving the water was what
-  put a brown causeway across the middle of the lake; a bridge prop is the
-  proper fix.
 - **The map's `region` byte is written and never read** beyond the region
   bounding boxes. It is there for the editor.

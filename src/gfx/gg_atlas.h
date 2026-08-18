@@ -27,8 +27,9 @@ static const gg_rect GG_TILE_RECT[GG_TILE_COUNT] = {
     [GG_TILE_WATER_DEEP] = {   32,   32,  32,  32 },
     [GG_TILE_MOUNTAIN] = {   64,   32,  32,  32 },
     [GG_TILE_CLIFF] = {   96,   32,  32,  32 },
-    [GG_TILE_FLOOR_WOOD] = {  128,   32,  32,  32 },
-    [GG_TILE_WALL_BRICK] = {  160,   32,  32,  32 },
+    [GG_TILE_BRIDGE] = {  128,   32,  32,  32 },
+    [GG_TILE_FLOOR_WOOD] = {  160,   32,  32,  32 },
+    [GG_TILE_WALL_BRICK] = {  192,   32,  32,  32 },
 };
 
 static const gg_rect GG_PROP_RECT[GG_PROP_COUNT] = {

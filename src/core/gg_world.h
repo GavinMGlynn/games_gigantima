@@ -205,10 +205,16 @@ bool gg_map_generate(gg_map *m, int w, int h, uint32_t seed);
 // this exists before there is much content to put in it.
 #define GG_MAP_MAGIC   "GGMAP\0\0\0"
 // Version 2 added the things lying on the ground, 3 the people, 4 the ways out
-// into other maps. There is no migration between any of them: no map file older
-// than the current one exists outside a test, and a reader that guesses at a
-// missing section is worse than one that says no.
-#define GG_MAP_VERSION 4
+// into other maps, and 5 is a bridge: a new terrain in the middle of the enum
+// shifts every id after it, so a version 4 file read as a version 5 one would
+// turn every wooden floor into a plank deck over nothing. There is no migration
+// between any of them: no map file older than the current one exists outside a
+// test, and a reader that guesses at a missing section is worse than one that
+// says no.
+//
+// A map written as *text* is immune to this - it names its terrain rather than
+// numbering it - which is one more reason the shipped maps are text.
+#define GG_MAP_VERSION 5
 
 bool gg_map_save(const gg_map *m, const char *path);
 bool gg_map_load(gg_map *m, const char *path);

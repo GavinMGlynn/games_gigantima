@@ -418,10 +418,12 @@ here. Nothing is on this list that is not already admitted to somewhere.
       fill that stops at a wall, follows the water flag and undoes in one step;
       and a second map opened over the first in both file forms, with none of
       the first's history surviving into it.*
-- [ ] **Roads that cross water.** Roads stop at the shore rather than bridging
-      it, because paving the water put a causeway across the lake.
-      *Verification: a road that reaches the other side over something that
-      looks like a bridge.*
+- [x] **Roads that cross water.** A plank deck, so the north road runs straight
+      out of the town again instead of being aimed around the lake. A bridge is
+      ordinary ground to walk on and shelves the deep water it crosses, and
+      nothing grows on it.
+      *Verification: twelve worlds, every one of which bridges, with the town
+      walkable from the top of the map in each — and a frame of the crossing.*
 - [ ] **The region byte, used or removed.** It is written into every map cell
       and read by nothing.
       *Verification: either something reads it, or it is gone from the format.*

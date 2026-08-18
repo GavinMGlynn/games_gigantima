@@ -6194,6 +6194,97 @@ static void everything_with_a_name_can_be_named(void) {
     gg_edit_close(&e);
 }
 
+// The plan's own verification for bridges: a road that reaches the other side.
+//
+// Roads used to stop at the shore. Before that they paved the water, which put
+// a brown causeway across the middle of the lake - so the fix for the causeway
+// left the north road ending in a puddle, and the generator had to aim it off
+// to one side to hide that. It now goes straight north and crosses.
+// Is (tx, ty) joined to (fx, fy) by walkable ground? A flood rather than a
+// path: the question is about the map and not about the pathfinder, and a
+// budget that ran out would answer "no" for the wrong reason.
+static bool reachable(const gg_map *m, int fx, int fy, int tx, int ty) {
+    const size_t cells = (size_t)m->w * (size_t)m->h;
+    uint8_t *seen = SDL_calloc(cells, 1);
+    int *stack = SDL_malloc(cells * sizeof *stack);
+    if (!seen || !stack) { SDL_free(seen); SDL_free(stack); return false; }
+
+    int top = 0;
+    bool found = false;
+    stack[top++] = fy * m->w + fx;
+    seen[fy * m->w + fx] = 1;
+    while (top > 0 && !found) {
+        const int i = stack[--top];
+        const int x = i % m->w, y = i / m->w;
+        if (x == tx && y == ty) { found = true; break; }
+        static const int DX[4] = { 0, 0, -1, 1 };
+        static const int DY[4] = { -1, 1, 0, 0 };
+        for (int k = 0; k < 4; k++) {
+            const int nx = x + DX[k], ny = y + DY[k];
+            if (!gg_map_in_bounds(m, nx, ny)) continue;
+            const int j = ny * m->w + nx;
+            if (seen[j] || !gg_map_walkable(m, nx, ny)) continue;
+            seen[j] = 1;
+            stack[top++] = j;
+        }
+    }
+    SDL_free(seen);
+    SDL_free(stack);
+    return found;
+}
+
+static void a_road_crosses_the_water_rather_than_stopping_at_it(void) {
+    int with_bridge = 0;
+    for (uint32_t seed = 1; seed <= 12; seed++) {
+        gg_map m;
+        SDL_zero(m);
+        CHECK(gg_map_generate(&m, 160, 140, seed), "the world would not build");
+
+        int bridge = 0, wet_bridge = 0;
+        for (int y = 0; y < m.h; y++)
+            for (int x = 0; x < m.w; x++) {
+                const gg_cell *c = gg_map_at_const(&m, x, y);
+                if (c->terrain != GG_TILE_BRIDGE) continue;
+                bridge++;
+                // A bridge is ground. A cell still flagged as water while
+                // showing planks is a cell you need a boat for and cannot
+                // tell, which is worse than no bridge at all.
+                if (c->flags & GG_CELL_WATER) wet_bridge++;
+                CHECK(gg_map_walkable(&m, x, y),
+                      "the bridge at %d,%d cannot be walked on", x, y);
+            }
+        CHECK(wet_bridge == 0, "%d bridge tiles are still water", wet_bridge);
+        if (bridge > 0) with_bridge++;
+
+        // And whatever the seed, the road is whole: the town can be walked to
+        // from the top of the map. That is the fact the bridge exists for, and
+        // it is not a thing a picture of a lake can show.
+        // Walked rather than pathfound: a flood out of the town square says
+        // what is joined to it, and the question is whether the far side of
+        // the lake is.
+        int fx = -1, fy = -1;
+        for (int x = 0; x < m.w && fx < 0; x++) {
+            const uint8_t t = gg_map_at_const(&m, x, 1)->terrain;
+            // Or a bridge: a road that meets the edge of the map over water
+            // has still reached the edge of the map.
+            if (t == GG_TILE_ROAD || t == GG_TILE_BRIDGE) { fx = x; fy = 1; }
+        }
+        CHECK(fx >= 0, "seed %u: the road does not reach the top of the map",
+              seed);
+        if (fx >= 0)
+            CHECK(reachable(&m, m.start_x, m.start_y, fx, fy),
+                  "seed %u: the road reaches the top of the map at %d,%d and "
+                  "the town cannot be walked to from it", seed, fx, fy);
+        gg_map_free(&m);
+    }
+
+    // Not every seed puts water under the north road, so this is "most" rather
+    // than "all" - but a generator that never bridges is one where the road is
+    // still going round.
+    SDL_Log("gigantima: %d of 12 worlds have a road over water", with_bridge);
+    CHECK(with_bridge >= 8, "only %d of 12 worlds bridge anything", with_bridge);
+}
+
 // The editor is where a map should be found to be broken.
 static void the_editor_says_what_is_wrong_with_a_map(void) {
     gg_editor e;
@@ -9271,6 +9362,7 @@ int main(void) {
     RUN(every_event_has_a_sound_baked_for_it);
 
     RUN(a_map_authored_in_the_editor_can_be_played);
+    RUN(a_road_crosses_the_water_rather_than_stopping_at_it);
     RUN(the_editor_rubs_out_what_it_draws);
     RUN(a_mistake_can_be_taken_back);
     RUN(an_area_can_be_filled);

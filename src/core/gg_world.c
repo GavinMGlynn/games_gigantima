@@ -18,6 +18,11 @@ const gg_terrain_def GG_TERRAIN[GG_TILE_COUNT] = {
     [GG_TILE_WATER_DEEP] = { "deep water", false, true,  0 },
     [GG_TILE_MOUNTAIN]   = { "mountain",   false, false, 0 },
     [GG_TILE_CLIFF]      = { "cliff",      false, false, 0 },
+    // A plank deck over water. Ordinary ground as far as the rules are
+    // concerned - which is the whole point of it - and the water flag is
+    // cleared where one is laid, or the cell would still be a cell you need a
+    // boat for while looking like a bridge.
+    [GG_TILE_BRIDGE]     = { "a bridge",   true,  false, 0 },
     // Interiors. The floor is walkable; the wall is not, though a building's
     // walls are also flagged GG_CELL_BLOCKED, so this is belt and braces.
     [GG_TILE_FLOOR_WOOD] = { "a wooden floor", true,  false, 0 },
@@ -359,6 +364,11 @@ static void dress_shoreline(gg_map *m, gg_rng *rng) {
                 if (wet < 4 && gg_rand_below(rng, 6) == 0)
                     set_prop(m, x, y, GG_PROP_LILYPAD);
             } else if (wet > 0 && gg_rand_below(rng, 3) == 0) {
+                // Not on the way. Reeds block, and this runs after the roads
+                // are carved - so a road along a shore grew a hedge across
+                // itself, and a bridge grew one in the middle of the lake.
+                if (c->terrain == GG_TILE_ROAD || c->terrain == GG_TILE_BRIDGE)
+                    continue;
                 set_prop(m, x, y, gg_rand_below(rng, 2)
                                   ? GG_PROP_REEDS : GG_PROP_CATTAILS);
             }
@@ -369,27 +379,55 @@ static void dress_shoreline(gg_map *m, gg_rng *rng) {
 // A road drawn as a drunkard's walk between two points. It lays ROAD over
 // whatever it crosses and clears props, so it is also what guarantees the town
 // is reachable from the map edge.
+// One 2x2 stamp of road. Two tiles wide, so the road is that wide whichever way
+// it happens to be running: one tile does not survive contact with the grass
+// overlay, because verges bleed in from both sides at once and swallow the road
+// almost entirely - the right behaviour for the overlay and the wrong width for
+// a road.
+static void road_stamp(gg_map *m, int x, int y) {
+    {
+        for (int oy = 0; oy < 2; oy++) {
+            for (int ox = 0; ox < 2; ox++) {
+                gg_cell *c = gg_map_at(m, x + ox, y + oy);
+                if (!c || (c->flags & GG_CELL_BLOCKED)) continue;
+                // Water is bridged, not paved. Filling the cell in with road
+                // was what put a brown causeway across the middle of the lake;
+                // stopping at the shore left the road going nowhere. A plank
+                // deck is neither - it is ground you can walk on that still
+                // reads as water underneath.
+                // Or a deck already laid: the 2x2 stamps overlap, so a cell
+                // bridged on one step is visited again on the next - and the
+                // second visit sees dry ground and paved the bridge over with
+                // road, which is how a causeway came back wearing planks at
+                // one end.
+                if ((c->flags & GG_CELL_WATER) || c->terrain == GG_TILE_BRIDGE) {
+                    c->terrain = GG_TILE_BRIDGE;
+                    c->flags &= (uint8_t)~GG_CELL_WATER;
+                    // Deep water is never allowed to touch anything that is
+                    // not water: the shoreline is drawn from a 3x3 ring that
+                    // has a shallow-to-land set and no deep-to-land one, so a
+                    // deep tile against a bridge renders as a hard square
+                    // edge. A bridge shelves the water it crosses.
+                    for (int ny = -1; ny <= 1; ny++)
+                        for (int nx = -1; nx <= 1; nx++) {
+                            gg_cell *n = gg_map_at(m, x + ox + nx, y + oy + ny);
+                            if (n && n->terrain == GG_TILE_WATER_DEEP)
+                                n->terrain = GG_TILE_WATER;
+                        }
+                } else {
+                    c->terrain = GG_TILE_ROAD;
+                }
+                c->prop = GG_NO_PROP;
+            }
+        }
+    }
+}
+
 static void carve_road(gg_map *m, gg_rng *rng, int x0, int y0, int x1, int y1) {
     int x = x0, y = y0;
     int guard = (m->w + m->h) * 4;              // cannot loop forever
     while ((x != x1 || y != y1) && guard-- > 0) {
-        // Two tiles wide, stamped as a 2x2 so the road is that wide whichever
-        // way it happens to be running. One tile does not survive contact with
-        // the grass overlay: verges bleed in from both sides at once and swallow
-        // the road almost entirely, which is the right behaviour for the
-        // overlay and the wrong width for a road.
-        for (int oy = 0; oy < 2; oy++) {
-            for (int ox = 0; ox < 2; ox++) {
-                gg_cell *c = gg_map_at(m, x + ox, y + oy);
-                // Skip water rather than paving it. Filling the cell in was
-                // what put a brown causeway across the middle of the lake - a
-                // road stops at the shore until there is a bridge for it.
-                if (!c || (c->flags & GG_CELL_BLOCKED) || (c->flags & GG_CELL_WATER))
-                    continue;
-                c->terrain = GG_TILE_ROAD;
-                c->prop = GG_NO_PROP;
-            }
-        }
+        road_stamp(m, x, y);
         // Step toward the target, favouring the longer axis, with an
         // occasional sidestep so the road bends.
         if (gg_absi(x1 - x) > gg_absi(y1 - y) || (y == y1))
@@ -403,6 +441,10 @@ static void carve_road(gg_map *m, gg_rng *rng, int x0, int y0, int x1, int y1) {
             y = gg_clampi(y, 1, m->h - 2);
         }
     }
+    // And the far end itself. The loop stops *at* the target rather than after
+    // it, so without this the road ends one stamp short of where it was aimed -
+    // which for a road aimed at the top of the map means it never gets there.
+    road_stamp(m, x, y);
 }
 
 // The three buildings the art gives us. Drawn as props, so a roof overhangs
@@ -651,11 +693,11 @@ bool gg_map_generate(gg_map *m, int w, int h, uint32_t seed) {
     const int ty = gg_clampi(h * 2 / 3, 2, h - th - 2);
     build_town(m, &rng, tx, ty, tw, th);
 
-    // The lake sits due north of the town, so a road run straight up from the
-    // gate walks into it. Aim the northern road off to one side of the lake
-    // instead; the road still leaves town northward and still reaches the map
-    // edge, and it no longer has to be stopped by water half way.
-    carve_road(m, &rng, tx + tw / 2, ty, w / 5, 1);
+    // Straight north out of the gate, lake or no lake. It used to be aimed off
+    // to one side, because a road that met water stopped at the shore and left
+    // half a road behind; now it bridges, and a road that crosses the lake is
+    // better than one that goes the long way round to avoid saying so.
+    carve_road(m, &rng, tx + tw / 2, ty, tx + tw / 2, 1);
     carve_road(m, &rng, tx + tw / 2, ty + th - 1, w - 10, h - 6);
 
     dress_shoreline(m, &rng);

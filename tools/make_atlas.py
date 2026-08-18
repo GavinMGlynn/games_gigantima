@@ -63,6 +63,10 @@ CLIFF = "Terrain/cliff_summer.png"
 SOIL = "Terrain/tilled_soil.png"
 GRIT = "Structure/Floor/Gritty Dirt.png"
 WOOD = "Structure/Floor/Wood Floor A.png"
+# A plank deck, planks running across the way you walk, which is what a bridge
+# looks like from above. Measured like the rest: `scan_sheet.py` reports cell
+# (1, 1) of this sheet fully opaque and seamless against itself both ways.
+BRIDGE = "Structure/Bridges/Wood Bridge A - No Rails.png"
 BRICK = "Structure/Walls/Brick Wall A.png"
 
 TILES = [
@@ -81,6 +85,7 @@ TILES = [
     ("CLIFF",           CLIFF,       3,  3),
     # Interiors. Both tile cleanly left-to-right; their vertical seam is a
     # plank joint and a brick course, which is what those surfaces look like.
+    ("BRIDGE",          BRIDGE,      1,  1),
     ("FLOOR_WOOD",      WOOD,        1,  1),
     ("WALL_BRICK",      BRICK,       1,  1),
 ]

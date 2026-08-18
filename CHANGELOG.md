@@ -36,6 +36,8 @@ what that release had; this is what has closed since.
 - **Magic beyond light, heal and harm**: a word that puts somebody to sleep, a
   ward that turns blows for a while, and one that sets you down on the far side
   of whatever is in the way. Nystul teaches the three new runes.
+- **Roads that cross water.** A plank bridge, so the road out of town runs
+  straight north over the lake instead of being aimed around it.
 - **An editor for people who are not me.** Undo and redo thirty deep, fill, and
   somewhere to type — so it can open any map on the machine (listed, not typed),
   save under another name, and give a place or a person a name instead of
@@ -61,11 +63,11 @@ what that release had; this is what has closed since.
 
 ### Still open
 
-Bridges, and the region byte.
+The map's region byte, which is written and read by nothing.
 
 ### Note
 
-The save format has moved (version 13) and there is no migration, so a journey
+The save and map formats have moved (versions 14 and 5) and there is no migration, so a journey
 saved by 0.1.0-beta.1 will not resume on a build from `main`.
 
 ## 0.1.0-beta.1
