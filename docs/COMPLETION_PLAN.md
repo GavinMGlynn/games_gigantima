@@ -366,9 +366,15 @@ here. Nothing is on this list that is not already admitted to somewhere.
       20 to a hammer and 8 to a sword; an adept shooting at you loses 11 to a
       sword and 8 to a hammer; a thrown stone reaches five tiles and beats a
       warden once in 20. No weapon is strictly better than another.*
-- [ ] **Combat with more than one answer.** Blows, initiative, reach, fleeing
-      and loot exist; there are no criticals and no skill in it.
-      *Verification: the same fight won two different ways.*
+- [x] **Combat with more than one answer.** A roll of twenty is a telling blow —
+      it lands whatever the armour, and lands twice as hard — and striking
+      somebody who is not looking at you is easier and hurts more. Everything
+      turns to face what it strikes and now turns on **whoever is hurting it**,
+      so a back is only ever turned because somebody else is holding its
+      attention: bringing company is the skill, not a stat.
+      *Verification: a hill man beats a lone swordsman 9 times in 20 and a pair
+      of them once in 20 — the same fight, won two ways. Companions had to stop
+      queueing behind the Avatar for it to be true.*
 - [ ] **Magic beyond three effects.** Light, heal and harm. The rune vocabulary
       can say far more than that.
       *Verification: a spell that is not any of the three, cast from words the

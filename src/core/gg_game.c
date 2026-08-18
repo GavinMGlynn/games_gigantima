@@ -775,13 +775,36 @@ static void world_turn(gg_game *g, int minutes) {
         // A companion who has something at arm's length deals with it before
         // thinking about the line. Following into a fight and standing there
         // is the behaviour that makes a party feel like luggage.
+        //
+        // And one with something *near* goes to meet it, rather than queueing
+        // behind the Avatar on the footprint it is meant to be standing on.
+        // That is what makes bringing somebody worth more than a second sword:
+        // a creature turns on whoever is hurting it, so while it deals with a
+        // companion its back is to whoever else walks up.
         {
-            int foe = -1;
-            for (int k = 0; k < g->actors; k++)
-                if (gg_at_odds(g, i, k) &&
-                    gg_dist_cheb(a->x, a->y, g->actor[k].x, g->actor[k].y) <= 1)
-                    foe = k;
-            if (foe >= 0) { gg_strike(g, i, foe); continue; }
+            int foe = -1, near = 0;
+            for (int k = 0; k < g->actors; k++) {
+                if (!gg_at_odds(g, i, k)) continue;
+                const int d = gg_dist_cheb(a->x, a->y, g->actor[k].x, g->actor[k].y);
+                if (foe < 0 || d < near) { foe = k; near = d; }
+            }
+            if (foe >= 0 && near <= 1) { gg_strike(g, i, foe); continue; }
+
+            // Close enough to be this fight rather than a different one. Four
+            // tiles: a companion should not wander off across a field, and the
+            // Avatar's own trail is never more than a few tiles long.
+            if (foe >= 0 && near <= GG_COMPANION_REACH) {
+                gg_walk_ctx ctx = { .g = g, .self = i };
+                int nx, ny;
+                if (gg_path_next_step(&g->path, path_passable, &ctx, a->x, a->y,
+                                      g->actor[foe].x, g->actor[foe].y,
+                                      GG_PATH_BUDGET, &nx, &ny) &&
+                    gg_map_walkable(&g->map, nx, ny) &&
+                    !gg_actor_occupied(g->actor, g->actors, nx, ny, i)) {
+                    gg_actor_move_to(a, nx, ny);
+                    continue;
+                }
+            }
         }
 
         // The Nth footprint back. Before there are enough footprints - just

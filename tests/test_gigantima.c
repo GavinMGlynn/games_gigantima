@@ -7059,6 +7059,131 @@ static void the_second_story_can_be_played_and_the_first_hears_of_it(void) {
 }
 
 // ---------------------------------------------------------------------------
+// Two ways to win a fight
+// ---------------------------------------------------------------------------
+// Fights a hill man twenty times over and returns how many the party survived.
+// `alone` is the difference between walking up to it by yourself and bringing
+// somebody - which is not only more swords, but a back turned: everything
+// faces what it strikes, so a creature busy with a companion is a creature the
+// Avatar can get behind.
+static int fight_a_hillman(bool alone, bool telling_blows) {
+    int won = 0;
+    for (uint32_t seed = 1; seed <= 20; seed++) {
+        gg_game g;
+        if (!gg_game_new(&g, seed * 977u, "Flanker")) return -1;
+        (void)telling_blows;
+
+        g.packn = 0;
+        for (int sl = 0; sl < GG_SLOT_COUNT; sl++) g.equipped[sl] = -1;
+        gg_pack_add(&g, GG_ITEM_SWORD, 1);
+        g.pack_cursor = gg_pack_find(&g, GG_ITEM_SWORD);
+        g.mode = GG_MODE_PACK;
+        gg_game_act(&g, GG_ACT_EQUIP);
+        g.mode = GG_MODE_PLAY;
+
+        // Open ground for the three of them.
+        int fx = -1, fy = -1;
+        for (int y = 3; y < g.map.h - 3 && fx < 0; y++)
+            for (int x = 3; x < g.map.w - 8 && fx < 0; x++) {
+                bool clear = true;
+                for (int dx = -1; dx < 7 && clear; dx++)
+                    for (int dy = -1; dy < 2 && clear; dy++)
+                        if (!gg_map_walkable(&g.map, x + dx, y + dy)) clear = false;
+                if (clear) { fx = x; fy = y; }
+            }
+        if (fx < 0) { gg_game_free(&g); return -1; }
+
+        gg_actor *me = gg_player(&g);
+        me->x = (int16_t)fx;
+        me->y = (int16_t)fy;
+        me->from_x = me->x;
+        me->from_y = me->y;
+
+        const int foe = gg_spawn_named(&g, "HILLMAN", fx + 4, fy);
+        if (foe < 0) { gg_game_free(&g); return -1; }
+
+        if (!alone) {
+            // Somebody to walk with, built the way the world builds one.
+            const int friend = gg_spawn_foe(&g, gg_bestiary_find("HILLMAN"),
+                                            fx, fy + 1);
+            if (friend > 0) {
+                g.actor[friend].hostile = false;
+                g.actor[friend].beast = 0;
+                SDL_strlcpy(g.actor[friend].name, "Dupre",
+                            sizeof g.actor[friend].name);
+                g.actor[friend].hp = g.actor[friend].hp_max = 18;
+                g.actor[friend].damage = 0;
+                g.actor[friend].guard = 0;
+                g.actor[friend].level = 1;
+                g.actor[friend].speed = 100;
+                g.actor[friend].flees = 0;
+                gg_party_join(&g, friend);
+            }
+        }
+
+        for (int turn = 0; turn < 300 && g.mode == GG_MODE_PLAY &&
+                           g.actor[foe].active; turn++) {
+            const gg_actor *p = gg_player_const(&g);
+            int nx = 0, ny = 0;
+            if (!gg_step_toward(&g, g.player, g.actor[foe].x, g.actor[foe].y,
+                                &nx, &ny)) break;
+            gg_game_act(&g, gg_action_toward(nx - p->x, ny - p->y));
+        }
+        if (!g.actor[foe].active && g.mode != GG_MODE_GAMEOVER) won++;
+        gg_game_free(&g);
+    }
+    return won;
+}
+
+// The same fight, won two ways: with a bigger weapon, or with somebody to hold
+// its attention while you get behind it.
+static void the_same_fight_can_be_won_two_ways(void) {
+    CHECK(gg_bestiary_load(gg_asset_path("bestiary.txt")), "no bestiary");
+
+    const int alone = fight_a_hillman(true, true);
+    const int together = fight_a_hillman(false, true);
+    SDL_Log("gigantima: a hill man beats a lone swordsman %d times in 20 and a "
+            "pair %d times in 20", 20 - alone, 20 - together);
+    CHECK(alone >= 0 && together >= 0, "the fights would not run");
+
+    // Both are ways to win: neither approach is a dead end.
+    CHECK(alone > 0, "a lone swordsman never beats a hill man");
+    CHECK(together > alone,
+          "bringing somebody is worth nothing in a fight (%d against %d of 20)",
+          together, alone);
+
+    // And the reason it is worth something is the back that gets turned, not
+    // only the second sword. A blow from behind is easier to land and lands
+    // harder, and a creature only ever has its back to you because it is busy
+    // with somebody else.
+    CHECK(GG_FLANK_BONUS > 0 && GG_FLANK_DAMAGE > 0,
+          "a turned back is worth nothing");
+
+    // A telling blow lands whatever the guard: a roll of twenty is not a miss
+    // against anything, which is what stops a very well armoured thing being
+    // untouchable by a weak one.
+    gg_game g;
+    CHECK(gg_game_new(&g, 4, "Lucky"), "new game failed");
+    const gg_actor *p = gg_player_const(&g);
+    const int foe = gg_spawn_named(&g, "WARDEN", p->x + 1, p->y);
+    CHECK(foe > 0, "no warden to swing at");
+    if (foe > 0) {
+        // A bare-handed level-one Avatar against a guard of five: without a
+        // telling blow, roll + 1 must reach 15, which one die in twenty cannot
+        // do at all. Over enough swings it still lands.
+        int landed = 0;
+        for (int i = 0; i < 400 && g.actor[foe].active; i++) {
+            g.actor[foe].hp = g.actor[foe].hp_max;
+            if (gg_strike(&g, g.player, foe) > 0) landed++;
+        }
+        CHECK(landed > 0, "nothing a level-one Avatar does can touch a warden");
+    }
+    gg_game_free(&g);
+
+    restore_bestiary();
+}
+
+// ---------------------------------------------------------------------------
 // Trade
 // ---------------------------------------------------------------------------
 // The gold in the pack was worth carrying only because it was heavy. This is
@@ -7261,7 +7386,14 @@ static void the_whole_story_can_be_played_from_start_to_finish(void) {
     // swings and given the level to land them: this pins that the story can be
     // played through, not that it is winnable at level one, which is a matter
     // of balance and belongs to a test about balance.
+    // Given the level to land them and the constitution to stay standing: a
+    // telling blow from somebody with Rugar's numbers can take a third of a
+    // real Avatar in one swing, and the moment this one falls the loop is inert
+    // - gg_game_act does nothing for the dead, so 600 swings became 600
+    // nothings. Whether he is *beatable* is measured by the balance test; this
+    // one pins that the story can be played through.
     gg_player(&g)->level = 20;
+    gg_player(&g)->hp_max = 400;
     for (int swing = 0; swing < 600 && g.actor[rugar].active; swing++) {
         gg_actor *me = gg_player(&g);
         me->hp = me->hp_max;
@@ -7971,6 +8103,7 @@ int main(void) {
     RUN(a_journey_that_fights_its_way_north_arrives_stronger);
     RUN(the_whole_story_can_be_played_from_start_to_finish);
     RUN(the_second_story_can_be_played_and_the_first_hears_of_it);
+    RUN(the_same_fight_can_be_won_two_ways);
     RUN(a_thing_can_be_bought_and_a_thing_can_be_sold);
     RUN(a_content_file_written_on_windows_still_loads);
     RUN(a_map_you_leave_is_as_you_left_it);

@@ -49,6 +49,13 @@ typedef struct {
     uint8_t reach, notice;
     int16_t flees;
 
+    // Who last hurt it, as an index *plus one* - so zero is "nobody" and a
+    // freshly zeroed actor is not angry with the Avatar by accident. A creature
+    // turns on whoever is hurting it, which is what makes bringing somebody
+    // worth more than a second sword: while it deals with them, its back is to
+    // you.
+    uint8_t angered_by;
+
     // Which row of the bestiary this came from, so its loot table can be
     // rolled when it falls. A save cannot write a pointer, and an index into a
     // file that may have been edited is checked on the way back in.

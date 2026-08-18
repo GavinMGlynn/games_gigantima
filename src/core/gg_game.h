@@ -96,6 +96,11 @@ typedef enum {
 // kilobytes and the save loader builds a whole game on the stack.
 #define GG_VISITED_MAX 12
 
+// How far a companion will step out of the line to meet something hostile. Far
+// enough to join the fight the party is in; not far enough to wander off across
+// a field after something that has not noticed anybody.
+#define GG_COMPANION_REACH 4
+
 // How far back the Avatar's footsteps are remembered. One per party slot, plus
 // a couple so the tail of the line is following a real path rather than the
 // leader's current tile.

@@ -93,11 +93,11 @@ creature SLINGER
 creature CHIEF
   name Rugar, who took the caravan
   art BRIGAND
-  health 34
+  health 44
   level 3
-  speed 100
-  damage 4
-  guard 2
+  speed 120
+  damage 6
+  guard 3
   reach 1
   notice 12
   flees 0

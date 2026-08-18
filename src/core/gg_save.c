@@ -143,6 +143,7 @@ static bool actor_write(SDL_IOStream *io, const gg_actor *a) {
     // an index into a file that may have been edited between saves, so it is
     // checked rather than trusted on the way back in.
     ok = ok && gg_io_w32(io, a->beast);
+    ok = ok && gg_io_w32(io, a->angered_by);
     ok = ok && gg_io_w32(io, a->reach) && gg_io_w32(io, a->notice) &&
                gg_io_w32(io, (uint32_t)(uint16_t)a->flees);
     ok = ok && gg_io_w32(io, a->schedn);
@@ -159,7 +160,7 @@ static bool actor_read(SDL_IOStream *io, gg_actor *a) {
     uint32_t active = 0, art = 0, facing = 0, x = 0, y = 0, def = 0, n = 0;
     uint32_t hp = 0, hpmax = 0, level = 0, party = 0;
     uint32_t hostile = 0, speed = 0, energy = 0, damage = 0, guard = 0;
-    uint32_t beast = 0, reach = 0, notice = 0, flees = 0;
+    uint32_t beast = 0, reach = 0, notice = 0, flees = 0, angered = 0;
     bool ok = gg_io_r32(io, &active) && gg_io_r32(io, &art) &&
               gg_io_r32(io, &facing);
     ok = ok && SDL_ReadIO(io, a->name, GG_ACTOR_NAME_MAX) == GG_ACTOR_NAME_MAX;
@@ -170,6 +171,7 @@ static bool actor_read(SDL_IOStream *io, gg_actor *a) {
     ok = ok && gg_io_r32(io, &hostile) && gg_io_r32(io, &speed) &&
                gg_io_r32(io, &energy) && gg_io_r32(io, &damage) &&
                gg_io_r32(io, &guard) && gg_io_r32(io, &beast) &&
+               gg_io_r32(io, &angered) &&
                gg_io_r32(io, &reach) && gg_io_r32(io, &notice) &&
                gg_io_r32(io, &flees);
     ok = ok && gg_io_r32(io, &n) && n <= GG_SCHEDULE_MAX;
@@ -199,6 +201,9 @@ static bool actor_read(SDL_IOStream *io, gg_actor *a) {
     // Clamped: a bestiary row past the end would be read when this thing died,
     // and the file it indexes into may have been edited since the save.
     a->beast = (uint8_t)(beast < (uint32_t)gg_bestiary_count() ? beast : 0);
+    // Clamped rather than trusted: it is an index into the actor array
+    // plus one, and this file may not be ours.
+    a->angered_by = (uint8_t)(angered <= GG_ACTORS_MAX ? angered : 0);
     // Not coerced to a minimum here: a townsperson has no reach at all, and
     // turning that into 1 on the way in made a saved game differ from the one
     // it was saved from. gg_reach applies the default where it is needed.

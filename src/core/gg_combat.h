@@ -25,6 +25,14 @@
 // an unarmoured, unskilled pair trade blows about half the time.
 #define GG_HIT_TARGET 10
 
+// What striking somebody who is not looking at you is worth. Everything turns
+// to face what it strikes, so a back is turned only when its owner is busy with
+// somebody else - which makes this the reward for bringing company rather than
+// a bonus anybody can farm. A roll of twenty is a telling blow: it lands
+// whatever the guard, and it lands twice as hard.
+#define GG_FLANK_BONUS  4
+#define GG_FLANK_DAMAGE 2
+
 // How near the Avatar has to come before something takes an interest, for
 // anything that does not say. Each creature may set its own; without any limit
 // at all a brigand hunts from anywhere on the map, and a player who stands

@@ -152,11 +152,21 @@ int gg_strike(gg_game *g, int attacker, int defender) {
 
     at->facing = gg_facing_from_delta(de->x - at->x, de->y - at->y);
 
+    // Is the defender looking at you? Everything turns to face what it strikes,
+    // so a creature busy with somebody else has its back to whoever else walks
+    // up - which is what a companion is *for*, and the only kind of skill in a
+    // turn-based fight that is about where you stand rather than which number
+    // is bigger.
+    const uint8_t toward = gg_facing_from_delta(at->x - de->x, at->y - de->y);
+    const bool behind = de->facing != toward;
+
     // One roll, through the game's RNG so the fight is part of the seeded
-    // world. Level counts for the striker, guard for the defender.
+    // world. Level counts for the striker, guard for the defender, and a back
+    // that is turned counts for a great deal.
     const int roll = 1 + (int)gg_rand_below(&g->rng, 20);
     const int against = GG_HIT_TARGET + gg_guard_power(g, defender);
-    if (roll + at->level < against) {
+    const int telling = roll == 20;          // a blow that goes home whatever
+    if (!telling && roll + at->level + (behind ? GG_FLANK_BONUS : 0) < against) {
         gg_log(g, "%s misses %s.", at->name, de->name);
         return 0;
     }
@@ -164,13 +174,19 @@ int gg_strike(gg_game *g, int attacker, int defender) {
     // Damage is never zero on a hit: a blow that connects and does nothing
     // reads as a bug however the arithmetic got there.
     const int power = gg_attack_power(g, attacker);
-    const int hurt = 1 + power + (int)gg_rand_below(&g->rng, 3);
+    int hurt = 1 + power + (int)gg_rand_below(&g->rng, 3);
+    if (behind) hurt += GG_FLANK_DAMAGE;
+    if (telling) hurt *= 2;
 
     de->hp = (int16_t)(de->hp - hurt);
+    de->angered_by = (uint8_t)(attacker + 1);
     // Two sounds, because being hit matters more than hitting: the Avatar
     // taking a blow should be the one that makes a player look at the health.
     gg_emit(g, defender == g->player ? GG_EV_HURT : GG_EV_BLOW);
-    gg_log(g, "%s strikes %s for %d.", at->name, de->name, hurt);
+    gg_log(g, telling ? "%s strikes %s a telling blow for %d!"
+                      : (behind ? "%s catches %s from behind for %d."
+                                : "%s strikes %s for %d."),
+           at->name, de->name, hurt);
 
     if (de->hp <= 0) {
         de->hp = 0;
@@ -234,6 +250,18 @@ static int nearest_foe(const gg_game *g, int who) {
         const int d = gg_dist_cheb(g->actor[who].x, g->actor[who].y,
                                    g->actor[i].x, g->actor[i].y);
         if (best < 0 || d < best_d) { best = i; best_d = d; }
+    }
+
+    // And among the ones equally near, whoever last hurt it. A creature that
+    // goes on hitting the same person while somebody else hacks at its back is
+    // not fighting, it is queueing - and it made bringing a companion worth
+    // nothing at all, because ties went to whoever came first in the array and
+    // that is always the Avatar.
+    const int angry = (int)g->actor[who].angered_by - 1;
+    if (angry >= 0 && angry < g->actors && gg_at_odds(g, who, angry)) {
+        const int d = gg_dist_cheb(g->actor[who].x, g->actor[who].y,
+                                   g->actor[angry].x, g->actor[angry].y);
+        if (best < 0 || d <= best_d) return angry;
     }
     return best;
 }

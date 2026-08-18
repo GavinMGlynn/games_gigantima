@@ -905,6 +905,43 @@ breaking the rule they pin — making every speed equal, clearing line of sight,
 dropping no loot, and putting townsfolk on the other side. Plus a `--shot` frame
 of an exchange of blows, now taken in CI.*
 
+### Fighting, and what to do about it
+
+Two things on top of the blow, the initiative, the reach and the fleeing that
+were already there.
+
+**A telling blow.** A roll of twenty lands whatever the guard and lands twice as
+hard. It is what stops something very well armoured being *untouchable* by
+somebody weak: a level-one Avatar bare-handed against a warden's guard of five
+needs 15 on a die of 20 plus one, which cannot happen at all — and now it can,
+one swing in twenty.
+
+**A turned back.** Striking somebody who is not facing you is +4 to land and +2
+damage. Everything turns to face what it strikes, so a back is turned only when
+its owner is busy with somebody else — which makes this the reward for bringing
+company rather than a bonus anybody can farm by circling.
+
+Two things had to change for that to be true, and both were defects in their own
+right:
+
+- **A creature now turns on whoever is hurting it.** It used to attack whoever
+  was nearest, ties going to the lowest index — which is always the Avatar. A
+  creature that goes on hitting the same person while somebody else hacks at its
+  back is not fighting, it is queueing.
+- **Companions go to meet what is near** rather than following the footprint
+  they are meant to be standing on. They would engage only if a foe walked into
+  them, so in practice they queued behind the Avatar and the party was one
+  sword with a tail.
+
+Both together are worth a great deal: a hill man beats a lone swordsman 9 times
+in 20 and a pair of them **once** in 20. It also made the climax a foregone
+conclusion — 20 wins in 20 — so Rugar was re-measured against the party that now
+comes for him and is harder, quicker and hits like a cart.
+
+*Verification: `the_same_fight_can_be_won_two_ways` — the same hill man, alone
+and with company, twenty fights each way; that both are ways to *win*; and that
+a level-one Avatar can land something on a warden at all.*
+
 ### Arms
 
 Four now: a smith's hammer, an arming sword, a throwing stone and a wooden
