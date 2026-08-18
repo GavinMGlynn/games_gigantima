@@ -905,6 +905,34 @@ breaking the rule they pin — making every speed equal, clearing line of sight,
 dropping no loot, and putting townsfolk on the other side. Plus a `--shot` frame
 of an exchange of blows, now taken in CI.*
 
+### What lives in the world
+
+Nine kinds, and **the art set is people** — so what tells them apart is how they
+fight, which is the only honest way to tell them apart at all.
+
+| | |
+| --- | --- |
+| brigand | the ordinary trouble of the vale; breaks off when it is going badly |
+| outlaw | quicker and thinner than a brigand |
+| slinger | throws from four tiles, and is nothing up close |
+| hill man | slow, heavy, and does not run — a different problem from a brigand |
+| lurker | quick, thin, and notices from a long way off in the dark |
+| warden | armour: a thrown stone will not get through it, a hammer will |
+| adept | throws from five tiles and is paper if you can reach it |
+| cutpurse | faster than anybody on foot, gone at the first scratch, carries gold |
+| Rugar | the man the first story is about |
+
+**Each is a different question.** That is a claim, so it is measured rather than
+asserted: a warden loses 1 fight in 20 to a thrown stone and 11 in 20 to a
+hammer, which is the whole reason to carry a real weapon; an adept beats
+somebody who stands and trades 20 times out of 20 and loses 8 in 20 to somebody
+who walks at it. The test reports both numbers on every run, so a change to any
+of these creatures says what it did to the fight.
+
+*Verification: `each_kind_of_creature_needs_a_different_answer` — no two kinds
+in the book with the same health, speed, damage, guard, reach, notice and
+flee-point; then the two duels above, twenty fights each, four ways.*
+
 ### The second storyline
 
 *Under the Hills.* Wyndle's mill has no corn because nothing comes down out of

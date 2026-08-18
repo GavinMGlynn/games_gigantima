@@ -143,3 +143,61 @@ creature LURKER
   loot SILVER 1 1 30
   loot NIGHTSHADE 1 2 50
   haunts 7 deep
+
+# Three more, and each is a different question rather than a different number.
+# The art set is people, so what tells them apart is how they fight.
+
+# Armour. Slow, hard to hit, and it does not run - a hammer gets through it and
+# a thrown stone does not, which makes it the reason to carry a real weapon.
+creature WARDEN
+  name a warden of the doors
+  art GUARD
+  health 26
+  level 3
+  speed 80
+  damage 3
+  guard 5
+  reach 1
+  notice 9
+  flees 0
+  worth 45
+  loot SHIELD 1 1 60
+  loot GOLD 10 24 100
+  haunts 3 deep
+
+# Reach. It stands off and throws, and it is paper if you can get to it - so the
+# answer is to close, and the answer to *that* is that it runs before you do.
+creature ADEPT
+  name a hedge adept
+  art MAGE
+  health 9
+  level 2
+  speed 100
+  damage 4
+  guard 0
+  reach 5
+  notice 13
+  flees 3
+  worth 40
+  loot ASH 2 4 100
+  loot NIGHTSHADE 1 2 60
+  haunts 3 fells
+
+# Speed, and no stomach for it. Quicker than anybody on foot and gone at the
+# first scratch: chasing one is how an afternoon disappears, and a thrown stone
+# is how it does not.
+creature CUTPURSE
+  name a cutpurse
+  art OUTLAW
+  health 10
+  level 1
+  speed 190
+  damage 1
+  guard 0
+  reach 1
+  notice 10
+  flees 8
+  worth 20
+  loot GOLD 20 40 100
+  haunts 2 vale
+  haunts 2 wyndle

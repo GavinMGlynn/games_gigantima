@@ -4849,6 +4849,117 @@ static void what_makes_the_game_reachable_survives_being_put_down(void) {
 }
 
 // ---------------------------------------------------------------------------
+// What lives in the world
+// ---------------------------------------------------------------------------
+// Fights one creature, twenty times, and says how many the Avatar won. `weapon`
+// is what is held; `close` walks in and swings, and not closing stands still
+// and lets it come - which is a real choice against something that throws.
+static int duel(const char *kind, gg_item_id weapon, bool close) {
+    int won = 0;
+    for (uint32_t seed = 1; seed <= 20; seed++) {
+        gg_game g;
+        if (!gg_game_new(&g, seed * 131u, "Duellist")) return -1;
+
+        g.packn = 0;
+        for (int s = 0; s < GG_SLOT_COUNT; s++) g.equipped[s] = -1;
+        if (weapon != GG_ITEM_COUNT) {
+            gg_pack_add(&g, weapon, 4);
+            g.pack_cursor = gg_pack_find(&g, weapon);
+            g.mode = GG_MODE_PACK;
+            gg_game_act(&g, GG_ACT_EQUIP);
+            g.mode = GG_MODE_PLAY;
+        }
+
+        // Room to fight in, and the two of them eight tiles apart so reach and
+        // speed both get to matter.
+        gg_actor *me = gg_player(&g);
+        int fx = -1, fy = -1;
+        for (int y = 2; y < g.map.h - 2 && fx < 0; y++)
+            for (int x = 2; x < g.map.w - 10 && fx < 0; x++) {
+                bool clear = true;
+                for (int dx = 0; dx < 10 && clear; dx++)
+                    for (int dy = 0; dy < 3 && clear; dy++)
+                        if (!gg_map_walkable(&g.map, x + dx, y + dy)) clear = false;
+                if (clear) { fx = x; fy = y; }
+            }
+        if (fx < 0) { gg_game_free(&g); return -1; }
+
+        me->x = (int16_t)fx;
+        me->y = (int16_t)fy;
+        me->from_x = me->x;
+        me->from_y = me->y;
+        const int foe = gg_spawn_named(&g, kind, fx + 8, fy);
+        if (foe < 0) { gg_game_free(&g); return -1; }
+
+        for (int turn = 0; turn < 200 && g.mode == GG_MODE_PLAY &&
+                           g.actor[foe].active; turn++) {
+            if (close) {
+                const gg_actor *p = gg_player_const(&g);
+                int nx = 0, ny = 0;
+                if (!gg_step_toward(&g, g.player, g.actor[foe].x,
+                                    g.actor[foe].y, &nx, &ny)) break;
+                gg_game_act(&g, gg_action_toward(nx - p->x, ny - p->y));
+            } else {
+                // Stand and answer whatever comes into reach.
+                gg_game_act(&g, GG_ACT_FIGHT);
+            }
+        }
+        if (!g.actor[foe].active && g.mode != GG_MODE_GAMEOVER) won++;
+        gg_game_free(&g);
+    }
+    return won;
+}
+
+// Every kind of creature is a different question. Told apart by how they fight
+// rather than by the sprite they wear - the art set is people, so that is the
+// only honest way to tell them apart at all.
+static void each_kind_of_creature_needs_a_different_answer(void) {
+    CHECK(gg_bestiary_load(gg_asset_path("bestiary.txt")), "no bestiary");
+
+    // Every one of them is a block in the file and nothing else, and no two of
+    // them fight the same way.
+    const int kinds = gg_bestiary_count();
+    CHECK(kinds >= 8, "the world holds %d kinds of creature", kinds);
+    for (int i = 0; i < kinds; i++)
+        for (int k = i + 1; k < kinds; k++) {
+            const gg_beast *a = gg_bestiary_at(i), *b = gg_bestiary_at(k);
+            const bool same = a->health == b->health && a->speed == b->speed &&
+                              a->damage == b->damage && a->guard == b->guard &&
+                              a->reach == b->reach && a->notice == b->notice &&
+                              a->flees == b->flees;
+            CHECK(!same, "%s and %s fight identically", a->id, b->id);
+        }
+
+    // A warden is armour. A stone will not get through it and a hammer will,
+    // which is the whole reason to carry a real weapon.
+    const int stone_vs_warden = duel("WARDEN", GG_ITEM_STONE, true);
+    const int hammer_vs_warden = duel("WARDEN", GG_ITEM_HAMMER, true);
+    SDL_Log("gigantima: a warden loses %d of 20 to a stone and %d of 20 to a hammer",
+            stone_vs_warden, hammer_vs_warden);
+    CHECK(stone_vs_warden >= 0 && hammer_vs_warden >= 0, "the duels would not run");
+    CHECK(hammer_vs_warden > stone_vs_warden + 4,
+          "a warden cares little which weapon it is hit with (%d against %d of 20)",
+          hammer_vs_warden, stone_vs_warden);
+
+    // An adept throws from six tiles. Standing still and trading is how you
+    // lose to one; walking at it is how you do not.
+    const int stand_vs_adept = duel("ADEPT", GG_ITEM_HAMMER, false);
+    const int close_vs_adept = duel("ADEPT", GG_ITEM_HAMMER, true);
+    SDL_Log("gigantima: an adept loses %d of 20 to somebody who stands and %d of "
+            "20 to somebody who closes", stand_vs_adept, close_vs_adept);
+    CHECK(close_vs_adept > stand_vs_adept + 4,
+          "an adept does not care whether it is closed with (%d against %d of 20)",
+          close_vs_adept, stand_vs_adept);
+
+    // And the answer to one thing is not the answer to another: what beats an
+    // adept is not what beats a warden.
+    CHECK(close_vs_adept != hammer_vs_warden || stand_vs_adept != stone_vs_warden,
+          "every fight in this world has the same shape");
+
+    restore_bestiary();
+}
+
+// ---------------------------------------------------------------------------
 // Audio
 // ---------------------------------------------------------------------------
 // Which tune the world calls for is pure arithmetic over the game state, so it
@@ -6757,8 +6868,25 @@ static void each_place_holds_what_the_bestiary_says_it_does(void) {
         }
         if (WANT[i].people) {
             CHECK(people > 0, "%s is a town with nobody in it", WANT[i].place);
-            CHECK(hostile == 0, "%s is a town with %d hostiles standing in it",
-                  WANT[i].place, hostile);
+
+            // Nothing hostile *among the townsfolk*. A cutpurse works the
+            // roads of a town and belongs there; what would be wrong is one
+            // standing in the square, which is what happens when the
+            // stay-out-of-town rule stops applying.
+            int in_town = 0;
+            for (int k = 0; k < g.actors; k++) {
+                if (k == g.player || !g.actor[k].active || !g.actor[k].hostile)
+                    continue;
+                for (int r = 0; r < g.map.regions; r++) {
+                    const gg_region *box = &g.map.region[r];
+                    if (box->kind != GG_REGION_TOWN) continue;
+                    if (g.actor[k].x >= box->x && g.actor[k].x < box->x + box->w &&
+                        g.actor[k].y >= box->y && g.actor[k].y < box->y + box->h)
+                        in_town++;
+                }
+            }
+            CHECK(in_town == 0, "%s has %d hostiles standing in the town itself",
+                  WANT[i].place, in_town);
         }
         gg_game_free(&g);
     }
@@ -7652,6 +7780,7 @@ int main(void) {
     RUN(a_creature_with_reach_strikes_from_where_it_stands);
     RUN(a_bestiary_that_does_not_parse_loads_nothing);
     RUN(the_vale_is_stocked_with_creatures_that_work);
+    RUN(each_kind_of_creature_needs_a_different_answer);
 
     RUN(a_recorded_session_replays_to_the_same_world);
     RUN(the_state_hash_notices_every_part_of_the_world);

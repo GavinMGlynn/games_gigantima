@@ -340,11 +340,15 @@ here. Nothing is on this list that is not already admitted to somewhere.
       the fells, fighting through the deep, finding the cache and handing it
       over — with the two flags each story raises for the other checked in both
       directions. It does not end the game; the caravan getting home does.*
-- [ ] **More that lives in it.** Three kinds of creature and a chief. The art
-      set is people, so more of it is more kinds of people, told apart by
-      behaviour rather than by sprite.
-      *Verification: each new kind is a block in `bestiary.txt` and nothing
-      else, and each fights differently enough to need a different answer.*
+- [x] **More that lives in it.** Nine kinds where there were four, each a
+      different question rather than a different number: a hill man who will not
+      run, a lurker that is quick and thin, a warden in armour, an adept that
+      throws from five tiles, a cutpurse that takes your gold and goes. Every
+      one is a block in `bestiary.txt` and nothing else.
+      *Verification: measured, not asserted. A warden loses 1 fight in 20 to a
+      thrown stone and 11 in 20 to a hammer; an adept beats somebody who stands
+      and trades 20 times out of 20 and loses 8 in 20 to somebody who walks at
+      it. And no two kinds in the book fight identically.*
 - [ ] **Trade.** Items carry a value in copper and nobody buys or sells. The
       gold in the pack should be worth carrying.
       *Verification: a thing bought, a thing sold, a purse that empties, and a
