@@ -1101,6 +1101,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
             { "party",    GG_SCREEN_PLAY },
             { "fight",    GG_SCREEN_PLAY },
             { "spells",   GG_SCREEN_PLAY },
+            { "magic",    GG_SCREEN_PLAY },
             { "journal",  GG_SCREEN_PLAY },
             { "travel",   GG_SCREEN_PLAY },
             { "return",   GG_SCREEN_PLAY },
@@ -1584,6 +1585,8 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
                 gg_learn(&app->game, gg_magic_rune(i)->word);
             gg_pack_add(&app->game, GG_ITEM_GINSENG, 2);
             gg_pack_add(&app->game, GG_ITEM_ASH, 1);
+            gg_pack_add(&app->game, GG_ITEM_NIGHTSHADE, 2);
+            gg_pack_add(&app->game, GG_ITEM_BLOODMOSS, 2);
             act(app, GG_ACT_CAST);
         }
 
@@ -1596,6 +1599,35 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
             gg_spawn_named(&app->game, "SLINGER", pl->x + 3, pl->y - 1);
             act(app, GG_ACT_FIGHT);
             act(app, GG_ACT_FIGHT);
+        }
+
+        // Two brigands, a ward and a word that puts one of them down. Both of
+        // the effects that have to be *seen* rather than read are in this one
+        // frame: the sleeping one is drawn dim, and the ward says so in the
+        // band. Cast through the ordinary casting, so the frame is real.
+        if (app->screen_name && SDL_strcmp(app->screen_name, "magic") == 0) {
+            // Wherever there is room for them - the vale is full of houses,
+            // and a brigand that would not fit is a brigand that is not there.
+            const gg_actor *pl = gg_player_const(&app->game);
+            static const int NEAR[][2] = { {2,0}, {2,-2}, {0,2}, {-2,0},
+                                           {2,2}, {0,-2}, {-2,2}, {-2,-2} };
+            int put = 0;
+            for (size_t k = 0; k < GG_COUNTOF(NEAR) && put < 2; k++)
+                if (gg_spawn_named(&app->game, "BRIGAND",
+                                   pl->x + NEAR[k][0], pl->y + NEAR[k][1]) >= 0)
+                    put++;
+            for (int i = 0; i < gg_magic_runes(); i++)
+                gg_learn(&app->game, gg_magic_rune(i)->word);
+            gg_pack_add(&app->game, GG_ITEM_GINSENG, 2);
+            gg_pack_add(&app->game, GG_ITEM_BLOODMOSS, 2);
+            gg_pack_add(&app->game, GG_ITEM_NIGHTSHADE, 2);
+            gg_player(&app->game)->level = 4;
+            app->game.exp = gg_level_cost(4);
+            for (int i = 0; i < gg_magic_spells(); i++) {
+                const gg_spell *sp = gg_magic_spell(i);
+                if (sp->effect == GG_SPELL_WARD || sp->effect == GG_SPELL_SLEEP)
+                    gg_cast(&app->game, i);
+            }
         }
 
         // Takes the two nearest townsfolk along, so the line and the party's

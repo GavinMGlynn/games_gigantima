@@ -363,6 +363,7 @@ typedef struct {
     int32_t  key;        // sort key: the pixel row the sprite stands on
     SDL_Texture *tex;
     SDL_FRect src, dst;
+    uint8_t  shade;      // 255 for as-drawn; less for a thing that is not awake
 } gg_sprite;
 
 static int sprite_cmp(const void *a, const void *b) {
@@ -534,6 +535,11 @@ void gg_render_world(const gg_game *g, SDL_Renderer *ren) {
             // back. In world pixels, to match the props' key.
             .key = ay + GG_TILE,
             .tex = g_actors,
+            // A sleeping thing is drawn dim. There is no lying-down frame in
+            // the LPC walk sheets and inventing one is not on; what matters is
+            // that a spell which takes somebody out of the fight can be *seen*
+            // to have done it, or it is a control that does nothing.
+            .shade = a->asleep > 0 ? GG_SHADE_ASLEEP : 255,
             .src = { (float)(r->x + frame * GG_ACTOR_FRAME),
                      (float)(r->y + a->facing * GG_ACTOR_FRAME),
                      (float)GG_ACTOR_FRAME, (float)GG_ACTOR_FRAME },
@@ -546,8 +552,19 @@ void gg_render_world(const gg_game *g, SDL_Renderer *ren) {
     }
 
     SDL_qsort(list, (size_t)n, sizeof *list, sprite_cmp);
-    for (int i = 0; i < n; i++)
+    uint8_t shade = 255;
+    for (int i = 0; i < n; i++) {
+        const uint8_t want = list[i].shade ? list[i].shade : 255;
+        if (want != shade) {
+            SDL_SetTextureColorMod(list[i].tex, want, want, want);
+            shade = want;
+        }
         SDL_RenderTexture(ren, list[i].tex, &list[i].src, &list[i].dst);
+    }
+    // Left as it was found. Every texture here is shared with the next frame
+    // and with the debug window, and a colour mod left behind on one of them
+    // dims a whole map until something happens to set it back.
+    if (shade != 255) SDL_SetTextureColorMod(g_actors, 255, 255, 255);
 
     // --- 3. light ----------------------------------------------------------
     // Per tile, not one quad over everything. Tile granularity is not a

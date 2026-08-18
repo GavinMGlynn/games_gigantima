@@ -265,6 +265,12 @@ typedef struct {
     // from a held torch so that letting a spell lapse cannot put out a torch.
     int light_turns, light_power;
 
+    // A ward of your own making: guard added to the Avatar's, and how many
+    // turns of it are left. Kept here rather than on the actor for the same
+    // reason the light is - it is a spell running, not something you are, and
+    // a save that lost it would leave a player wondering why the blows landed.
+    int ward_turns, ward_power;
+
     // --- the story ---------------------------------------------------------
     // How far along each quest is: 0 for not begun, otherwise the number of
     // stages entered. The whole of a quest's state is this one number, which

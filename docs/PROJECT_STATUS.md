@@ -816,10 +816,59 @@ where they would grow: ginseng and nightshade under trees, blood moss on bare
 earth, sulphurous ash at the foot of the cliffs. Every reagent appears on every
 seed — measured over twelve of them, not hoped for.
 
-Three effects, and each has to be **visible in the world** or it is a control
-that does nothing: a light of your own for a number of turns, health back, and
-damage at a distance. The light is a second source rather than a replacement, so
-letting a spell lapse cannot put out the torch in your other hand.
+**Six effects, and each has to be visible in the world** or it is a control that
+does nothing:
+
+| | |
+| --- | --- |
+| light | a light of your own, for a number of turns |
+| heal | health back |
+| harm | damage at a distance |
+| **sleep** | takes the nearest *N* out of the fight without killing them |
+| **ward** | guard added to the Avatar's, for a number of turns |
+| **travel** | sets you down up to *N* tiles the way you face |
+
+The light is a second source rather than a replacement, so letting a spell lapse
+cannot put out the torch in your other hand.
+
+The three new ones are what the rune vocabulary could always have said and the
+effect table could not. Nystul teaches ZU, SANCT and POR at the end of the same
+chain that teaches the first seven, so every one of them is **collected** rather
+than granted: `IN ZU`, `VAS ZU`, `IN SANCT` and `VAS POR` are castable exactly
+when their words have been asked for.
+
+**Sleep.** A sleeping creature takes no turn and gathers no initiative — energy
+is *not* banked while it sleeps, because a creature that wakes and then acts
+four times over reads as the spell having done nothing. It has its back to
+everybody while it is down, so a sleeping guard is worth `GG_FLANK_BONUS` to
+whoever swings; and **any swing wakes it**, hit or miss, which is why the waking
+is up with the facing and not down with the damage. Measured: a sleeping brigand
+is hit 87 times in 200 against 64 for a waking one. A sleeping thing is **drawn
+dim** (`GG_SHADE_ASLEEP`) — there is no lying-down frame in the LPC walk sheets
+and inventing one is not on, but a spell whose result cannot be seen is the
+thing this table exists to forbid.
+
+**Ward.** Guard you did not have to carry, and it lapses. It lives on the game
+rather than on the actor, like the light, because it is a spell running rather
+than something you are — and a second casting replaces the first rather than
+stacking, since stacking wards is how a fight stops being one. `GG_WARD_MAX`
+caps what a save file may claim. Measured: a brigand lands 135 blows of 300 on a
+warded Avatar against 182 on an unwarded one. It is the one effect with nothing
+to see in the world, so the status band says **Warded +N** and how many turns
+are left.
+
+**Travel.** It crosses what is in the way rather than stopping at it — a blink a
+wall stops is walking with extra steps, and the point of the spell is to be on
+the other side of something. What it will not do is set you down in stone or on
+water: the landing has to be a tile you could have walked to, had there been a
+way round. It is set down rather than stepped, so there is no slide to draw
+across the wall it just crossed.
+
+**What the three numbers mean is each effect's own business**, and the strength
+is optional in the file — `effect travel reach 6` is a whole effect. Each is
+checked for the fields it actually uses, by name: a ward with no turns, a sleep
+that reaches nobody and a travel that goes nowhere are all refused with the
+spell named.
 
 **Nothing is spent on a spell that does not go off.** Unknown words, too low a
 circle, missing reagents, nothing in range — each is refused before the price is
@@ -845,6 +894,22 @@ missing one), `every_spell_in_the_vale_can_be_learned_from_somebody` — which
 refuses a spell needing a rune nobody teaches, and a rune no spell uses —
 and `a_spell_of_light_survives_a_save`. Plus a `--shot` frame of the book, taken
 in CI.*
+
+*Verification of the three new effects:
+`a_spell_that_is_none_of_the_three_is_cast_from_words_you_collected` (the plan's
+own, on the shipped content: eleven topics of Nystul's chain asked in order,
+every one of them offered before it is asked, then `IN ZU` cast on a brigand
+standing next to the Avatar, which then does nothing for eight turns and strikes
+on the ninth), `a_blow_wakes_what_is_asleep`, `a_ward_turns_blows_and_then_stops`,
+`a_blink_crosses_what_is_in_the_way_and_lands_on_solid_ground`,
+`a_great_sleep_takes_more_than_one`, and
+`a_ward_and_a_sleeping_creature_survive_a_save` (both, through the state hash).
+Six more malformed books in `a_spell_file_that_does_not_parse_loads_nothing`.
+Every rule mutation-tested: sleeping creatures made to act, the waking removed,
+the ward's guard removed, the ward made never to lapse, the blink made to stop
+at a wall, and the mass sleep made to take one — each breaks a named test. Plus
+`--screen magic`, a real frame with a ward in the band and a brigand asleep
+beside a brigand who is not.*
 
 ### Fighting
 

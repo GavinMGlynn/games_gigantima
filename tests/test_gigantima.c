@@ -4038,6 +4038,371 @@ static void a_bolt_needs_something_to_aim_at_and_spends_nothing_without_one(void
     SDL_RemovePath(path);
 }
 
+// ---------------------------------------------------------------------------
+// Magic that is not light, heal or harm
+// ---------------------------------------------------------------------------
+// The plan's own verification, on the shipped content and nothing else: a spell
+// that is none of the three, cast from words the player went and collected one
+// conversation at a time. Nothing here is set up by hand except the brigand -
+// the runes come out of Nystul's mouth in the order the book of dialogue puts
+// them in, and the spell out of assets/spells.txt.
+static int spell_called(const char *name) {
+    for (int i = 0; i < gg_magic_spells(); i++)
+        if (SDL_strcasecmp(gg_magic_spell(i)->name, name) == 0) return i;
+    return -1;
+}
+
+// Asks `word`, and says so if it was not on offer. Asking a word you were never
+// given is exactly what the gating forbids, so a chain that walks itself is the
+// proof that every step of it is reachable.
+static bool ask_about(gg_game *g, const char *word) {
+    for (int i = 0; i < g->askables; i++)
+        if (SDL_strcasecmp(g->askable[i], word) == 0) {
+            g->ask_cursor = i;
+            gg_conversation_ask(g);
+            return true;
+        }
+    return false;
+}
+
+static void a_spell_that_is_none_of_the_three_is_cast_from_words_you_collected(void) {
+    CHECK(gg_dialogue_load(gg_asset_path("dialogue.txt")), "no book");
+    CHECK(gg_magic_load(gg_asset_path("spells.txt")), "no spells");
+    CHECK(gg_bestiary_load(gg_asset_path("bestiary.txt")), "no bestiary");
+
+    const int sleep_spell = spell_called("Sleep");
+    CHECK(sleep_spell >= 0, "the shipped book has no Sleep in it");
+    if (sleep_spell < 0) { restore_dialogue(); restore_bestiary(); return; }
+    CHECK(gg_magic_spell(sleep_spell)->effect == GG_SPELL_SLEEP,
+          "Sleep is not a sleeping spell");
+
+    gg_game g;
+    int cx = 0, cy = 0;
+    CHECK(set_up_encounter(&g, 61, &cx, &cy), "setup failed");
+
+    // Two words, the ones every journey starts with. Not one of the runes.
+    CHECK(!gg_knows(&g, "ZU"), "a new game already knows ZU");
+    CHECK(!gg_spell_known(&g, sleep_spell), "Sleep is known before any rune is");
+
+    // Nystul, put in front of the Avatar the way walking into him would.
+    g.actor[1] = g.actor[0];
+    SDL_strlcpy(g.actor[1].name, "Nystul", sizeof g.actor[1].name);
+    g.actor[1].active = true;
+    g.actor[1].hostile = false;
+    if (g.actors < 2) g.actors = 2;
+    g.talking_to = 1;
+    g.mode = GG_MODE_CONVERSE;
+    g.speaker = gg_dialogue_find("Nystul");
+    CHECK(g.speaker != nullptr, "Nystul is not in the book");
+    gg_conversation_refresh(&g);
+
+    // The whole chain, asked in order, and every word of it has to be offered
+    // before it can be asked. ZU is the eleventh thing he says.
+    static const char *const CHAIN[] = {
+        "job", "runes", "mani", "in", "lor", "vas", "flam", "nox", "an",
+        "sanct", "por",
+    };
+    for (size_t i = 0; i < GG_COUNTOF(CHAIN); i++)
+        CHECK(ask_about(&g, CHAIN[i]),
+              "'%s' was not on offer; the chain to ZU is broken at step %zu",
+              CHAIN[i], i);
+
+    CHECK(gg_knows(&g, "ZU"), "walking Nystul's whole chain never taught ZU");
+    CHECK(gg_knows(&g, "SANCT"), "the chain never taught SANCT");
+    CHECK(gg_knows(&g, "POR"), "the chain never taught POR");
+    CHECK(gg_spell_known(&g, sleep_spell),
+          "the words are collected but the spell they make is not known");
+
+    // Back out into the world, with the price of one casting and the circle it
+    // wants. Both are in the file; neither is decided here.
+    g.mode = GG_MODE_PLAY;
+    g.talking_to = -1;
+    g.actor[1].active = false;
+    gg_player(&g)->level = (uint8_t)gg_magic_spell(sleep_spell)->circle;
+    gg_pack_add(&g, GG_ITEM_NIGHTSHADE, 1);
+
+    const int foe = gg_spawn_named(&g, "BRIGAND", cx + 1, cy);
+    CHECK(foe >= 0, "no brigand");
+    if (foe < 0) { gg_game_free(&g); restore_dialogue(); restore_bestiary(); return; }
+    g.actor[foe].hp = g.actor[foe].hp_max = 200;
+
+    const int hp_before = gg_player_const(&g)->hp;
+    CHECK(gg_cast(&g, sleep_spell), "the sleeping spell would not be cast");
+    CHECK(g.actor[foe].asleep > 0, "the brigand is still on its feet");
+    CHECK(g.actor[foe].hp == 200, "a spell that does no damage did damage");
+    CHECK(gg_pack_count(&g, GG_ITEM_NIGHTSHADE) == 0, "the spell cost nothing");
+
+    // It is standing next to the Avatar with a knife, and for as long as it is
+    // asleep nothing happens - which is the whole of what the spell buys.
+    const int slept = g.actor[foe].asleep;
+    for (int t = 0; t < slept; t++) gg_game_act(&g, GG_ACT_WAIT);
+    CHECK(gg_player_const(&g)->hp == hp_before,
+          "a sleeping brigand took %d off the Avatar",
+          hp_before - gg_player_const(&g)->hp);
+    CHECK(g.actor[foe].asleep == 0, "%d turns of sleep did not run out",
+          g.actor[foe].asleep);
+
+    // And when it wakes it is a brigand again.
+    int lost = 0;
+    for (int t = 0; t < 20 && lost == 0; t++) {
+        gg_game_act(&g, GG_ACT_WAIT);
+        lost = hp_before - gg_player_const(&g)->hp;
+    }
+    CHECK(lost > 0, "the brigand never woke up");
+
+    gg_game_free(&g);
+    restore_dialogue();
+    restore_bestiary();
+    gg_magic_clear();
+}
+
+// Nothing sleeps through being hit. The first blow wakes it - and until then it
+// has its back to everybody, which is what makes the spell worth a reagent in a
+// fight you mean to win rather than one you mean to leave.
+static void a_blow_wakes_what_is_asleep(void) {
+    CHECK(gg_bestiary_load(gg_asset_path("bestiary.txt")), "no bestiary");
+    const char *path = write_spells(
+        "rune IN create\n"
+        "rune ZU sleep\n"
+        "spell IN ZU\n"
+        "  name Sleep\n"
+        "  circle 1\n"
+        "  costs NIGHTSHADE 1\n"
+        "  effect sleep 1 turns 8 reach 4\n");
+    CHECK(gg_magic_load(path), "the spell file did not load");
+
+    gg_game g;
+    int cx = 0, cy = 0;
+    CHECK(set_up_encounter(&g, 62, &cx, &cy), "setup failed");
+    gg_learn(&g, "IN");
+    gg_learn(&g, "ZU");
+    gg_pack_add(&g, GG_ITEM_NIGHTSHADE, 4);
+
+    const int foe = gg_spawn_named(&g, "BRIGAND", cx + 1, cy);
+    CHECK(foe >= 0, "no brigand");
+    if (foe < 0) { gg_game_free(&g); goto done; }
+    g.actor[foe].hp = g.actor[foe].hp_max = 500;
+
+    CHECK(gg_cast(&g, 0), "the spell would not be cast");
+    CHECK(g.actor[foe].asleep == 8, "asleep for %d turns, expected 8",
+          g.actor[foe].asleep);
+
+    // Struck, and awake - and that is true of a swing that misses as well as
+    // one that lands, because it is the swing that wakes you.
+    gg_strike(&g, g.player, foe);
+    CHECK(g.actor[foe].asleep == 0, "it slept through being struck at");
+
+    // Count what a sleeping guard is worth. A back
+    // that is turned is worth GG_FLANK_BONUS to the roll whether it was turned
+    // by a companion or by a word, and the numbers are reported either way.
+    int woke = 0, asleep_hits = 0, awake_hits = 0;
+    for (int trial = 0; trial < 200; trial++) {
+        g.actor[foe].facing = gg_facing_from_delta(gg_player_const(&g)->x - g.actor[foe].x,
+                                                   gg_player_const(&g)->y - g.actor[foe].y);
+        g.actor[foe].asleep = 1;
+        if (gg_strike(&g, g.player, foe) > 0) asleep_hits++;
+        g.actor[foe].asleep = 0;
+        g.actor[foe].facing = gg_facing_from_delta(gg_player_const(&g)->x - g.actor[foe].x,
+                                                   gg_player_const(&g)->y - g.actor[foe].y);
+        if (gg_strike(&g, g.player, foe) > 0) awake_hits++;
+        woke++;
+    }
+    SDL_Log("gigantima: a sleeping brigand is hit %d times in %d and a waking "
+            "one %d", asleep_hits, woke, awake_hits);
+    CHECK(asleep_hits > awake_hits,
+          "sleeping made no difference: %d hits against %d", asleep_hits,
+          awake_hits);
+
+    gg_game_free(&g);
+done:
+    restore_bestiary();
+    gg_magic_clear();
+    SDL_RemovePath(path);
+}
+
+// A ward is guard you did not have to carry, for as long as it lasts and no
+// longer. Both halves are checked, because a ward that never lapses is armour.
+static void a_ward_turns_blows_and_then_stops(void) {
+    CHECK(gg_bestiary_load(gg_asset_path("bestiary.txt")), "no bestiary");
+    const char *path = write_spells(
+        "rune IN create\n"
+        "rune SANCT protect\n"
+        "spell IN SANCT\n"
+        "  name Ward\n"
+        "  circle 1\n"
+        "  costs GINSENG 1\n"
+        "  effect ward 4 turns 12\n");
+    CHECK(gg_magic_load(path), "the spell file did not load");
+
+    gg_game g;
+    int cx = 0, cy = 0;
+    CHECK(set_up_encounter(&g, 63, &cx, &cy), "setup failed");
+    gg_learn(&g, "IN");
+    gg_learn(&g, "SANCT");
+    gg_pack_add(&g, GG_ITEM_GINSENG, 1);
+
+    const int foe = gg_spawn_named(&g, "BRIGAND", cx + 1, cy);
+    CHECK(foe >= 0, "no brigand");
+    if (foe < 0) { gg_game_free(&g); goto done; }
+
+    const int bare = gg_guard_power(&g, g.player);
+    CHECK(gg_cast(&g, 0), "the ward would not be cast");
+    CHECK(gg_guard_power(&g, g.player) == bare + 4,
+          "the ward added %d to the guard, expected 4",
+          gg_guard_power(&g, g.player) - bare);
+    CHECK(gg_guard_power(&g, foe) == g.actor[foe].guard,
+          "the Avatar's ward turned up on the brigand");
+
+    // Measured, not asserted: how many of 300 blows land on a warded Avatar
+    // and on the same Avatar without one.
+    gg_actor *p = gg_player(&g);
+    int warded = 0, bared = 0;
+    for (int trial = 0; trial < 300; trial++) {
+        p->hp = p->hp_max = 4000;
+        p->facing = gg_facing_from_delta(g.actor[foe].x - p->x, g.actor[foe].y - p->y);
+        if (gg_strike(&g, foe, g.player) > 0) warded++;
+    }
+    const int keep_turns = g.ward_turns, keep_power = g.ward_power;
+    g.ward_turns = g.ward_power = 0;
+    for (int trial = 0; trial < 300; trial++) {
+        p->hp = p->hp_max = 4000;
+        p->facing = gg_facing_from_delta(g.actor[foe].x - p->x, g.actor[foe].y - p->y);
+        if (gg_strike(&g, foe, g.player) > 0) bared++;
+    }
+    g.ward_turns = keep_turns;
+    g.ward_power = keep_power;
+    SDL_Log("gigantima: a brigand lands %d blows of 300 on a warded Avatar and "
+            "%d on an unwarded one", warded, bared);
+    CHECK(warded < bared, "the ward turned nothing: %d blows against %d",
+          warded, bared);
+
+    // And it runs out. Twelve turns from the casting, the guard is the guard
+    // the Avatar was born with.
+    p->hp = p->hp_max = 4000;
+    for (int t = 0; t < keep_turns; t++) gg_game_act(&g, GG_ACT_WAIT);
+    CHECK(g.ward_turns == 0, "the ward has %d turns left and should have none",
+          g.ward_turns);
+    CHECK(gg_guard_power(&g, g.player) == bare,
+          "a lapsed ward is still worth %d", gg_guard_power(&g, g.player) - bare);
+
+    gg_game_free(&g);
+done:
+    restore_bestiary();
+    gg_magic_clear();
+    SDL_RemovePath(path);
+}
+
+// Travel is the one effect with nothing to measure but distance, and the only
+// one that cares what is in the way - which is that it does not. A blink a wall
+// stops is walking with extra steps.
+static void a_blink_crosses_what_is_in_the_way_and_lands_on_solid_ground(void) {
+    const char *path = write_spells(
+        "rune VAS great\n"
+        "rune POR movement\n"
+        "spell VAS POR\n"
+        "  name Blink\n"
+        "  circle 1\n"
+        "  costs BLOODMOSS 1\n"
+        "  effect travel reach 6\n");
+    CHECK(gg_magic_load(path), "the spell file did not load");
+    CHECK(gg_magic_spell(0)->power == 0,
+          "an effect with no strength written down invented one: %d",
+          gg_magic_spell(0)->power);
+
+    gg_game g;
+    int cx = 0, cy = 0;
+    CHECK(set_up_encounter(&g, 64, &cx, &cy), "setup failed");
+    gg_learn(&g, "VAS");
+    gg_learn(&g, "POR");
+    gg_pack_add(&g, GG_ITEM_BLOODMOSS, 4);
+
+    gg_actor *p = gg_player(&g);
+    p->facing = GG_FACE_RIGHT;
+
+    // A wall three tiles thick, one tile in front. Walking is not an option.
+    for (int x = cx + 1; x <= cx + 3; x++) {
+        gg_cell *c = gg_map_at(&g.map, x, cy);
+        CHECK(c != nullptr, "off the map");
+        if (c) { c->terrain = GG_TILE_MOUNTAIN; c->flags |= GG_CELL_BLOCKED; }
+    }
+    CHECK(!gg_map_walkable(&g.map, cx + 1, cy), "the wall is not a wall");
+
+    CHECK(gg_cast(&g, 0), "the blink would not be cast");
+    CHECK(p->x == cx + 6 && p->y == cy,
+          "the blink set the Avatar down at %d,%d, expected %d,%d",
+          p->x, p->y, cx + 6, cy);
+    CHECK(p->from_x == p->x && p->from_y == p->y && p->step == 0,
+          "the blink left a slide to draw across the wall it crossed");
+
+    // Somewhere to land is checked before anything is spent. Wall off the whole
+    // six tiles the other way and it is refused with the reagent still in hand.
+    p->facing = GG_FACE_LEFT;
+    for (int x = p->x - 6; x <= p->x - 1; x++) {
+        gg_cell *c = gg_map_at(&g.map, x, p->y);
+        if (c) { c->terrain = GG_TILE_MOUNTAIN; c->flags |= GG_CELL_BLOCKED; }
+    }
+    const int had = gg_pack_count(&g, GG_ITEM_BLOODMOSS);
+    const int was_x = p->x;
+    CHECK(!gg_cast(&g, 0), "a blink went off with nowhere to land");
+    CHECK(p->x == was_x, "a refused blink moved the Avatar anyway");
+    CHECK(gg_pack_count(&g, GG_ITEM_BLOODMOSS) == had,
+          "a refused blink spent the bloodmoss");
+
+    gg_game_free(&g);
+    gg_magic_clear();
+    SDL_RemovePath(path);
+}
+
+// One word takes one out of the fight; VAS takes four. That is the only thing
+// `power` means to a sleeping spell, and it is what makes the two spells in the
+// shipped book different from each other.
+static void a_great_sleep_takes_more_than_one(void) {
+    CHECK(gg_bestiary_load(gg_asset_path("bestiary.txt")), "no bestiary");
+    const char *path = write_spells(
+        "rune VAS great\n"
+        "rune ZU sleep\n"
+        "spell VAS ZU\n"
+        "  name Great Sleep\n"
+        "  circle 1\n"
+        "  costs NIGHTSHADE 1\n"
+        "  effect sleep 4 turns 5 reach 5\n");
+    CHECK(gg_magic_load(path), "the spell file did not load");
+
+    gg_game g;
+    int cx = 0, cy = 0;
+    CHECK(set_up_encounter(&g, 65, &cx, &cy), "setup failed");
+    gg_learn(&g, "VAS");
+    gg_learn(&g, "ZU");
+    gg_pack_add(&g, GG_ITEM_NIGHTSHADE, 2);
+
+    // Five within reach. Four go down, and the fifth is the one furthest off.
+    int foe[5];
+    for (int i = 0; i < 5; i++) {
+        foe[i] = gg_spawn_named(&g, "BRIGAND", cx + 1 + i, cy);
+        CHECK(foe[i] >= 0, "no brigand %d", i);
+        if (foe[i] < 0) { gg_game_free(&g); goto done; }
+        g.actor[foe[i]].hp = g.actor[foe[i]].hp_max = 500;
+    }
+
+    CHECK(gg_cast(&g, 0), "the spell would not be cast");
+    int down = 0;
+    for (int i = 0; i < 5; i++) if (g.actor[foe[i]].asleep > 0) down++;
+    CHECK(down == 4, "%d went down, expected 4", down);
+    CHECK(g.actor[foe[4]].asleep == 0,
+          "the furthest brigand went down and a nearer one did not");
+
+    // A second casting takes the one left standing rather than re-sleeping the
+    // four who are already down.
+    CHECK(gg_cast(&g, 0), "the second casting was refused");
+    CHECK(g.actor[foe[4]].asleep > 0, "the last one on its feet stayed on them");
+
+    gg_game_free(&g);
+done:
+    restore_bestiary();
+    gg_magic_clear();
+    SDL_RemovePath(path);
+}
+
 // A spell file that does not parse must load nothing at all, the same rule the
 // dialogue book follows and for the same reason.
 static void a_spell_file_that_does_not_parse_loads_nothing(void) {
@@ -4055,6 +4420,18 @@ static void a_spell_file_that_does_not_parse_loads_nothing(void) {
             "  effect light 4\n",                          // a light with no time
         "rune IN create\nspell IN\n  name Bolt\n"
             "  effect harm 4\n",                           // harm with no reach
+        "rune IN create\nspell IN\n  name Sleep\n"
+            "  effect sleep 1 turns 4\n",                  // a sleep reaching nobody
+        "rune IN create\nspell IN\n  name Sleep\n"
+            "  effect sleep 1 reach 4\n",                  // asleep for no time
+        "rune IN create\nspell IN\n  name Sleep\n"
+            "  effect sleep turns 4 reach 4\n",            // nobody goes down
+        "rune IN create\nspell IN\n  name Ward\n"
+            "  effect ward 4\n",                           // a ward with no time
+        "rune IN create\nspell IN\n  name Ward\n"
+            "  effect ward turns 9\n",                     // a ward worth nothing
+        "rune IN create\nspell IN\n  name Blink\n"
+            "  effect travel\n",                           // travel going nowhere
         "rune MANI life\nspell MANI\n  name Heal\n"
             "  costs UNOBTAINIUM 1\n  effect heal 4\n",    // no such reagent
         "rune MANI life\nspell MANI\n  name Heal\n"
@@ -4170,6 +4547,67 @@ static void a_spell_of_light_survives_a_save(void) {
 
     gg_game_free(&b);
     gg_game_free(&a);
+    gg_magic_clear();
+    SDL_RemovePath(path);
+    wipe_saves(who);
+}
+
+// The two pieces of state the new effects added: a ward that is running, and a
+// creature part way through a sleep. Both are spells in flight rather than
+// things anybody is carrying, and a save that dropped either would resume a
+// player into a fight they thought they had half won.
+static void a_ward_and_a_sleeping_creature_survive_a_save(void) {
+    const char *who = "Warded";
+    wipe_saves(who);
+    CHECK(gg_bestiary_load(gg_asset_path("bestiary.txt")), "no bestiary");
+
+    const char *path = write_spells(
+        "rune IN create\nrune SANCT protect\nrune ZU sleep\n"
+        "spell IN SANCT\n  name Ward\n  circle 1\n  costs GINSENG 1\n"
+        "  effect ward 3 turns 25\n"
+        "spell IN ZU\n  name Sleep\n  circle 1\n  costs NIGHTSHADE 1\n"
+        "  effect sleep 1 turns 9 reach 4\n");
+    CHECK(gg_magic_load(path), "the spell file did not load");
+
+    gg_game a;
+    int cx = 0, cy = 0;
+    CHECK(set_up_encounter(&a, 66, &cx, &cy), "setup failed");
+    SDL_strlcpy(a.profile, who, sizeof a.profile);
+    gg_learn(&a, "IN");
+    gg_learn(&a, "SANCT");
+    gg_learn(&a, "ZU");
+    gg_pack_add(&a, GG_ITEM_GINSENG, 1);
+    gg_pack_add(&a, GG_ITEM_NIGHTSHADE, 1);
+
+    const int foe = gg_spawn_named(&a, "BRIGAND", cx + 2, cy);
+    CHECK(foe >= 0, "no brigand");
+    if (foe < 0) { gg_game_free(&a); goto done; }
+
+    CHECK(gg_cast(&a, 0), "the ward would not be cast");
+    CHECK(gg_cast(&a, 1), "the sleep would not be cast");
+    CHECK(a.ward_turns == 25 && a.ward_power == 3, "the ward did not take");
+    CHECK(a.actor[foe].asleep == 9, "the brigand is not asleep");
+
+    CHECK(gg_save_write(&a, save_base(), who), "save failed");
+    gg_game b;
+    SDL_zero(b);
+    CHECK(gg_save_read(&b, save_base(), who), "load failed");
+
+    CHECK(b.ward_turns == a.ward_turns && b.ward_power == a.ward_power,
+          "the ward came back as %d for %d turns, expected %d for %d",
+          b.ward_power, b.ward_turns, a.ward_power, a.ward_turns);
+    CHECK(b.actor[foe].asleep == a.actor[foe].asleep,
+          "the brigand came back with %d turns of sleep, expected %d",
+          b.actor[foe].asleep, a.actor[foe].asleep);
+    CHECK(gg_guard_power(&b, b.player) == gg_guard_power(&a, a.player),
+          "the resumed Avatar is guarded differently");
+    CHECK(gg_state_hash(&b) == gg_state_hash(&a),
+          "the resumed world is not the one that was saved");
+
+    gg_game_free(&b);
+    gg_game_free(&a);
+done:
+    restore_bestiary();
     gg_magic_clear();
     SDL_RemovePath(path);
     wipe_saves(who);
@@ -8052,9 +8490,15 @@ int main(void) {
     RUN(a_phrase_needs_every_rune_in_it);
     RUN(a_spell_of_light_lasts_its_turns_and_then_goes_out);
     RUN(a_bolt_needs_something_to_aim_at_and_spends_nothing_without_one);
+    RUN(a_spell_that_is_none_of_the_three_is_cast_from_words_you_collected);
+    RUN(a_blow_wakes_what_is_asleep);
+    RUN(a_ward_turns_blows_and_then_stops);
+    RUN(a_blink_crosses_what_is_in_the_way_and_lands_on_solid_ground);
+    RUN(a_great_sleep_takes_more_than_one);
     RUN(a_spell_file_that_does_not_parse_loads_nothing);
     RUN(every_spell_in_the_vale_can_be_learned_from_somebody);
     RUN(a_spell_of_light_survives_a_save);
+    RUN(a_ward_and_a_sleeping_creature_survive_a_save);
 
     RUN(a_creature_can_be_added_in_a_file_alone);
     RUN(a_creature_flees_when_it_is_hurt_enough);

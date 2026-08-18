@@ -32,8 +32,25 @@ typedef enum {
     GG_SPELL_LIGHT,     // a light of your own, for a while
     GG_SPELL_HEAL,      // health back
     GG_SPELL_HARM,      // damage at a distance
+    GG_SPELL_SLEEP,     // take somebody out of the fight without killing them
+    GG_SPELL_WARD,      // harder to hit, for a while
+    GG_SPELL_TRAVEL,    // be somewhere else
     GG_SPELL_EFFECTS
 } gg_spell_effect;
+
+// What `power`, `turns` and `reach` mean is the effect's own business, and
+// none of them means anything to all six:
+//
+//   light    power = how far it reaches   turns = how long it holds
+//   heal     power = health returned
+//   harm     power = damage               reach = how far it strikes
+//   sleep    power = how many go down     turns = how long   reach = how far
+//   ward     power = guard added          turns = how long
+//   travel                                                   reach = how far
+//
+// So the strength is *optional* in the file - `effect travel reach 6` is a
+// whole effect - and each one is checked for the fields it actually uses. A
+// spell that says nothing about the thing it needs is refused by name.
 
 typedef struct {
     char word[GG_WORD_MAX];         // the rune: AN, IN, LOR...

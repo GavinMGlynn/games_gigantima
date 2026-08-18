@@ -23,10 +23,12 @@
 // flag raised, and how many have fallen. Version 8 is the map format beneath
 // it changing again - a save carries a whole map inside it, so a new map
 // version is a new save version whether or not the game's own half moved.
+// Version 12 is magic that does more than three things: how long each creature
+// has left to sleep, and the ward standing over the Avatar.
 // There is no migration between any of them - guessing at a section that was
 // never written would resume somebody into a world that is not the one they
 // left, and every version so far has existed for days rather than years.
-#define GG_SAVE_VERSION 11
+#define GG_SAVE_VERSION 12
 
 #define GG_PROFILE_NAME_MAX 32
 #define GG_PROFILES_MAX     64

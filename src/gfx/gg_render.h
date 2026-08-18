@@ -35,6 +35,11 @@ void gg_render_camera(const gg_game *g, int *cam_px, int *cam_py);
 // Screen pixel -> world tile, using the same camera the last draw used.
 void gg_render_screen_to_tile(const gg_game *g, int sx, int sy, int *tx, int *ty);
 
+// How dim a sleeping thing is drawn. Far enough below 255 to read at a glance
+// across a field of grass, not so far that it disappears at night - a creature
+// a player cannot see is worse than one they cannot tell is asleep.
+#define GG_SHADE_ASLEEP        120
+
 // --- light -----------------------------------------------------------------
 #define GG_LIGHT_FULL          255
 // How far the avatar's own light reaches is not a constant any more: it comes

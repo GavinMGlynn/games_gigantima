@@ -211,6 +211,22 @@ topic nox
 topic an
   say To undo. It is the first word a careful mage learns and the last one
   say a careless one wishes he had.
+  say There are deeper words. SANCT thou shouldst have before the north road.
+  teach sanct
+topic sanct
+  say To protect. IN SANCT sets the air about thee against a blow, and a blow
+  say that does not land is worth more than one thou must heal after.
+  say POR is the other word for a body who means to come home. Ask.
+  teach por
+topic por
+  say Movement. VAS POR takes thee six paces the way thou art facing, and it
+  say cares nothing for what stands between - a wall, a river, a man with a knife.
+  say It will not set thee down in stone. It will set thee down alone. ZU next.
+  teach zu
+topic zu
+  say Sleep. IN ZU takes one out of a fight without killing it; VAS ZU, four.
+  say A sleeping man wakes the moment he is struck, mind, and remembers thee.
+  say That is every word I have. The rest are under the hills, if anywhere.
 topic light
   say A cold light is not a fire and not a lamp. That leaves few things.
   say None of them are glad to be seen. Ask Gwenno of the NORTH.

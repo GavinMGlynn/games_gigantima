@@ -98,7 +98,15 @@ a merchant about his JOB and he will name what he has. They buy as well as sell,
 at half what they charge.
 
 **Take somebody with you.** Rugar beats a party that walked up alone every time
-out of twenty, and loses to one that came prepared fifteen times in twenty.
+out of twenty, and loses to one that came prepared fifteen times in twenty. A
+creature turns on whoever is hurting it, so while a companion holds its
+attention its back is to you — and a back that is turned is the difference.
+
+**Magic is a language, not a list.** Ask **Nystul** about his JOB and then about
+the RUNES, and keep asking about the last word he gave you: ten runes, one at a
+time, and twelve spells made out of them. `C` opens the book. Nothing is granted
+— a spell is castable exactly when you have collected the words it is made of,
+can reach its circle, and are carrying its herbs.
 
 ---
 

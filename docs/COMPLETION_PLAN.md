@@ -375,10 +375,15 @@ here. Nothing is on this list that is not already admitted to somewhere.
       *Verification: a hill man beats a lone swordsman 9 times in 20 and a pair
       of them once in 20 — the same fight, won two ways. Companions had to stop
       queueing behind the Avatar for it to be true.*
-- [ ] **Magic beyond three effects.** Light, heal and harm. The rune vocabulary
-      can say far more than that.
-      *Verification: a spell that is not any of the three, cast from words the
-      player collected.*
+- [x] **Magic beyond three effects.** Three more: a word that puts somebody to
+      sleep, a ward that turns blows for a while, and one that sets you down on
+      the other side of what is in the way. Nystul teaches the three new runes
+      at the end of the chain that teaches the first seven.
+      *Verification: the whole of Nystul's conversation walked one word at a
+      time on the shipped content, and then a sleeping spell cast on a brigand
+      standing next to the Avatar — which does nothing at all for eight turns
+      and hits on the ninth. A sleeping creature is drawn dim and the ward
+      shows in the status band, both photographed.*
 - [ ] **Companions who are somebody.** Up to four follow and they are
       interchangeable: same health, same damage, no orders.
       *Verification: two companions who are worth choosing between.*
@@ -476,3 +481,14 @@ Recorded here as they turn up, so they are not rediscovered:
   it, and does not put it on the PATH — so the packaging job quietly produced a
   zip and no installer and reported success. **A packaging step has to check
   that the files it promised exist.**
+- **A spell that crosses walls can strand you.** `VAS POR` sets the Avatar down
+  on the far side of what is in the way, and nothing checks that the far side
+  connects to anywhere else. A walled-off pocket of walkable ground would be a
+  one-way trip for a player with no bloodmoss left. The shipped maps have none,
+  but nothing *refuses* one — the editor's map check should say so, the way it
+  already refuses a gate nobody can reach.
+- **Nystul is one topic short of the limit.** He has fifteen of `GG_TOPICS_MAX`,
+  so the next word anybody gives him is the last that fits. The parser refuses
+  the whole book with the line named rather than truncating, which is the right
+  failure — but the limit is small enough now to be worth raising before the
+  next rune.

@@ -89,6 +89,9 @@ static int effect_from(const char *word) {
     if (SDL_strcasecmp(word, "light") == 0) return GG_SPELL_LIGHT;
     if (SDL_strcasecmp(word, "heal")  == 0) return GG_SPELL_HEAL;
     if (SDL_strcasecmp(word, "harm")  == 0) return GG_SPELL_HARM;
+    if (SDL_strcasecmp(word, "sleep") == 0) return GG_SPELL_SLEEP;
+    if (SDL_strcasecmp(word, "ward")  == 0) return GG_SPELL_WARD;
+    if (SDL_strcasecmp(word, "travel") == 0) return GG_SPELL_TRAVEL;
     return GG_SPELL_NONE;
 }
 
@@ -255,15 +258,16 @@ bool gg_magic_load(const char *path) {
                 ok = false;
                 break;
             }
-            if (next_token(&rest, amount, sizeof amount) &&
-                !as_int(amount, &sp->power)) {
-                complain(path, lineno, "an effect's strength has to be a number");
-                ok = false;
-                break;
-            }
-            // The rest of the line is optional `turns N` and `reach N`.
-            char more[GG_WORD_MAX];
-            while (ok && next_token(&rest, more, sizeof more)) {
+            // Then a strength, `turns N` and `reach N`, in any order and all
+            // of them optional - what an effect needs is the effect's own
+            // business, and it is checked once the file is read. A bare number
+            // is the strength; a word is one of the two named fields.
+            bool got_power = false;
+            while (ok && next_token(&rest, amount, sizeof amount)) {
+                if (!got_power && as_int(amount, &sp->power)) {
+                    got_power = true;
+                    continue;
+                }
                 char value[GG_WORD_MAX];
                 int v = 0;
                 if (!next_token(&rest, value, sizeof value) || !as_int(value, &v)) {
@@ -271,11 +275,11 @@ bool gg_magic_load(const char *path) {
                     ok = false;
                     break;
                 }
-                if (SDL_strcasecmp(more, "turns") == 0)      sp->turns = v;
-                else if (SDL_strcasecmp(more, "reach") == 0) sp->reach = v;
+                if (SDL_strcasecmp(amount, "turns") == 0)      sp->turns = v;
+                else if (SDL_strcasecmp(amount, "reach") == 0) sp->reach = v;
                 else {
                     SDL_Log("gigantima: %s:%d: no idea what '%s' means on an "
-                            "effect", path, lineno, more);
+                            "effect", path, lineno, amount);
                     ok = false;
                 }
             }
@@ -287,21 +291,47 @@ bool gg_magic_load(const char *path) {
 
     SDL_free(text);
 
-    // A spell has to have a name, do something, and do a definite amount of it.
+    // A spell has to have a name, do something, and say a definite amount of
+    // whatever that effect measures itself in. Which fields those are is the
+    // one place that knows - see the table in gg_magic.h.
     for (int i = 0; ok && i < g_spells; i++) {
         const gg_spell *s = &g_spell[i];
+        const char *wrong = nullptr;
         if (!s->name[0]) {
             SDL_Log("gigantima: %s: a spell with no name", path);
             ok = false;
-        } else if (s->effect == GG_SPELL_NONE || s->power <= 0) {
-            SDL_Log("gigantima: %s: '%s' does nothing", path, s->name);
-            ok = false;
-        } else if (s->effect == GG_SPELL_LIGHT && s->turns <= 0) {
-            SDL_Log("gigantima: %s: '%s' is a light that lasts no time at all",
-                    path, s->name);
-            ok = false;
-        } else if (s->effect == GG_SPELL_HARM && s->reach <= 0) {
-            SDL_Log("gigantima: %s: '%s' strikes at no distance", path, s->name);
+            continue;
+        }
+        switch (s->effect) {
+        case GG_SPELL_LIGHT:
+            if (s->power <= 0) wrong = "gives no light";
+            else if (s->turns <= 0) wrong = "is a light that lasts no time at all";
+            break;
+        case GG_SPELL_HEAL:
+            if (s->power <= 0) wrong = "heals nothing";
+            break;
+        case GG_SPELL_HARM:
+            if (s->power <= 0) wrong = "does no harm";
+            else if (s->reach <= 0) wrong = "strikes at no distance";
+            break;
+        case GG_SPELL_SLEEP:
+            if (s->power <= 0) wrong = "puts nobody to sleep";
+            else if (s->turns <= 0) wrong = "is a sleep nobody wakes from a turn later";
+            else if (s->reach <= 0) wrong = "reaches nobody";
+            break;
+        case GG_SPELL_WARD:
+            if (s->power <= 0) wrong = "wards off nothing";
+            else if (s->turns <= 0) wrong = "is a ward that lasts no time at all";
+            break;
+        case GG_SPELL_TRAVEL:
+            if (s->reach <= 0) wrong = "goes nowhere";
+            break;
+        default:
+            wrong = "does nothing";
+            break;
+        }
+        if (wrong) {
+            SDL_Log("gigantima: %s: '%s' %s", path, s->name, wrong);
             ok = false;
         }
     }

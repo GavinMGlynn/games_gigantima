@@ -51,7 +51,11 @@ int gg_guard_power(const gg_game *g, int who) {
     // hammer: the hammer hits harder and the sword keeps you alive. Most
     // weapons have no guard at all and add nothing here.
     const gg_item_def *w = held(g, who, GG_SLOT_WEAPON);
-    return g->actor[who].guard + (a ? a->guard : 0) + (w ? w->guard : 0);
+    // And a ward, if one is standing. It is a spell running rather than
+    // something worn, so it lives on the game and not in a hand - and it is the
+    // Avatar's alone, because it is cast on the caster.
+    const int ward = (who == g->player && g->ward_turns > 0) ? g->ward_power : 0;
+    return g->actor[who].guard + (a ? a->guard : 0) + (w ? w->guard : 0) + ward;
 }
 
 int gg_reach(const gg_game *g, int who) {
@@ -158,7 +162,11 @@ int gg_strike(gg_game *g, int attacker, int defender) {
     // turn-based fight that is about where you stand rather than which number
     // is bigger.
     const uint8_t toward = gg_facing_from_delta(at->x - de->x, at->y - de->y);
-    const bool behind = de->facing != toward;
+    const bool behind = de->asleep > 0 || de->facing != toward;
+
+    // And it is awake from here on whatever happens next. A swing that misses
+    // still wakes somebody, which is why this is not down with the damage.
+    de->asleep = 0;
 
     // One roll, through the game's RNG so the fight is part of the seeded
     // world. Level counts for the striker, guard for the defender, and a back
@@ -338,6 +346,16 @@ void gg_combat_turn(gg_game *g) {
 
     for (int i = 0; i < g->actors && n < GG_ACTORS_MAX; i++) {
         if (!g->actor[i].active || !g->actor[i].hostile) continue;
+        // Asleep: no turn, and no initiative gathered either. Filling energy
+        // while it slept would have it wake and act four times at once, which
+        // reads as the spell having done nothing.
+        if (g->actor[i].asleep > 0) {
+            g->actor[i].asleep--;
+            g->actor[i].energy = 0;
+            if (g->actor[i].asleep == 0)
+                gg_log(g, "%s stirs and gets up.", g->actor[i].name);
+            continue;
+        }
         // Energy fills by speed and empties by an action. A creature with no
         // speed set would never move, so treat unset as ordinary.
         const int speed = g->actor[i].speed ? g->actor[i].speed

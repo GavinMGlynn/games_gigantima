@@ -153,6 +153,15 @@ void gg_ui_hud(const gg_game *g, SDL_Renderer *ren) {
                    "Load %s/%d st", load, GG_CARRY_MAX / 100);
     y += line + 2;
 
+    // A ward is the one spell with nothing to see: the light lights, the sleep
+    // dims what it fell on, and this changes a number in a fight. So it says
+    // so, and it says how much longer, because the whole of it is the clock.
+    if (g->ward_turns > 0) {
+        gg_font_printf(ren, x, y, AMBER, "Warded +%d", g->ward_power);
+        gg_font_printf(ren, x + 110, y, DIM, "%d turns", g->ward_turns);
+        y += line + 2;
+    }
+
     // Whoever walks with you, in the order they walk. Health as a number
     // rather than a bar: four bars in this space would be four smears, and the
     // number is what a player actually reads before deciding to turn back.

@@ -470,6 +470,37 @@ static void spend_reagents(gg_game *g, const gg_spell *s) {
     }
 }
 
+// Where a travelling spell sets you down: the furthest tile you could stand on
+// within `reach`, in the direction you face.
+//
+// It crosses what is in the way rather than stopping at it - a blink that a
+// wall stops is walking with extra steps, and the whole point of the spell is
+// to be on the other side of something. What it will not do is leave you
+// standing in a wall or on water: the landing has to be a tile you could have
+// walked to, had there been a way round.
+static bool travel_landing(const gg_game *g, int reach, int *out_x, int *out_y) {
+    const gg_actor *p = gg_player_const(g);
+    int dx = 0, dy = 0;
+    switch (p->facing) {
+    case GG_FACE_UP:    dy = -1; break;
+    case GG_FACE_DOWN:  dy =  1; break;
+    case GG_FACE_LEFT:  dx = -1; break;
+    default:            dx =  1; break;
+    }
+
+    bool found = false;
+    for (int n = 1; n <= reach; n++) {
+        const int x = p->x + dx * n, y = p->y + dy * n;
+        if (!gg_map_in_bounds(&g->map, x, y)) break;
+        if (!gg_map_walkable(&g->map, x, y)) continue;
+        if (gg_actor_occupied(g->actor, g->actors, x, y, -1)) continue;
+        *out_x = x;
+        *out_y = y;
+        found = true;
+    }
+    return found;
+}
+
 bool gg_cast(gg_game *g, int spell) {
     const gg_spell *s = gg_magic_spell(spell);
     if (!s) return false;
@@ -494,25 +525,44 @@ bool gg_cast(gg_game *g, int spell) {
         return false;
     }
 
-    // Harm needs something to aim at, and that is checked *before* anything is
+    // A spell that needs something to aim at is aimed *before* anything is
     // spent - a spell that eats its reagents and fizzles is a spell nobody
-    // casts twice.
-    int target = -1;
-    if (s->effect == GG_SPELL_HARM) {
-        const gg_actor *p = gg_player_const(g);
-        int best_d = 0;
-        for (int i = 0; i < g->actors; i++) {
-            if (!gg_at_odds(g, g->player, i)) continue;
-            const int d = gg_dist_cheb(p->x, p->y, g->actor[i].x, g->actor[i].y);
-            if (d > s->reach) continue;
-            if (!gg_line_of_sight(g, p->x, p->y, g->actor[i].x, g->actor[i].y))
-                continue;
-            if (target < 0 || d < best_d) { target = i; best_d = d; }
+    // casts twice. Harm takes the nearest; sleep takes the nearest `power` of
+    // them, which is the difference between IN ZU and VAS ZU.
+    int target[GG_ACTORS_MAX];
+    int targets = 0;
+    if (s->effect == GG_SPELL_HARM || s->effect == GG_SPELL_SLEEP) {
+        const int most = s->effect == GG_SPELL_SLEEP ? s->power : 1;
+        for (int n = 0; n < most; n++) {
+            const gg_actor *p = gg_player_const(g);
+            int best = -1, best_d = 0;
+            for (int i = 0; i < g->actors; i++) {
+                if (!gg_at_odds(g, g->player, i)) continue;
+                if (s->effect == GG_SPELL_SLEEP && g->actor[i].asleep) continue;
+                bool taken = false;
+                for (int t = 0; t < targets; t++) taken = taken || target[t] == i;
+                if (taken) continue;
+                const int d = gg_dist_cheb(p->x, p->y, g->actor[i].x, g->actor[i].y);
+                if (d > s->reach) continue;
+                if (!gg_line_of_sight(g, p->x, p->y, g->actor[i].x, g->actor[i].y))
+                    continue;
+                if (best < 0 || d < best_d) { best = i; best_d = d; }
+            }
+            if (best < 0) break;
+            target[targets++] = best;
         }
-        if (target < 0) {
+        if (targets == 0) {
             gg_log(g, "There is nothing within reach of %s.", s->name);
             return false;
         }
+    }
+
+    // And a spell that moves you needs somewhere to land, for the same reason.
+    int land_x = 0, land_y = 0;
+    if (s->effect == GG_SPELL_TRAVEL &&
+        !travel_landing(g, s->reach, &land_x, &land_y)) {
+        gg_log(g, "There is nowhere %s could set thee down.", s->name);
+        return false;
     }
 
     spend_reagents(g, s);
@@ -534,16 +584,45 @@ bool gg_cast(gg_game *g, int spell) {
     }
 
     case GG_SPELL_HARM: {
-        gg_actor *foe = &g->actor[target];
+        gg_actor *foe = &g->actor[target[0]];
         foe->hp = (int16_t)(foe->hp - s->power);
         gg_log(g, "%s takes %d.", foe->name, s->power);
         if (foe->hp <= 0) {
             // Through the ordinary killing, so what it was carrying falls the
             // same way it would from a hammer blow.
             foe->hp = 1;
-            gg_strike(g, g->player, target);
-            if (foe->hp > 0) { foe->hp = 0; gg_strike(g, g->player, target); }
+            gg_strike(g, g->player, target[0]);
+            if (foe->hp > 0) { foe->hp = 0; gg_strike(g, g->player, target[0]); }
         }
+        break;
+    }
+
+    case GG_SPELL_SLEEP:
+        for (int i = 0; i < targets; i++) {
+            gg_actor *foe = &g->actor[target[i]];
+            foe->asleep = (uint8_t)gg_clampi(s->turns, 1, 255);
+            gg_log(g, "%s goes down where it stands.", foe->name);
+        }
+        break;
+
+    case GG_SPELL_WARD:
+        // A second casting replaces the first rather than stacking with it.
+        // Stacking wards is how a fight stops being a fight.
+        g->ward_power = s->power;
+        g->ward_turns = s->turns;
+        break;
+
+    case GG_SPELL_TRAVEL: {
+        gg_actor *me = gg_player(g);
+        me->facing = gg_facing_from_delta(land_x - me->x, land_y - me->y);
+        // Set down rather than stepped: there is no slide to draw, because
+        // nothing walked. gg_actor_move_to would interpolate across whatever
+        // the spell just crossed.
+        me->x = (int16_t)land_x;
+        me->y = (int16_t)land_y;
+        me->from_x = me->x;
+        me->from_y = me->y;
+        me->step = 0;
         break;
     }
 
@@ -757,6 +836,10 @@ static void world_turn(gg_game *g, int minutes) {
     if (g->light_turns > 0 && --g->light_turns == 0) {
         g->light_power = 0;
         gg_log(g, "Thy light gutters and goes out.");
+    }
+    if (g->ward_turns > 0 && --g->ward_turns == 0) {
+        g->ward_power = 0;
+        gg_log(g, "Thy ward thins and is gone.");
     }
     g->minutes += (uint32_t)minutes;
     while (g->minutes >= GG_MINUTES_PER_DAY) {

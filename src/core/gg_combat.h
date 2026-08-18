@@ -33,6 +33,12 @@
 #define GG_FLANK_BONUS  4
 #define GG_FLANK_DAMAGE 2
 
+// The most guard a ward may add, however a save file was written. It is a
+// ceiling on a number out of a file rather than a balance figure: at ten a
+// warded Avatar is hit by an ordinary brigand about one blow in five, and
+// beyond that the fight stops being one.
+#define GG_WARD_MAX 10
+
 // How near the Avatar has to come before something takes an interest, for
 // anything that does not say. Each creature may set its own; without any limit
 // at all a brigand hunts from anywhere on the map, and a player who stands

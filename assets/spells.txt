@@ -9,11 +9,19 @@
 #     name TEXT             what it is called in the book
 #     circle N              how deep a mage it wants, 1 to 8
 #     costs ITEM N [...]    reagents spent on every casting
-#     effect WHAT N [turns N] [reach N]
+#     effect WHAT [N] [turns N] [reach N]
 #     say TEXT              what it reads like when it works
 #
-# The effects are light, heal and harm. Each one has to be visible in the world
-# - a spell whose result nobody can see is a control that does nothing.
+# Six effects, and each one has to be visible in the world - a spell whose
+# result nobody can see is a control that does nothing. What the three numbers
+# mean is the effect's own business, and any it does not use is left out:
+#
+#   light   N is how far it reaches        turns is how long it holds
+#   heal    N is health returned
+#   harm    N is damage                                     reach is how far
+#   sleep   N is how many go down          turns is how long, reach is how far
+#   ward    N is guard added               turns is how long
+#   travel                                                  reach is how far
 
 rune AN    negate
 rune IN    create
@@ -22,6 +30,9 @@ rune MANI  life
 rune VAS   great
 rune FLAM  flame
 rune NOX   poison
+rune ZU    sleep
+rune SANCT protect
+rune POR   movement
 
 spell IN LOR
   name Light
@@ -78,3 +89,31 @@ spell AN NOX
   costs ginseng 1 nightshade 1
   effect heal 6
   say The sickness goes out of thee.
+
+spell IN ZU
+  name Sleep
+  circle 2
+  costs nightshade 1
+  effect sleep 1 turns 8 reach 4
+  say Its eyes close, and it goes down where it stood.
+
+spell VAS ZU
+  name Great Sleep
+  circle 4
+  costs nightshade 2 ginseng 1
+  effect sleep 4 turns 6 reach 5
+  say The word goes out flat across the ground, and what hears it lies down.
+
+spell IN SANCT
+  name Ward
+  circle 2
+  costs ginseng 1 bloodmoss 1
+  effect ward 4 turns 40
+  say The air about thee thickens and will not be hurried.
+
+spell VAS POR
+  name Blink
+  circle 3
+  costs bloodmoss 2
+  effect travel reach 6
+  say Thou art elsewhere, and the way thou wert facing.

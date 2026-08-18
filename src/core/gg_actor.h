@@ -56,6 +56,12 @@ typedef struct {
     // you.
     uint8_t angered_by;
 
+    // Turns of sleep left. A sleeping thing takes no turns, gathers no
+    // initiative, and has its back to everybody - and the first blow wakes it,
+    // because nothing sleeps through being hit. This is what makes a spell that
+    // does no damage worth a reagent: the fight becomes one fewer at a time.
+    uint8_t asleep;
+
     // Which row of the bestiary this came from, so its loot table can be
     // rolled when it falls. A save cannot write a pointer, and an index into a
     // file that may have been edited is checked on the way back in.

@@ -4,6 +4,52 @@ Notable changes, newest first. Versions follow [semantic
 versioning](https://semver.org); anything below 1.0 may still move under you,
 and the save and map formats are versioned but not yet frozen.
 
+## Unreleased
+
+Work since the beta, on the list in `docs/COMPLETION_PLAN.md` under *Phase 5 —
+More of it*: ten items of sixteen. The gaps named under 0.1.0-beta.1 below are
+what that release had; this is what has closed since.
+
+### More of it
+
+- **Five maps, not two.** The fells the north road runs up into, **the deep**
+  under them — dark enough that a torch is the difference between seeing and
+  not — and **Wyndle**, a second town down the east road with four people of its
+  own. All five ship as text you can read and edit.
+- **A second storyline.** *Under the Hills* — Wyndle's mill has no corn because
+  nothing comes down out of the fells. Playable by somebody who never went to
+  the vale, and it notices the first story and is noticed by it.
+- **Nine kinds of creature**, each a different question rather than a different
+  number: one that will not run, one that is quick and thin, one in armour, one
+  that throws from five tiles, one that takes your gold and leaves.
+- **Levelling.** Killing things and working the story out both teach the party.
+  Everybody walking with you rises, and the higher circles of the spell book
+  open — a level check that nothing could pass before.
+- **Trade.** Iolo keeps the vale's stall and Sable keeps Wyndle's; both buy and
+  sell, at prices out of the item table rather than written down twice.
+- **An arming sword**, and a weapon that turns blows as well as dealing them —
+  which is the whole difference between a blade and a hammer.
+- **A fight with more than one answer.** A telling blow lands whatever the
+  armour; striking somebody who is not looking at you is easier and hurts more;
+  and a creature turns on whoever is hurting it, so bringing company is the
+  skill rather than a stat.
+- **Magic beyond light, heal and harm**: a word that puts somebody to sleep, a
+  ward that turns blows for a while, and one that sets you down on the far side
+  of whatever is in the way. Nystul teaches the three new runes.
+- **A world that is not the same twice.** What is *in* a map is rolled from the
+  seed, so every journey through the vale has its own trouble in its own
+  places — and `--seed N` still reproduces one exactly.
+
+### Still open
+
+Companions who are somebody, a character sheet, music that is not placeholder,
+an editor with undo and fill, bridges, and the region byte.
+
+### Note
+
+The save format has moved (version 12) and there is no migration, so a journey
+saved by 0.1.0-beta.1 will not resume on a build from `main`.
+
 ## 0.1.0-beta.1
 
 The first public build. Everything on the completion plan is done — 42 items of

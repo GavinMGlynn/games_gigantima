@@ -51,6 +51,7 @@ static void mix_actor(uint64_t *h, const gg_actor *a) {
     mix_i32(h, a->flees);
     mix_u32(h, a->beast);
     mix_u32(h, a->angered_by);
+    mix_u32(h, a->asleep);
     mix_i32(h, a->x);
     mix_i32(h, a->y);
     mix_u32(h, a->def);
@@ -121,6 +122,8 @@ uint64_t gg_state_hash(const gg_game *g) {
     for (int i = 0; i < GG_SLOT_COUNT; i++) mix_i32(&h, g->equipped[i]);
     mix_i32(&h, g->light_turns);
     mix_i32(&h, g->light_power);
+    mix_i32(&h, g->ward_turns);
+    mix_i32(&h, g->ward_power);
 
     mix_i32(&h, g->knownn);
     for (int i = 0; i < g->knownn; i++) mix_str(&h, g->known[i]);
