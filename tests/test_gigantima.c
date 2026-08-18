@@ -3078,14 +3078,15 @@ static void the_vale_has_a_book_and_every_word_in_it_is_reachable(void) {
         const gg_speaker *s = gg_dialogue_find(WHO[w]);
         CHECK(s != nullptr, "%s is in the town but not in the book", WHO[w]);
         if (!s) continue;
-        for (int t = 0; t < s->topics; t++) {
-            if (!s->topic[t].teach[0]) continue;
-            bool have = false;
-            for (int v = 0; v < vocabn; v++)
-                if (SDL_strcasecmp(vocab[v], s->topic[t].teach) == 0) have = true;
-            if (!have && vocabn < GG_KNOWN_MAX)
-                SDL_strlcpy(vocab[vocabn++], s->topic[t].teach, GG_WORD_MAX);
-        }
+        for (int t = 0; t < s->topics; t++)
+            for (int k = 0; k < s->topic[t].teaches; k++) {
+                const char *word = s->topic[t].teach[k];
+                bool have = false;
+                for (int v = 0; v < vocabn; v++)
+                    if (SDL_strcasecmp(vocab[v], word) == 0) have = true;
+                if (!have && vocabn < GG_KNOWN_MAX)
+                    SDL_strlcpy(vocab[vocabn++], word, GG_WORD_MAX);
+            }
     }
 
     // Every keyword anyone answers to must be in that vocabulary, or it is a
@@ -4091,14 +4092,15 @@ static void every_spell_in_the_vale_can_be_learned_from_somebody(void) {
     for (size_t w = 0; w < GG_COUNTOF(WHO); w++) {
         const gg_speaker *s = gg_dialogue_find(WHO[w]);
         if (!s) continue;
-        for (int t = 0; t < s->topics; t++) {
-            if (!s->topic[t].teach[0]) continue;
-            bool have = false;
-            for (int i = 0; i < n; i++)
-                if (SDL_strcasecmp(taught[i], s->topic[t].teach) == 0) have = true;
-            if (!have && n < GG_KNOWN_MAX)
-                SDL_strlcpy(taught[n++], s->topic[t].teach, GG_WORD_MAX);
-        }
+        for (int t = 0; t < s->topics; t++)
+            for (int k = 0; k < s->topic[t].teaches; k++) {
+                const char *word = s->topic[t].teach[k];
+                bool have = false;
+                for (int i = 0; i < n; i++)
+                    if (SDL_strcasecmp(taught[i], word) == 0) have = true;
+                if (!have && n < GG_KNOWN_MAX)
+                    SDL_strlcpy(taught[n++], word, GG_WORD_MAX);
+            }
     }
 
     for (int i = 0; i < gg_magic_spells(); i++) {
@@ -5821,12 +5823,14 @@ static void the_vale_has_a_story_that_can_be_reached(void) {
     for (int i = 0; i < gg_dialogue_speakers(); i++) {
         const gg_speaker *s = gg_dialogue_speaker(i);
         for (int t = 0; t < s->topics; t++) {
-            if (!s->topic[t].teach[0]) continue;
-            bool have = false;
-            for (int k = 0; k < n; k++)
-                if (SDL_strcasecmp(taught[k], s->topic[t].teach) == 0) have = true;
-            if (!have && n < GG_KNOWN_MAX)
-                SDL_strlcpy(taught[n++], s->topic[t].teach, GG_WORD_MAX);
+            for (int k = 0; k < s->topic[t].teaches; k++) {
+                const char *word = s->topic[t].teach[k];
+                bool have = false;
+                for (int v = 0; v < n; v++)
+                    if (SDL_strcasecmp(taught[v], word) == 0) have = true;
+                if (!have && n < GG_KNOWN_MAX)
+                    SDL_strlcpy(taught[n++], word, GG_WORD_MAX);
+            }
         }
     }
 
@@ -6953,7 +6957,13 @@ static void the_second_story_can_be_played_and_the_first_hears_of_it(void) {
     }
     CHECK(felled >= 4, "only %d of what haunts the deep would fall", felled);
 
-    // What is down there, taken off the floor where it lies.
+    // What is down there, taken off the floor where it lies. On its feet
+    // first: there are wardens down here as well as lurkers, and a party that
+    // is being fought over while it stoops for a cache is a party that does
+    // not get up - which is a fair fight, and not what this test is about.
+    gg_player(&g)->hp = gg_player(&g)->hp_max;
+    CHECK(g.mode == GG_MODE_PLAY, "the deep killed the party before the cache");
+
     const int cache = gg_ground_at(&g.map, 7, 7);
     CHECK(cache >= 0, "there is no cache in the deep");
     if (cache >= 0) {
@@ -7016,6 +7026,100 @@ static void the_second_story_can_be_played_and_the_first_hears_of_it(void) {
     restore_dialogue();
     restore_quests();
     restore_bestiary();
+}
+
+// ---------------------------------------------------------------------------
+// Trade
+// ---------------------------------------------------------------------------
+// The gold in the pack was worth carrying only because it was heavy. This is
+// buying, selling, and a merchant who knows what he does not want.
+static void a_thing_can_be_bought_and_a_thing_can_be_sold(void) {
+    CHECK(gg_dialogue_load(gg_asset_path("dialogue.txt")), "no book");
+
+    // Prices come from the item table, so they cannot drift from what a thing
+    // is worth: a hammer at 60 copper is six gold coins, and a merchant buys at
+    // half what he sells for.
+    CHECK(gg_price_to_buy(GG_ITEM_HAMMER) == 6, "a hammer costs %d",
+          gg_price_to_buy(GG_ITEM_HAMMER));
+    CHECK(gg_price_to_sell(GG_ITEM_HAMMER) == 3, "a hammer fetches %d",
+          gg_price_to_sell(GG_ITEM_HAMMER));
+    CHECK(gg_price_to_buy(GG_ITEM_STONE) >= 1, "a thing worth almost nothing is free");
+
+    gg_game g;
+    CHECK(gg_game_new_from_map(&g, gg_asset_path_for_place("wyndle"), "Buyer", 12u),
+          "Wyndle would not open");
+
+    int sable = -1;
+    for (int i = 0; i < g.actors; i++)
+        if (SDL_strcmp(g.actor[i].name, "Sable") == 0) sable = i;
+    CHECK(sable > 0, "Sable is not in Wyndle");
+    if (sable < 0) { gg_game_free(&g); restore_dialogue(); return; }
+
+    // --- buying --------------------------------------------------------------
+    const int purse = gg_pack_count(&g, GG_ITEM_GOLD);
+    CHECK(purse > 0, "a journey begins penniless");
+    CHECK(gg_pack_count(&g, GG_ITEM_SHIELD) == 0, "it begins with a shield too");
+
+    ask_everything(&g, sable);
+
+    const int shields = gg_pack_count(&g, GG_ITEM_SHIELD);
+    CHECK(shields == 1, "asking a merchant everything bought %d shields", shields);
+    CHECK(gg_pack_count(&g, GG_ITEM_HAMMER) == 1, "and %d hammers",
+          gg_pack_count(&g, GG_ITEM_HAMMER));
+
+    const int after = gg_pack_count(&g, GG_ITEM_GOLD);
+    const int spent = purse - after;
+    CHECK(spent == gg_price_to_buy(GG_ITEM_SHIELD) + gg_price_to_buy(GG_ITEM_HAMMER),
+          "a shield and a hammer cost %d gold, and they are worth %d", spent,
+          gg_price_to_buy(GG_ITEM_SHIELD) + gg_price_to_buy(GG_ITEM_HAMMER));
+
+    // Asking again buys nothing: a merchant with sense does not sell a second
+    // shield to somebody wearing one.
+    ask_everything(&g, sable);
+    CHECK(gg_pack_count(&g, GG_ITEM_SHIELD) == 1, "he sold a second shield");
+    CHECK(gg_pack_count(&g, GG_ITEM_GOLD) == after, "and charged for it");
+
+    // --- selling -------------------------------------------------------------
+    CHECK(gg_pack_add(&g, GG_ITEM_BLOODMOSS, 1) == 1, "could not pick moss");
+    const int before_sale = gg_pack_count(&g, GG_ITEM_GOLD);
+    ask_everything(&g, sable);
+    CHECK(gg_pack_count(&g, GG_ITEM_BLOODMOSS) == 0, "he would not take the moss");
+    CHECK(gg_pack_count(&g, GG_ITEM_GOLD) ==
+          before_sale + gg_price_to_sell(GG_ITEM_BLOODMOSS),
+          "the moss fetched %d and it is worth %d",
+          gg_pack_count(&g, GG_ITEM_GOLD) - before_sale,
+          gg_price_to_sell(GG_ITEM_BLOODMOSS));
+
+    // --- and what he has no use for -----------------------------------------
+    CHECK(gg_pack_add(&g, GG_ITEM_APPLE, 2) == 2, "could not take apples");
+    const int apples = gg_pack_count(&g, GG_ITEM_APPLE);
+    const int with_apples = gg_pack_count(&g, GG_ITEM_GOLD);
+    ask_everything(&g, sable);
+    CHECK(gg_pack_count(&g, GG_ITEM_APPLE) == apples,
+          "he bought apples, which he never said he wanted");
+    CHECK(gg_pack_count(&g, GG_ITEM_GOLD) == with_apples,
+          "and paid for them");
+
+    // --- a purse that empties -------------------------------------------------
+    // Spend it all, and the shop stops offering rather than refusing.
+    gg_game h;
+    CHECK(gg_game_new_from_map(&h, gg_asset_path_for_place("wyndle"), "Pauper", 12u),
+          "Wyndle would not open again");
+    const int slot = gg_pack_find(&h, GG_ITEM_GOLD);
+    CHECK(slot >= 0, "no purse to empty");
+    gg_pack_take(&h, slot, gg_pack_count(&h, GG_ITEM_GOLD));
+    CHECK(gg_pack_count(&h, GG_ITEM_GOLD) == 0, "the purse would not empty");
+
+    int poor_sable = -1;
+    for (int i = 0; i < h.actors; i++)
+        if (SDL_strcmp(h.actor[i].name, "Sable") == 0) poor_sable = i;
+    if (poor_sable > 0) ask_everything(&h, poor_sable);
+    CHECK(gg_pack_count(&h, GG_ITEM_SHIELD) == 0,
+          "a shield was handed to somebody with no money");
+    gg_game_free(&h);
+
+    gg_game_free(&g);
+    restore_dialogue();
 }
 
 // The plan's own verification for the storyline: playable start to finish.
@@ -7821,6 +7925,7 @@ int main(void) {
     RUN(a_journey_that_fights_its_way_north_arrives_stronger);
     RUN(the_whole_story_can_be_played_from_start_to_finish);
     RUN(the_second_story_can_be_played_and_the_first_hears_of_it);
+    RUN(a_thing_can_be_bought_and_a_thing_can_be_sold);
     RUN(a_content_file_written_on_windows_still_loads);
     RUN(a_map_you_leave_is_as_you_left_it);
     RUN(a_way_out_that_leads_nowhere_is_refused);

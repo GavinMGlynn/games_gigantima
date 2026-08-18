@@ -93,6 +93,10 @@ Then go north. The road out of the vale is at the top of the map and it is not
 safe — what you take off the brigands on it is what makes the man at the end of
 it beatable. Bring what he took back to Iolo and the story ends.
 
+**There are shops.** Iolo keeps the vale's stall and Sable keeps Wyndle's: ask
+a merchant about his JOB and he will name what he has. They buy as well as sell,
+at half what they charge.
+
 **Take somebody with you.** Rugar beats a party that walked up alone every time
 out of twenty, and loses to one that came prepared fifteen times in twenty.
 

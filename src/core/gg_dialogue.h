@@ -19,9 +19,16 @@
 #include "core/gg_ids.h"
 
 #define GG_WORD_MAX        20   // a keyword, with its terminator
+
+// What a thing costs, in gold coins: its value in the item table over the value
+// of a coin, never less than one. A merchant sells at that and buys at half of
+// it, which is the oldest arrangement there is and explains itself.
+int gg_price_to_buy(gg_item_id kind);
+int gg_price_to_sell(gg_item_id kind);
 #define GG_LINE_MAX        88   // one line of speech
 #define GG_TOPIC_WORDS_MAX  3   // synonyms for one topic
 #define GG_TOPIC_LINES_MAX  3
+#define GG_TOPIC_TEACH_MAX  4
 // Per person. Somebody who teaches a language legitimately has a great many -
 // the vale's mage answers to eight runes plus the ordinary courtesies.
 #define GG_TOPICS_MAX      16
@@ -37,7 +44,11 @@ typedef struct {
     int  words;                         // the first is what the panel shows
     char say[GG_TOPIC_LINES_MAX][GG_LINE_MAX];
     int  says;
-    char teach[GG_WORD_MAX];            // empty when it teaches nothing
+    // The words this hands over. Several, because a shopkeeper naming his
+    // stock hands over three or four in one breath, and splitting that into
+    // three topics nobody can ask yet is the tail wagging the dog.
+    char teach[GG_TOPIC_TEACH_MAX][GG_WORD_MAX];
+    int  teaches;
 
     // Asking this takes the speaker into the party. In the file rather than in
     // C, so who can be recruited - and what they have to be asked - is content
@@ -56,6 +67,12 @@ typedef struct {
     // topic asked twice is not a purse that never empties.
     uint8_t gives;                      // gg_item_id
     uint8_t gives_count;                // zero means it gives nothing
+
+    // Money changes hands as well as goods. `trade` turns a `gives` into a
+    // purchase and a `wants` into a sale, at prices taken from the item table
+    // rather than written here - a price in the book is a price that drifts
+    // from what the thing is worth the moment either is edited.
+    bool    trade;
 
     char    raises[GG_FLAG_MAX];
 } gg_topic;

@@ -127,7 +127,7 @@ const gg_item_def GG_ITEM[GG_ITEM_COUNT] = {
     [GG_ITEM_SILVER] = {
         "SILVER",
         "a bar of silver", "bars of silver", "silver",
-        1, 1, 400, 1,
+        1, 1, 150, 1,
         GG_USE_NONE, 0, GG_SLOT_NONE, 0, 200,
         0, 0, 0,
     },

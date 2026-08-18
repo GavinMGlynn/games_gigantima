@@ -349,10 +349,15 @@ here. Nothing is on this list that is not already admitted to somewhere.
       thrown stone and 11 in 20 to a hammer; an adept beats somebody who stands
       and trades 20 times out of 20 and loses 8 in 20 to somebody who walks at
       it. And no two kinds in the book fight identically.*
-- [ ] **Trade.** Items carry a value in copper and nobody buys or sells. The
-      gold in the pack should be worth carrying.
-      *Verification: a thing bought, a thing sold, a purse that empties, and a
-      merchant who will not buy what he has no use for.*
+- [x] **Trade.** Iolo keeps a market stall and Sable keeps Wyndle's, and both
+      buy and sell. One word in the book — `trade` — turns handing a thing over
+      into a purchase and taking one into a sale, at prices read from the item
+      table rather than written down twice.
+      *Verification: a shield and a hammer bought and the purse lighter by
+      exactly what they are worth; blood moss sold for half; apples refused by a
+      merchant who never said he wanted any; a second shield not sold to
+      somebody wearing one; and a penniless customer offered nothing rather than
+      refused.*
 - [ ] **Arms worth choosing.** A hammer, a stone and a shield. The LPC set has
       an arming sword and a heater shield that were never baked.
       *Verification: a weapon with reach, a weapon with weight, and a choice

@@ -905,6 +905,38 @@ breaking the rule they pin — making every speed equal, clearing line of sight,
 dropping no loot, and putting townsfolk on the other side. Plus a `--shot` frame
 of an exchange of blows, now taken in CI.*
 
+### Trade
+
+Iolo keeps a market stall in the vale and Sable keeps Wyndle's. **One word does
+it**: `trade` on a topic turns a `gives` into a purchase and a `wants` into a
+sale.
+
+**Prices are read, not written.** A thing costs its value in the item table over
+the value of a coin — a hammer at 60 copper is six gold — and a merchant buys at
+half what he sells for. A price written in the dialogue file would be a second
+copy of a number, and it would drift from the first the moment either was
+edited.
+
+Three rules, each of which turned out to matter:
+
+- **A shop only offers what you can pay for.** Offering a thing and then
+  refusing the money is a shop that wastes your time.
+- **A shop does not sell you what you are already carrying that much of.** "Thou
+  hast a shield." Without it, a customer who asks everything twice walks out
+  with three of them — which is exactly what the exhaustive asker did, filling
+  the pack to 2998 of 3000 so that the silver the story turns on would not fit.
+- **A merchant buys only what he said he buys.** Sable takes blood moss for Bryn
+  and will not look at an apple.
+
+That last discovery also moved a number: silver weighed four stone a bar, so a
+party that had bought a torch could not lift the caravan's silver at the end of
+the story. It is a stone and a half now.
+
+*Verification: `a_thing_can_be_bought_and_a_thing_can_be_sold` — the prices
+against the item table, a shield and a hammer bought and the purse lighter by
+exactly their worth, a second shield refused, moss sold for half, apples
+refused, and a customer with an empty purse offered nothing at all.*
+
 ### What lives in the world
 
 Nine kinds, and **the art set is people** — so what tells them apart is how they

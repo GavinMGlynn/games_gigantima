@@ -127,6 +127,24 @@ void gg_conversation_refresh(gg_game *g) {
             gg_pack_count(g, (gg_item_id)t->wants) < t->wants_count)
             continue;
 
+        // One that hands something over is not offered to somebody already
+        // carrying that much of it. For a gift that is what stops a topic being
+        // a purse that never empties; for a *sale* it is a shopkeeper with
+        // sense - "thou hast a shield" - and it is what stops a customer who
+        // asks everything twice walking out with three of them. An exhaustive
+        // asker bought three shields and three hammers and could then not lift
+        // the thing the story turns on.
+        if (t->gives_count > 0 &&
+            gg_pack_count(g, (gg_item_id)t->gives) >= t->gives_count) continue;
+
+        // And one that sells can only be raised while it can be paid for. A
+        // shop that offers what you cannot afford and then says no is a shop
+        // that wastes your time.
+        if (t->trade && t->gives_count > 0) {
+            const int price = gg_price_to_buy((gg_item_id)t->gives) * t->gives_count;
+            if (gg_pack_count(g, GG_ITEM_GOLD) < price) continue;
+        }
+
         for (int w = 0; w < t->words; w++) {
             if (!gg_knows(g, t->word[w])) continue;
             SDL_strlcpy(g->askable[g->askables++], t->word[0], GG_WORD_MAX);
@@ -186,9 +204,10 @@ void gg_conversation_ask(gg_game *g) {
     // Learning a word is the only thing a conversation changes in the world,
     // and it may make this very speaker answerable to something new - so the
     // list is rebuilt before the player looks at it again.
-    if (t->teach[0] && gg_learn(g, t->teach)) {
+    for (int w = 0; w < t->teaches; w++) {
+        if (!gg_learn(g, t->teach[w])) continue;
         gg_emit(g, GG_EV_LEARN);
-        gg_log(g, "Thou hast learned of %s.", t->teach);
+        gg_log(g, "Thou hast learned of %s.", t->teach[w]);
         gg_conversation_refresh(g);
     }
 
@@ -208,13 +227,40 @@ void gg_conversation_ask(gg_game *g) {
         gg_log(g, "Thou dost hand over the %s.",
                t->wants_count > 1 ? GG_ITEM[t->wants].many
                                  : GG_ITEM[t->wants].one);
+
+        // And what it is worth, if this was a sale rather than a gift.
+        if (t->trade) {
+            const int paid = gg_price_to_sell((gg_item_id)t->wants) * t->wants_count;
+            const int got = gg_pack_add(g, GG_ITEM_GOLD, paid);
+            gg_emit(g, GG_EV_COIN);
+            if (got < paid)
+                gg_log(g, "%d gold, and thou canst carry no more of it.", got);
+            else
+                gg_log(g, "Thou art paid %d gold.", paid);
+        }
         gg_conversation_refresh(g);
     }
 
-    // And what it hands over. Only when the pack holds none of that kind, so
-    // asking twice is not a purse that never empties - the rule is in the
-    // book's own documentation and this is the whole of it.
-    if (t->gives_count > 0 && gg_pack_count(g, (gg_item_id)t->gives) == 0) {
+    // Money, where money is involved. Taken before the goods are handed over,
+    // and the topic was only offered because it could be paid - so this cannot
+    // leave somebody holding a thing they did not pay for.
+    if (t->trade && t->gives_count > 0) {
+        const int price = gg_price_to_buy((gg_item_id)t->gives) * t->gives_count;
+        int owed = price;
+        while (owed > 0) {
+            const int slot = gg_pack_find(g, GG_ITEM_GOLD);
+            if (slot < 0) break;
+            const int paid = gg_pack_take(g, slot, owed);
+            if (paid <= 0) break;
+            owed -= paid;
+        }
+        gg_emit(g, GG_EV_COIN);
+        gg_log(g, "Thou payest %d gold.", price - owed);
+    }
+
+    // And what it hands over. The topic was only offered because the pack held
+    // fewer than this many already, so nothing here has to check again.
+    if (t->gives_count > 0) {
         const int took = gg_pack_add(g, (gg_item_id)t->gives, t->gives_count);
         if (took > 0) {
             gg_emit(g, GG_EV_TAKE);

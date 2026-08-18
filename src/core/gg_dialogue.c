@@ -36,6 +36,20 @@ int gg_dialogue_speakers(void) { return g_speakers; }
 // ---------------------------------------------------------------------------
 // Case-insensitive, because a keyword is something a person typed or picked and
 // "Caravan" is the same question as "caravan".
+int gg_price_to_buy(gg_item_id kind) {
+    if (kind >= GG_ITEM_COUNT) return 0;
+    const int coin = GG_ITEM[GG_ITEM_GOLD].value;
+    const int worth = GG_ITEM[kind].value;
+    if (coin <= 0) return worth;
+    const int price = (worth + coin - 1) / coin;      // rounded up
+    return price < 1 ? 1 : price;
+}
+
+int gg_price_to_sell(gg_item_id kind) {
+    const int half = gg_price_to_buy(kind) / 2;
+    return half < 1 ? 1 : half;
+}
+
 static bool word_eq(const char *a, const char *b) {
     return SDL_strcasecmp(a, b) == 0;
 }
@@ -308,6 +322,13 @@ bool gg_dialogue_load(const char *path) {
                 topic->wants = (uint8_t)kind;
                 topic->wants_count = (uint8_t)(count > 255 ? 255 : count);
             }
+        } else if (word_eq(key, "trade")) {
+            if (!topic) {
+                complain(path, lineno, "`trade` outside any topic");
+                ok = false;
+                break;
+            }
+            topic->trade = true;
         } else if (word_eq(key, "raises")) {
             if (!topic) {
                 complain(path, lineno, "`raises` outside any topic");
@@ -326,7 +347,12 @@ bool gg_dialogue_load(const char *path) {
                 ok = false;
                 break;
             }
-            SDL_strlcpy(topic->teach, rest, sizeof topic->teach);
+            if (topic->teaches >= GG_TOPIC_TEACH_MAX) {
+                complain(path, lineno, "more words than one topic may teach");
+                ok = false;
+                break;
+            }
+            SDL_strlcpy(topic->teach[topic->teaches++], rest, GG_WORD_MAX);
         } else {
             SDL_Log("gigantima: %s:%d: no idea what `%s` means", path, lineno, key);
             ok = false;

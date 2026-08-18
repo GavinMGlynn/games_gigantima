@@ -252,9 +252,13 @@ ITEMS = [
     item("GOLD",   f"{ORES}/Ore, Gold.png", 1, 2, 1, 1,
          "a gold coin", "gold coins", "gold",
          weight=1, value=10),
+    # A stone and a half apiece rather than four. At 400 a caravan's worth of
+    # it was most of what a party could carry: buying a torch put the storyline
+    # out of reach, because the silver that ends it no longer fitted in the
+    # pack beside the arms that get you to it.
     item("SILVER", f"{ORES}/Alloys.png",    2, 0, 1, 1,
          "a bar of silver", "bars of silver", "silver",
-         weight=400, value=200),
+         weight=150, value=200),
 
     # Arms. This art set has no swords that stand on their own - the sword is
     # only ever a layer on a swinging character - so what the vale fights with
