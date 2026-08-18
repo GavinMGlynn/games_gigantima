@@ -20,8 +20,10 @@
 #   when flag NAME        some other stage raised it
 #   when slain N          N have fallen to the party
 #   when party N          N walk with the Avatar
-#   when at MAP           the Avatar is standing in that map
-#   when at MAP X Y R     ...and within R tiles of that spot in it
+#   when at PLACE         the Avatar is standing in that map - the name of
+#                         its file without the extension, so `vale` is the
+#                         same place whichever form of it is on disk
+#   when at PLACE X Y R   ...and within R tiles of that spot in it
 #
 # A `when` with nothing after it follows the stage before it on the same turn,
 # which is how a stage that only writes a line is written. The *first* stage of
@@ -55,12 +57,12 @@ quest CARAVAN
     sets caravan_understood
     worth 40
   stage
-    when at stones.ggmap
+    when at stones
     journal The stones stand in a ring, and the grass inside them is beaten flat.
     sets stood_among_the_stones
     worth 40
   stage
-    when at stones.ggmap 24 22 6
+    when at stones 24 22 6
     journal A man waits in the middle of the ring, and he is not surprised to see thee.
   stage
     when has SILVER 3
@@ -68,7 +70,7 @@ quest CARAVAN
     sets caravan_avenged
     worth 120
   stage
-    when at vale.ggmap
+    when at vale
     journal Thou art home with it. Iolo is at his stall; ask him of the SILVER.
   stage
     when flag silver_returned

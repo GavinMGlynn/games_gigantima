@@ -1059,6 +1059,12 @@ def emit_ids(tiles, props, actors, items, path):
     o.append("// BRIGAND and gets the sprite, without a number nobody can check.")
     o.append("extern const char *const GG_ACTOR_ID_NAME[GG_ACTOR_COUNT];")
     o.append("")
+    o.append("// The same, for what a map is made of. A map written as text says")
+    o.append("// GRASS and TREE_OAK; a number in a file nobody can read is how a")
+    o.append("// format stops being editable by a person.")
+    o.append("extern const char *const GG_TILE_ID_NAME[GG_TILE_COUNT];")
+    o.append("extern const char *const GG_PROP_ID_NAME[GG_PROP_COUNT];")
+    o.append("")
     o.append("// Row order within an actor's block, matching LPC's Walk.png.")
     o.append("typedef enum { GG_FACE_UP, GG_FACE_LEFT, GG_FACE_DOWN, "
              "GG_FACE_RIGHT } gg_facing;")
@@ -1102,7 +1108,7 @@ def emit_ids(tiles, props, actors, items, path):
         f.write("\n".join(o) + "\n")
 
 
-def emit_sizes(props, items, actors, path):
+def emit_sizes(props, items, actors, tiles, path):
     """The one generated .c file - tables the simulation links against."""
     o = [banner("gg_ids.c", "Prop geometry and the item table, for the "
                             "simulation."),
@@ -1117,6 +1123,18 @@ def emit_sizes(props, items, actors, path):
     o.append("const char *const GG_ACTOR_ID_NAME[GG_ACTOR_COUNT] = {")
     for name, *_ in actors:
         o.append(f'    [GG_ACTOR_{name}] = "{name}",')
+    o.append("};")
+    o.append("")
+
+    o.append("const char *const GG_TILE_ID_NAME[GG_TILE_COUNT] = {")
+    for name, *_ in tiles:
+        o.append(f'    [GG_TILE_{name}] = "{name}",')
+    o.append("};")
+    o.append("")
+
+    o.append("const char *const GG_PROP_ID_NAME[GG_PROP_COUNT] = {")
+    for name, *_ in props:
+        o.append(f'    [GG_PROP_{name}] = "{name}",')
     o.append("};")
     o.append("")
 
@@ -1315,7 +1333,8 @@ def main():
 
     src = os.path.join(ROOT, "src")
     emit_ids(tiles, props, actors, items, os.path.join(src, "core", "gg_ids.h"))
-    emit_sizes(props, items, actors, os.path.join(src, "core", "gg_ids.c"))
+    emit_sizes(props, items, actors, tiles,
+               os.path.join(src, "core", "gg_ids.c"))
     emit_atlas(tiles, props, actors, items, edges, overlays, font_meta,
                os.path.join(src, "gfx", "gg_atlas.h"))
     emit_credits(os.path.join(ASSETS, "CREDITS.md"))

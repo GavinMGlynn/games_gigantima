@@ -97,4 +97,4 @@ creature CHIEF
   worth 150
   loot SILVER 3 3 100
   loot GOLD 20 40 100
-  haunts 1 stones.ggmap 24 22
+  haunts 1 stones 24 22

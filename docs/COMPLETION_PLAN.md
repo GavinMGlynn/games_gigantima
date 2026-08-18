@@ -308,12 +308,18 @@ here. Nothing is on this list that is not already admitted to somewhere.
       different places and the same seed puts them back, in the test and in two
       debug frames side by side. The world remembers its seed through a save,
       and a replay of a map game carries it and still ends bit-identical.*
-- [ ] **A map is a file you can read.** The editor is the only thing that can
-      write a map and it needs a mouse, so the two shipped maps cannot be
-      regenerated and a format change would strand them. A map needs a text
-      source the editor reads and writes.
-      *Verification: both shipped maps round-trip through the text form and come
-      back byte for byte, and a map authored as text alone is playable.*
+- [x] **A map is a file you can read.** A map can be written as text — a picture
+      of the ground one character to a tile, and a list of what stands on it —
+      and the game and the editor read either form. Both shipped maps now have
+      that text beside them as their source. A map is also a *place* now rather
+      than a filename, so the same map in either form is the same place to the
+      story.
+      *Verification: both shipped maps written as text, read back, and written
+      out again byte for byte identical — which needed the binary writer fixed,
+      because it had been emitting uninitialised bytes after a name. A map
+      written by hand is playable, nine malformed ones are refused with the line
+      they are wrong on, and the whole storyline plays through in a world whose
+      maps are text and nothing else.*
 - [ ] **More world.** More than two maps: the fells the road runs into, a place
       under the ground, and a second town that is not Britain.
       *Verification: each is walkable, linked, stocked and named, and the

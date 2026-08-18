@@ -569,15 +569,31 @@ static void pad_bot(gg_app *app) {
 // saved by the editor sits beside the profiles, so both are tried and a map you
 // authored yourself is playable without installing it.
 static const char *gg_asset_path_for_map(const char *leaf) {
-    char rel[GG_MAP_NAME_MAX + 8];
-    SDL_snprintf(rel, sizeof rel, "maps/%s", leaf);
+    // A way out names a *place* - `stones`, or `stones.ggmap` from content
+    // written before that was true. Which file that is is this function's
+    // business: the binary first, then the text, under the assets and then
+    // beside the saved journeys. A map authored as text alone is a place the
+    // world can lead to, with nothing to install and nothing to convert.
+    static char place[GG_MAP_NAME_MAX];
+    SDL_strlcpy(place, leaf, sizeof place);
+    char *dot = SDL_strchr(place, '.');
+    if (dot) *dot = '\0';
 
-    const char *where = gg_asset_path(rel);
-    SDL_IOStream *probe = SDL_IOFromFile(where, "rb");
-    if (probe) {
-        SDL_CloseIO(probe);
-        return where;
+    static const char *const FORMS[] = { "%s.ggmap", "%s.map.txt" };
+    for (size_t f = 0; f < GG_COUNTOF(FORMS); f++) {
+        char name[GG_MAP_NAME_MAX + 16], rel[GG_MAP_NAME_MAX + 24];
+        SDL_snprintf(name, sizeof name, FORMS[f], place);
+        SDL_snprintf(rel, sizeof rel, "maps/%s", name);
+
+        const char *where = gg_asset_path(rel);
+        SDL_IOStream *probe = SDL_IOFromFile(where, "rb");
+        if (probe) { SDL_CloseIO(probe); return where; }
+
+        where = gg_pref_file(name);
+        probe = SDL_IOFromFile(where, "rb");
+        if (probe) { SDL_CloseIO(probe); return where; }
     }
+    // Nothing found: hand back what was asked for, so the failure names it.
     return gg_pref_file(leaf);
 }
 

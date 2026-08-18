@@ -1,5 +1,6 @@
 // gg_edit.c - the map being edited.
 #include "editor/gg_edit.h"
+#include "core/gg_maptext.h"
 
 static void say(gg_editor *e, SDL_PRINTF_FORMAT_STRING const char *fmt, ...)
     SDL_PRINTF_VARARG_FUNC(2);
@@ -74,7 +75,14 @@ bool gg_edit_save(gg_editor *e, const char *path) {
         say(e, "no name to save it under");
         return false;
     }
-    if (!gg_map_save(&e->map, where)) {
+    // Which form is decided by the name: `.map.txt` writes the text a person
+    // can read and anything can generate, and everything else writes the
+    // binary. One rule, no flag to remember, and "save as text" is "save it
+    // under a name ending in .map.txt".
+    const size_t n = SDL_strlen(where);
+    const bool as_text = n > 8 && SDL_strcasecmp(where + n - 8, ".map.txt") == 0;
+    if (!(as_text ? gg_map_write_text(&e->map, where)
+                  : gg_map_save(&e->map, where))) {
         say(e, "could not write %s", where);
         return false;
     }

@@ -1,5 +1,6 @@
 // gg_world.c - map storage, passability, the demo continent, and the map file.
 #include "core/gg_world.h"
+#include "core/gg_maptext.h"
 
 // Movement cost 0 means "the default", which the turn loop reads as one game
 // minute. Rough ground costs more, which is what makes a road worth building
@@ -708,6 +709,21 @@ bool gg_io_r32(SDL_IOStream *io, uint32_t *v) {
     return true;
 }
 
+// A fixed-width name field, written from a cleared buffer.
+//
+// Writing the struct's own bytes writes whatever is *after* the terminator too,
+// which is whatever was in that memory before - and that residue goes into the
+// file. The shipped vale carried `Iolo\0ANT 1` in a name field for exactly that
+// reason. It reads back correctly, so nothing was ever visibly wrong; what it
+// costs is that two files holding the same map are not the same file, which
+// makes a byte comparison of them meaningless and a diff of them noise.
+static bool write_name(SDL_IOStream *io, const char *name, size_t width) {
+    char field[GG_MAP_NAME_MAX];
+    SDL_zeroa(field);
+    SDL_strlcpy(field, name, width < sizeof field ? width : sizeof field);
+    return SDL_WriteIO(io, field, width) == width;
+}
+
 bool gg_map_write(const gg_map *m, SDL_IOStream *io) {
     bool ok = SDL_WriteIO(io, GG_MAP_MAGIC, 8) == 8;
     ok = ok && gg_io_w32(io, GG_MAP_VERSION);
@@ -716,11 +732,11 @@ bool gg_map_write(const gg_map *m, SDL_IOStream *io) {
     ok = ok && gg_io_w32(io, m->seed);
     ok = ok && gg_io_w32(io, (uint32_t)m->start_x);
     ok = ok && gg_io_w32(io, (uint32_t)m->start_y);
-    ok = ok && SDL_WriteIO(io, m->name, GG_MAP_NAME_MAX) == GG_MAP_NAME_MAX;
+    ok = ok && write_name(io, m->name, GG_MAP_NAME_MAX);
     ok = ok && gg_io_w32(io, (uint32_t)m->regions);
     for (int i = 0; ok && i < m->regions; i++) {
         const gg_region *r = &m->region[i];
-        ok = ok && SDL_WriteIO(io, r->name, GG_MAP_NAME_MAX) == GG_MAP_NAME_MAX;
+        ok = ok && write_name(io, r->name, GG_MAP_NAME_MAX);
         ok = ok && gg_io_w32(io, (uint32_t)r->x) && gg_io_w32(io, (uint32_t)r->y);
         ok = ok && gg_io_w32(io, (uint32_t)r->w) && gg_io_w32(io, (uint32_t)r->h);
         ok = ok && gg_io_w32(io, r->kind);
@@ -744,7 +760,7 @@ bool gg_map_write(const gg_map *m, SDL_IOStream *io) {
         const gg_portal *p = &m->portal[i];
         ok = gg_io_w32(io, (uint32_t)(uint16_t)p->x) &&
              gg_io_w32(io, (uint32_t)(uint16_t)p->y);
-        ok = ok && SDL_WriteIO(io, p->to, GG_MAP_NAME_MAX) == GG_MAP_NAME_MAX;
+        ok = ok && write_name(io, p->to, GG_MAP_NAME_MAX);
         ok = ok && gg_io_w32(io, (uint32_t)(uint16_t)p->to_x) &&
                    gg_io_w32(io, (uint32_t)(uint16_t)p->to_y);
     }
@@ -756,7 +772,7 @@ bool gg_map_write(const gg_map *m, SDL_IOStream *io) {
         ok = gg_io_w32(io, (uint32_t)(uint16_t)a->x) &&
              gg_io_w32(io, (uint32_t)(uint16_t)a->y) &&
              gg_io_w32(io, a->art);
-        ok = ok && SDL_WriteIO(io, a->name, GG_ACTOR_NAME_MAX) == GG_ACTOR_NAME_MAX;
+        ok = ok && write_name(io, a->name, GG_ACTOR_NAME_MAX);
         ok = ok && gg_io_w32(io, a->schedn);
         for (int k = 0; ok && k < a->schedn; k++)
             ok = gg_io_w32(io, a->sched[k].hour) &&
@@ -915,6 +931,11 @@ const gg_portal *gg_portal_at(const gg_map *m, int x, int y) {
 }
 
 bool gg_map_load(gg_map *m, const char *path) {
+    // Either form. A map is a map whether it is the binary the editor writes or
+    // the text a person does, and which one a player has is not something they
+    // should have to tell the game about - see core/gg_maptext.h.
+    if (gg_map_is_text(path)) return gg_map_read_text(m, path);
+
     SDL_IOStream *io = SDL_IOFromFile(path, "rb");
     if (!io) return false;
     const bool ok = gg_map_read(m, io);

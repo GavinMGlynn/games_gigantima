@@ -225,6 +225,16 @@ content is never a code change.
 A map with no start tile, or a way out that leads nowhere, is refused with a
 reason — the editor is where a map should be found to be broken, not the game.
 
+**A map can also be written as text.** `assets/maps/*.map.txt` are the shipped
+maps in a form you can open in any editor: a picture of the ground, one
+character to a tile, and a list of what stands on it. The game reads either
+form, so `--map mymap.map.txt` works, and the editor writes text when the name
+ends in `.map.txt`. To convert one:
+
+```sh
+./gigantima_editor --open assets/maps/vale.ggmap --export vale.map.txt
+```
+
 Saved maps go beside your journeys (see below) as `authored.ggmap` unless you
 opened a file, in which case `S` writes back to that file. To play one:
 

@@ -271,6 +271,25 @@ bool gg_raise_flag(gg_game *g, const char *name) {
 }
 
 // Whether the world is as this stage requires.
+// What a map is *called*, out of the path it was loaded from: the last
+// component, without its extension.
+//
+// Without the extension because the same map has two forms - `vale.ggmap` and
+// `vale.map.txt` - and they are the same place. The story says `when at vale`,
+// a way out says it leads to `vale`, and which file that is on this machine is
+// the frontend's business. Playing the text form of the shipped vale otherwise
+// left the storyline unable to notice you had ever been anywhere.
+static void place_of(const char *path, char *out, size_t n) {
+    const char *slash = SDL_strrchr(path, '/');
+    const char *back = SDL_strrchr(path, '\\');
+    if (back && (!slash || back > slash)) slash = back;
+    const char *leaf = slash ? slash + 1 : path;
+
+    SDL_strlcpy(out, leaf, n);
+    char *dot = SDL_strchr(out, '.');
+    if (dot) *dot = '\0';
+}
+
 static bool stage_ready(const gg_game *g, const gg_stage *s) {
     switch (s->what) {
     case GG_WHEN_ALWAYS: return true;
@@ -280,7 +299,12 @@ static bool stage_ready(const gg_game *g, const gg_stage *s) {
     case GG_WHEN_SLAIN:  return (int)g->slain >= s->count;
     case GG_WHEN_PARTY:  return gg_party_size(g) >= s->count;
     case GG_WHEN_AT: {
-        if (SDL_strcasecmp(g->here, s->where) != 0) return false;
+        // Compared as *places*: a stage may name `vale` or `vale.ggmap` and
+        // mean the same map, because a map's name is its file's without the
+        // extension and content written before that was true still reads.
+        char want[GG_MAP_NAME_MAX];
+        place_of(s->where, want, sizeof want);
+        if (SDL_strcasecmp(g->here, want) != 0) return false;
         if (s->radius == 0) return true;
         const gg_actor *p = gg_player_const(g);
         return gg_dist_cheb(p->x, p->y, s->wx, s->wy) <= s->radius;
@@ -1324,14 +1348,6 @@ static void place_townsfolk(gg_game *g) {
     }
 }
 
-// The last component of a path, which is the name a way out calls a map by.
-static const char *leaf_of(const char *path) {
-    const char *slash = SDL_strrchr(path, '/');
-    const char *back = SDL_strrchr(path, '\\');
-    if (back && (!slash || back > slash)) slash = back;
-    return slash ? slash + 1 : path;
-}
-
 // Whoever lives in the map that is loaded: the people it names, and then the
 // book's residents whose home is a place this map actually has.
 //
@@ -1399,7 +1415,11 @@ static void stock_creatures(gg_game *g, bool first_world) {
 
         const bool named = b->haunt_map[0] != '\0';
         if (named) {
-            if (SDL_strcasecmp(b->haunt_map, g->here) != 0) continue;
+            // As a place, not as a filename - the bestiary may say `stones` or
+            // `stones.ggmap` and mean the same map. See place_of.
+            char want[GG_MAP_NAME_MAX];
+            place_of(b->haunt_map, want, sizeof want);
+            if (SDL_strcasecmp(want, g->here) != 0) continue;
         } else if (!first_world) {
             continue;
         }
@@ -1612,9 +1632,8 @@ bool gg_game_new_from_map(gg_game *g, const char *path, const char *profile,
     g->talking_to = -1;
 
     if (!gg_map_load(&g->map, path)) return false;
-    // The name a way out would call this map by, so leaving and coming back
-    // knows which one it was.
-    SDL_strlcpy(g->here, leaf_of(path), sizeof g->here);
+    // What this map is called, so leaving and coming back knows which it was.
+    place_of(path, g->here, sizeof g->here);
     // Seeded from what the caller was given, not from the map. The map's own
     // seed is what its *terrain* was generated from - zero for a map drawn by
     // hand - and using it made every journey through the vale identical.
@@ -1702,7 +1721,8 @@ static void stash_here(gg_game *g) {
 }
 
 bool gg_game_travel(gg_game *g, const char *path, int x, int y) {
-    const char *leaf = leaf_of(path);
+    char leaf[GG_MAP_NAME_MAX];
+    place_of(path, leaf, sizeof leaf);
 
     // A map already in mind is taken back out rather than re-read, which is
     // what makes a return journey find things as they were left.

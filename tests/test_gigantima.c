@@ -15,6 +15,7 @@
 #include "core/gg_path.h"
 #include "core/gg_save.h"
 #include "core/gg_replay.h"
+#include "core/gg_maptext.h"
 #include "core/gg_dialogue.h"
 #include "core/gg_combat.h"
 #include "core/gg_magic.h"
@@ -5747,11 +5748,18 @@ static void the_vale_has_a_story_that_can_be_reached(void) {
             // A stage that waits on a place has to name a map that ships, or
             // it is a stage nobody can ever stand in.
             if (s->what == GG_WHEN_AT) {
-                char leaf[GG_MAP_NAME_MAX + 8];
-                SDL_snprintf(leaf, sizeof leaf, "maps/%s", s->where);
+                // A place, so either form of the map counts - that is the
+                // point of naming places rather than files.
                 gg_map m;
                 SDL_zero(m);
-                const bool there = gg_map_load(&m, gg_asset_path(leaf));
+                bool there = false;
+                static const char *const FORMS[] = { "%s.ggmap", "%s.map.txt", "%s" };
+                for (size_t f = 0; f < GG_COUNTOF(FORMS) && !there; f++) {
+                    char leaf[GG_MAP_NAME_MAX + 16], rel[GG_MAP_NAME_MAX + 24];
+                    SDL_snprintf(leaf, sizeof leaf, FORMS[f], s->where);
+                    SDL_snprintf(rel, sizeof rel, "maps/%s", leaf);
+                    there = gg_map_load(&m, gg_asset_path(rel));
+                }
                 CHECK(there, "'%s' waits in %s, which is not a map that ships",
                       q->name, s->where);
                 if (there) {
@@ -6395,6 +6403,194 @@ static void two_journeys_through_one_map_are_not_the_same_journey(void) {
     restore_dialogue();
 }
 
+// Writes a text map where the tests can reach it.
+static const char *write_text_map(const char *text) {
+    const char *path = gg_pref_file("test_hand.map.txt");
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    CHECK(io != nullptr, "could not write a map file");
+    if (io) {
+        const size_t n = SDL_strlen(text);
+        CHECK(SDL_WriteIO(io, text, n) == n, "short write on the map file");
+        SDL_CloseIO(io);
+    }
+    return path;
+}
+
+// ---------------------------------------------------------------------------
+// A map as text
+// ---------------------------------------------------------------------------
+// The binary map was the only form a map could have, and it cost two things: a
+// map could only be authored by a person with a mouse, and a map in the
+// repository was a blob that a format change would strand. This is the same map
+// as something anybody can read, and the claim is that it is the *same* map.
+static void a_map_written_as_text_is_the_same_map(void) {
+    static const char *const SHIPPED[] = { "maps/vale.ggmap", "maps/stones.ggmap" };
+
+    for (size_t i = 0; i < GG_COUNTOF(SHIPPED); i++) {
+        gg_map from;
+        SDL_zero(from);
+        CHECK(gg_map_load(&from, gg_asset_path(SHIPPED[i])), "%s would not load",
+              SHIPPED[i]);
+        if (!from.cell) continue;
+
+        char text[1024];
+        SDL_strlcpy(text, gg_pref_file("test_map.map.txt"), sizeof text);
+        CHECK(gg_map_write_text(&from, text), "%s would not write as text",
+              SHIPPED[i]);
+
+        gg_map back;
+        SDL_zero(back);
+        CHECK(gg_map_read_text(&back, text), "%s would not read back",
+              SHIPPED[i]);
+
+        // The same map, field for field.
+        CHECK(back.w == from.w && back.h == from.h, "%s came back %dx%d",
+              SHIPPED[i], back.w, back.h);
+        CHECK(SDL_strcmp(back.name, from.name) == 0, "%s came back called '%s'",
+              SHIPPED[i], back.name);
+        CHECK(back.seed == from.seed, "%s came back seeded %u", SHIPPED[i],
+              back.seed);
+        CHECK(back.start_x == from.start_x && back.start_y == from.start_y,
+              "%s starts at %d,%d now", SHIPPED[i], back.start_x, back.start_y);
+        CHECK(SDL_memcmp(back.cell, from.cell,
+                         (size_t)from.w * (size_t)from.h * sizeof *from.cell) == 0,
+              "%s came back with different ground", SHIPPED[i]);
+        CHECK(back.regions == from.regions, "%s has %d regions now", SHIPPED[i],
+              back.regions);
+        CHECK(back.grounds == from.grounds, "%s has %d piles now", SHIPPED[i],
+              back.grounds);
+        CHECK(back.actors == from.actors, "%s has %d people now", SHIPPED[i],
+              back.actors);
+        CHECK(back.portals == from.portals, "%s has %d ways out now", SHIPPED[i],
+              back.portals);
+
+        for (int k = 0; k < from.actors && k < back.actors; k++) {
+            CHECK(SDL_strcmp(back.actor[k].name, from.actor[k].name) == 0,
+                  "a person came back called '%s'", back.actor[k].name);
+            CHECK(back.actor[k].schedn == from.actor[k].schedn,
+                  "%s came back with %u hours", back.actor[k].name,
+                  back.actor[k].schedn);
+        }
+
+        // And the whole thing, byte for byte, through the binary writer - which
+        // is the only comparison that leaves nothing to argue about.
+        char one[1024], two[1024];
+        SDL_strlcpy(one, gg_pref_file("test_rt_a.ggmap"), sizeof one);
+        SDL_strlcpy(two, gg_pref_file("test_rt_b.ggmap"), sizeof two);
+        CHECK(gg_map_save(&from, one) && gg_map_save(&back, two),
+              "could not write %s out again", SHIPPED[i]);
+
+        size_t na = 0, nb = 0;
+        void *a = SDL_LoadFile(one, &na);
+        void *b = SDL_LoadFile(two, &nb);
+        CHECK(a && b, "could not read the two back");
+        CHECK(na == nb, "%s is %zu bytes and its round trip is %zu", SHIPPED[i],
+              na, nb);
+        if (a && b && na == nb)
+            CHECK(SDL_memcmp(a, b, na) == 0,
+                  "%s does not survive being written as text and read back",
+                  SHIPPED[i]);
+        SDL_free(a);
+        SDL_free(b);
+        SDL_RemovePath(one);
+        SDL_RemovePath(two);
+        SDL_RemovePath(text);
+
+        gg_map_free(&back);
+        gg_map_free(&from);
+    }
+}
+
+// A map that never was a binary: written by hand, and played.
+static void a_map_written_by_hand_is_playable(void) {
+    const char *text = write_text_map(
+        "map 12 8\n"
+        "name Handwritten\n"
+        "seed 3\n"
+        "start 2 2\n"
+        "\n"
+        "legend . GRASS\n"
+        "legend # MOUNTAIN BLOCKED\n"
+        "legend , ROAD\n"
+        "\n"
+        "row ############\n"
+        "row #..........#\n"
+        "row #..,,,,....#\n"
+        "row #..,....,..#\n"
+        "row #..,,,,,,..#\n"
+        "row #..........#\n"
+        "row #..........#\n"
+        "row ############\n"
+        "\n"
+        "region TOWN 1 1 10 6 Wyndle\n"
+        "item GOLD 7 4 4\n"
+        "person ELDER 5 3 Wilkin\n"
+        "  at 06 5 3\n"
+        "  at 18 6 4\n"
+        "portal 10 6 40 8 vale.ggmap\n");
+
+    gg_map m;
+    SDL_zero(m);
+    CHECK(gg_map_read_text(&m, text), "the handwritten map would not load");
+    CHECK(m.w == 12 && m.h == 8, "it came out %dx%d", m.w, m.h);
+    CHECK(SDL_strcmp(m.name, "Handwritten") == 0, "it is called '%s'", m.name);
+
+    // The picture is the ground: the border is wall and the middle is not.
+    CHECK(!gg_map_walkable(&m, 0, 0), "the wall in the picture is not a wall");
+    CHECK(gg_map_walkable(&m, 2, 2), "the open ground in the picture is not open");
+    const gg_cell *road = gg_map_at_const(&m, 3, 2);
+    CHECK(road && road->terrain == GG_TILE_ROAD, "the road is not a road");
+
+    CHECK(m.regions == 1 && m.grounds == 1 && m.actors == 1 && m.portals == 1,
+          "it came out with %d regions, %d piles, %d people and %d ways out",
+          m.regions, m.grounds, m.actors, m.portals);
+    CHECK(m.actor[0].schedn == 2, "Wilkin has %u hours", m.actor[0].schedn);
+    gg_map_free(&m);
+
+    // And the game plays it, which is the whole point of a map.
+    gg_game g;
+    CHECK(gg_game_new_from_map(&g, text, "Handwriter", 9), "the game would not "
+          "open a map that was never a binary");
+    CHECK(SDL_strcmp(g.map.name, "Handwritten") == 0, "it opened '%s'",
+          g.map.name);
+    CHECK(gg_player_const(&g)->x == 2 && gg_player_const(&g)->y == 2,
+          "the Avatar began at %d,%d", gg_player_const(&g)->x,
+          gg_player_const(&g)->y);
+    int wilkins = 0;
+    for (int i = 0; i < g.actors; i++)
+        if (SDL_strcmp(g.actor[i].name, "Wilkin") == 0) wilkins++;
+    CHECK(wilkins == 1, "the map holds %d Wilkins", wilkins);
+    for (int t = 0; t < 30; t++) gg_game_act(&g, GG_ACT_WAIT);
+    CHECK(g.turn == 30, "the handwritten world stopped at turn %u", g.turn);
+    gg_game_free(&g);
+
+    SDL_RemovePath(text);
+}
+
+// Nine ways for a text map to be wrong, each refused with the line it is on.
+static void a_map_that_does_not_parse_loads_nothing(void) {
+    static const char *const BAD[] = {
+        "name Nowhere\nrow ..\n",                       // rows before the size
+        "map 4 2\nlegend . GRASS\nrow ....\n",          // too few rows
+        "map 4 2\nlegend . GRASS\nrow ....\nrow ....\nrow ....\n",  // too many
+        "map 4 2\nlegend . GRASS\nrow ...\nrow ....\n", // a row of the wrong width
+        "map 4 2\nlegend . GRASS\nrow ..x.\nrow ....\n", // a character with no legend
+        "map 4 2\nlegend . NOTHING\nrow ....\nrow ....\n",  // no such ground
+        "map 4 2\nlegend . GRASS FLYING\nrow ....\nrow ....\n",  // no such flag
+        "map 4 2\nlegend . GRASS\nrow ....\nrow ....\nprop NOTHING 1 1\n",
+        "map 4 2\nlegend . GRASS\nrow ....\nrow ....\nperson NOBODY 1 1 Nobody\n",
+    };
+
+    for (size_t i = 0; i < GG_COUNTOF(BAD); i++) {
+        const char *path = write_text_map(BAD[i]);
+        gg_map m;
+        SDL_zero(m);
+        CHECK(!gg_map_read_text(&m, path), "malformed map %zu was accepted", i);
+        CHECK(m.cell == nullptr, "malformed map %zu left a map behind", i);
+        SDL_RemovePath(path);
+    }
+}
+
 // The plan's own verification for the storyline: playable start to finish.
 //
 // Every step is the game's own - words are learned by asking, the crossing is
@@ -6769,7 +6965,9 @@ static void a_map_you_leave_is_as_you_left_it(void) {
     CHECK(g.want_travel, "the way out asked for nothing");
     CHECK(gg_game_travel(&g, far_path, g.travel_x, g.travel_y),
           "the crossing failed");
-    CHECK(SDL_strcmp(g.here, "test_mem_b.ggmap") == 0,
+    // A map is called what its file is called, without the extension: the
+    // same map in either form is the same place - see place_of.
+    CHECK(SDL_strcmp(g.here, "test_mem_b") == 0,
           "the far field thinks it is '%s'", g.here);
 
     // Something left in the far field too, so each map is asked to keep its
@@ -7178,6 +7376,9 @@ int main(void) {
 
     RUN(walking_between_two_maps_takes_everything_with_you);
     RUN(a_party_that_walked_the_road_can_beat_the_man_at_the_end_of_it);
+    RUN(a_map_written_as_text_is_the_same_map);
+    RUN(a_map_written_by_hand_is_playable);
+    RUN(a_map_that_does_not_parse_loads_nothing);
     RUN(two_journeys_through_one_map_are_not_the_same_journey);
     RUN(what_the_party_learns_makes_it_stronger);
     RUN(a_companion_rises_with_the_avatar);

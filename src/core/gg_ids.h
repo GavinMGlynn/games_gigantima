@@ -127,6 +127,12 @@ extern const gg_item_def GG_ITEM[GG_ITEM_COUNT];
 // BRIGAND and gets the sprite, without a number nobody can check.
 extern const char *const GG_ACTOR_ID_NAME[GG_ACTOR_COUNT];
 
+// The same, for what a map is made of. A map written as text says
+// GRASS and TREE_OAK; a number in a file nobody can read is how a
+// format stops being editable by a person.
+extern const char *const GG_TILE_ID_NAME[GG_TILE_COUNT];
+extern const char *const GG_PROP_ID_NAME[GG_PROP_COUNT];
+
 // Row order within an actor's block, matching LPC's Walk.png.
 typedef enum { GG_FACE_UP, GG_FACE_LEFT, GG_FACE_DOWN, GG_FACE_RIGHT } gg_facing;
 

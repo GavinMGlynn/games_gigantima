@@ -14,6 +14,7 @@
 #include "core/gg_common.h"
 #include "core/gg_world.h"
 #include "editor/gg_edit.h"
+#include "core/gg_maptext.h"
 #include "gfx/gg_atlas.h"
 #include "gfx/gg_font.h"
 #include "gfx/gg_render.h"
@@ -58,6 +59,11 @@ typedef struct {
     // affordance the game has and for the same reason: a window nobody can
     // photograph is a window nobody can check.
     const char *shot_path;
+
+    // --export writes whatever was opened as text and leaves. Converting a map
+    // is then one command, which is what makes a binary map in a repository
+    // stop being a blob nobody can review.
+    const char *export_path;
 } gg_app;
 
 // The pixel size of one tile at the current zoom.
@@ -375,9 +381,15 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
             app->shot_path = argv[++i];
         } else if (SDL_strcmp(argv[i], "--tool") == 0 && i + 1 < argc) {
             tool = gg_clampi(SDL_atoi(argv[++i]), 0, GG_TOOL_COUNT - 1);
+        } else if (SDL_strcmp(argv[i], "--export") == 0 && i + 1 < argc) {
+            app->export_path = argv[++i];
         } else if (SDL_strcmp(argv[i], "--help") == 0) {
-            SDL_Log("gigantima_editor [--open FILE.ggmap] [--size W H] "
-                    "[--tool N] [--link MAP X Y] [--shot FILE.bmp]");
+            SDL_Log("gigantima_editor [--open FILE] [--size W H] [--tool N]\n"
+                    "                 [--link MAP X Y] [--shot FILE.bmp]\n"
+                    "                 [--export FILE.map.txt]\n"
+                    "\n"
+                    "--open takes either form of map; a name ending in "
+                    ".map.txt is\nread and written as text.");
             return SDL_APP_SUCCESS;
         }
     }
@@ -572,6 +584,13 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
         draw_status(app);
     }
     draw_palette(app);
+
+    if (app->export_path) {
+        const bool ok = gg_map_write_text(&app->ed.map, app->export_path);
+        SDL_Log("gigantima: %s %s", ok ? "wrote" : "could not write",
+                app->export_path);
+        return ok ? SDL_APP_SUCCESS : SDL_APP_FAILURE;
+    }
 
     if (app->shot_path) {
         const bool ok = save_shot(app->ren, app->shot_path);

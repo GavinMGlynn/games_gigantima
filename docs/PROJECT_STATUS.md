@@ -905,6 +905,57 @@ breaking the rule they pin — making every speed equal, clearing line of sight,
 dropping no loot, and putting townsfolk on the other side. Plus a `--shot` frame
 of an exchange of blows, now taken in CI.*
 
+### A map as text
+
+`.ggmap` is what the editor writes, and it was the only form a map could have.
+That cost two things: a map could only be authored by a person with a mouse, and
+a map in the repository was a blob, so a change to the format would strand every
+one already written — which is why creatures are placed from the bestiary by map
+name rather than by the map itself.
+
+**The same map as text**: a picture of the ground, one character to a tile, and
+a list of everything standing on it. `assets/maps/*.map.txt` ship beside the
+binaries as their source, and `gg_map_load` reads whichever form it is given, so
+`--map vale.map.txt` simply works. The editor writes text when the name ends in
+`.map.txt` — one rule, no flag to remember — and `--export` converts in one
+command.
+
+Three decisions the format turns on:
+
+- **The legend is built from the map**, not fixed. A character stands for a
+  (terrain, flags) pair, and which pairs exist is a property of the map being
+  written. A fixed alphabet would have to guess, and guessing wrong is a map
+  that does not survive the trip. Commonest ground gets the quietest character.
+- **A comment is a line that starts with `#`**, and nothing else is — unlike the
+  other content files here, which strip a `#` anywhere. `#` is the natural
+  character for a wall, and `row ####...` was being read as a blank line.
+- **Free text goes last on a line.** A region's name has spaces in it — "The
+  Standing Stones" — and anything after it would be eaten.
+
+**A map is a place, not a file.** `here` is the file's name without its
+extension, so `vale.ggmap` and `vale.map.txt` are both `vale`; the story says
+`when at vale`, the bestiary says `haunts 1 stones 24 22`, and which file that
+is is the frontend's business. Without it, playing the text form of the shipped
+vale left the storyline unable to notice you had been anywhere.
+
+**It found a bug in the binary writer.** Fixed-width name fields were written
+straight out of the struct, so whatever was in memory after the terminator went
+into the file: the shipped vale carried `Iolo\0ANT 1` in a name field. It read
+back correctly and nothing was ever visibly wrong — but two files holding the
+same map were not the same file, which makes comparing them meaningless. Names
+are written from a cleared buffer now, and both shipped maps have been rewritten
+through it.
+
+*Verification: `a_map_written_as_text_is_the_same_map` writes both shipped maps
+as text, reads them back, and requires the binary of each to be **byte for
+byte** what it was. `a_map_written_by_hand_is_playable` reads a map that was
+never a binary and plays it. `a_map_that_does_not_parse_loads_nothing` refuses
+nine malformed ones — rows before the size, too few rows, a row of the wrong
+width, a character with no legend, no such ground, no such flag, no such prop,
+no such sprite — each named with its line, each leaving nothing allocated. And
+the whole storyline played through in a world whose maps are text and nothing
+else.*
+
 ### One map, many journeys
 
 A map file carries the seed its *terrain* was generated from, which is zero for
