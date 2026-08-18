@@ -2078,5 +2078,9 @@ Named plainly, because a reader should not have to infer absence:
 
 ## Known approximations
 
-Deliberate, documented, with the cost to close:
+Deliberate compromises, documented with the cost to close. **There are none
+outstanding.** The two that stood here for a long while are both closed: roads
+stopped at water and now bridge it, and the map's `region` byte was written and
+read by nothing and is now what says which place a tile is in. Anything new goes
+here the moment it is settled for, not when somebody remembers.
 

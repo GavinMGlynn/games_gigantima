@@ -4,20 +4,25 @@ An Ultima VI-style seamless-world RPG in C23 and SDL3.
 
 [![ci](https://github.com/GavinMGlynn/games_gigantima/actions/workflows/ci.yml/badge.svg)](https://github.com/GavinMGlynn/games_gigantima/actions/workflows/ci.yml)
 
-> **Status: beta.** A game, with an engine under it. There is a story you can
-> finish — a caravan out of the north that never arrived, followed up a road
-> with brigands on it to a ring of standing stones and back — and around it a
-> seamless single-scale world, a town of houses whose people keep daily
-> schedules, keyword conversation, a party, combat, magic you cast by learning
-> the words for it, a world with a voice, and an editor to author more of it.
+> **Status: beta.** A game, with an engine under it. There are two storylines
+> that interlock — a caravan out of the north that never arrived, and a mill
+> with no corn because nothing comes down out of the fells — across five places
+> you walk between: a vale, a ring of standing stones, the fells, the dark under
+> them, and a second town down the east road. Around them a seamless
+> single-scale world whose people keep daily schedules, keyword conversation, a
+> party who are worth choosing between and who take orders, combat you can win
+> more than one way, magic you cast by learning the words for it, trade,
+> levelling, written music that follows the region and the hour, and an editor
+> to author more of it.
+>
 > Everything works from a gamepad alone; every key can be moved; a session can
 > be recorded and replayed to the same world to the bit.
 >
-> What is missing is *more* of it rather than a part that half works: one
-> storyline, three kinds of creature, two maps, no levelling, and sounds that
-> are synthesised rather than composed. `docs/PROJECT_STATUS.md` is the single
-> source of truth for what works, with the gaps named at the bottom. Nothing
-> here claims more than it has earned.
+> **Every item on the completion plan is done — 58 of 58.** What is missing is
+> *more* of it rather than a part that half works: two storylines and not
+> twenty, nine kinds of creature, five maps. `docs/PROJECT_STATUS.md` is the
+> single source of truth for what works, with the gaps named plainly at the
+> bottom. Nothing here claims more than it has earned.
 
 ## Getting it
 
