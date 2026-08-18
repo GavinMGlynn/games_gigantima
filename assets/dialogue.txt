@@ -331,17 +331,23 @@ topic name
   say Sable. My father called me that and I have not improved on it.
 topic job trade
   say Whatever comes through. Which is why I am poorer than I was.
-  say I have a SHIELD and a HAMMER, and I buy BLOODMOSS for Bryn.
+  say I have a SHIELD, a HAMMER and a SWORD, and I buy BLOODMOSS for Bryn.
   teach shield
   teach hammer
+  teach sword
   teach bloodmoss
 topic shield
   say A shield off a cart that did come through. It will turn a blow.
   gives SHIELD 1
   trade
 topic hammer
-  say A smith's hammer. Not a sword, but it does not care what it hits.
+  say A smith's hammer. It does not care what it hits, and it hits armour hardest.
   gives HAMMER 1
+  trade
+topic sword
+  say An arming sword, off the same cart as the shield. Dearer than the hammer.
+  say It takes a blow as well as gives one, which the hammer will not.
+  gives SWORD 1
   trade
 topic bloodmoss
   say Blood moss. Bryn wants it and I will pay for it.

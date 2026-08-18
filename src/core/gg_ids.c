@@ -173,6 +173,13 @@ const gg_item_def GG_ITEM[GG_ITEM_COUNT] = {
         GG_USE_NONE, 0, GG_SLOT_NONE, 0, 4,
         0, 0, 0,
     },
+    [GG_ITEM_SWORD] = {
+        "SWORD",
+        "an arming sword", "arming swords", "sword",
+        1, 1, 200, 0,
+        GG_USE_NONE, 0, GG_SLOT_WEAPON, 0, 110,
+        4, 2, 0,
+    },
     [GG_ITEM_SHIELD] = {
         "SHIELD",
         "a wooden shield", "wooden shields", "shield",

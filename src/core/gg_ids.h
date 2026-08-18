@@ -81,6 +81,7 @@ typedef enum {
     GG_ITEM_NIGHTSHADE,
     GG_ITEM_BLOODMOSS,
     GG_ITEM_ASH,
+    GG_ITEM_SWORD,
     GG_ITEM_SHIELD,
     GG_ITEM_COUNT
 } gg_item_id;

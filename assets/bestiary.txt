@@ -161,6 +161,7 @@ creature WARDEN
   notice 9
   flees 0
   worth 45
+  loot SWORD 1 1 35
   loot SHIELD 1 1 60
   loot GOLD 10 24 100
   haunts 3 deep

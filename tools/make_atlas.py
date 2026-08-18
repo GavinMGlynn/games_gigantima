@@ -190,6 +190,7 @@ FOOD = f"{SMALL}/Food"
 ORES = f"{SMALL}/Ores & Ingots"
 TOOLS = f"{SMALL}/Tools, Smithing.png"
 SHIELD_PROP = "Characters/Props/Shield 01 - Heater Shield"
+SWORD_PROP  = "Characters/Props/Sword 01 - Arming Sword"
 
 
 # What using an item does. Mirrored into gg_ids.h.
@@ -260,10 +261,10 @@ ITEMS = [
          "a bar of silver", "bars of silver", "silver",
          weight=150, value=200),
 
-    # Arms. This art set has no swords that stand on their own - the sword is
-    # only ever a layer on a swinging character - so what the vale fights with
-    # is what the vale has: a smith's hammer, a stone, and a shield cut out of
-    # the one frame that shows it whole.
+    # Arms. A sword and a shield exist in this set only as layers on somebody
+    # holding them, so both are cut out of the one frame of a held-prop sheet
+    # that shows the thing whole and small enough to sit on a tile. Beside them,
+    # what the vale actually has: a smith's hammer and a stone to throw.
     item("HAMMER", TOOLS, 8, 0, 1, 1,
          "a smith's hammer", "smith's hammers", "hammer",
          weight=350, stack=False, slot=SLOT_WEAPON, damage=5, value=60),
@@ -283,6 +284,17 @@ ITEMS = [
     item("ASH",        f"{ORES}/Ore, Coal.png",       0, 2, 1, 1,
          "a pinch of sulphurous ash", "pinches of sulphurous ash", "ash",
          weight=2, value=4),
+
+    # A blade is lighter than a hammer and hangs between you and a blow: less
+    # damage, and the only weapon that adds to what it turns aside. That is the
+    # choice - a hammer for something in armour, a sword for something that is
+    # trying to kill you back.
+    item("SWORD", "", 0, 2, 1, 1,
+         "an arming sword", "arming swords", "sword",
+         weight=200, stack=False, slot=SLOT_WEAPON, damage=4, guard=2, value=110,
+         layers=[f"{SWORD_PROP}/Combat 1h - Idle.png",
+                 f"{SWORD_PROP}/Steel/Combat 1h - Idle.png"],
+         frame=(2, 3)),
 
     item("SHIELD", "", 0, 2, 1, 1,
          "a wooden shield", "wooden shields", "shield",

@@ -905,6 +905,30 @@ breaking the rule they pin — making every speed equal, clearing line of sight,
 dropping no loot, and putting townsfolk on the other side. Plus a `--shot` frame
 of an exchange of blows, now taken in CI.*
 
+### Arms
+
+Four now: a smith's hammer, an arming sword, a throwing stone and a wooden
+shield. The sword and the shield exist in the LPC set **only as layers on
+somebody holding them**, so both are cut out of the one frame of a held-prop
+sheet that shows the thing whole and small enough to sit on a tile — the same
+trick, and the baker refuses a frame that does not fit rather than squashing it.
+
+**A weapon adds to what you turn aside as well as to what you deal.** That is
+one line in `gg_guard_power` and it is what makes arms a choice rather than a
+ladder:
+
+| | | |
+| --- | --- | --- |
+| hammer | damage 5 | the answer to armour |
+| sword | damage 4, guard 2 | the answer to something hitting back |
+| stone | damage 2, reach 5 | the answer to something you cannot reach |
+
+*Verification: measured, in `each_kind_of_creature_needs_a_different_answer`. A
+warden loses 11 fights in 20 to a hammer and 8 to a sword; an adept loses 11 to
+a sword and 8 to a hammer. The numbers cross, which is what "a choice" means -
+and the test says so both ways round, so a change that makes one weapon
+strictly better fails it.*
+
 ### Trade
 
 Iolo keeps a market stall in the vale and Sable keeps Wyndle's. **One word does
@@ -1661,7 +1685,6 @@ Named plainly, because a reader should not have to infer absence:
 | The story beyond the second | two storylines that interlock, and three small quests beside them. What is missing is a third |
 | Combat depth | blows, initiative, reach, loot and fleeing exist; there are no skills and no criticals |
 | Magic beyond three effects | light, heal and harm. No summoning, no travel, no enchantment, no mana - reagents are the whole cost |
-| Arms | a hammer, a throwing stone and a shield. No swords: this art set has none that stand on their own |
 | Trade | nothing. Items carry a value in copper, and no one buys or sells |
 | Trade in conversation | a topic can give a thing, take a thing and raise a flag, which is enough for a story. Nobody haggles, and no price is ever paid |
 | Composed audio | the sounds are synthesised tones and noise, and the tunes a drone and an arpeggio. The mechanism is finished; the music is placeholder |

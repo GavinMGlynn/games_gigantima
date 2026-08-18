@@ -358,10 +358,14 @@ here. Nothing is on this list that is not already admitted to somewhere.
       merchant who never said he wanted any; a second shield not sold to
       somebody wearing one; and a penniless customer offered nothing rather than
       refused.*
-- [ ] **Arms worth choosing.** A hammer, a stone and a shield. The LPC set has
-      an arming sword and a heater shield that were never baked.
-      *Verification: a weapon with reach, a weapon with weight, and a choice
-      between them that shows in a fight.*
+- [x] **Arms worth choosing.** An arming sword, cut out of the one frame of the
+      LPC held-prop sheet that shows it whole — and a weapon now adds to what
+      you turn aside as well as to what you deal, which is the whole difference
+      between a blade and a hammer.
+      *Verification: measured three ways. A warden in armour loses 11 fights in
+      20 to a hammer and 8 to a sword; an adept shooting at you loses 11 to a
+      sword and 8 to a hammer; a thrown stone reaches five tiles and beats a
+      warden once in 20. No weapon is strictly better than another.*
 - [ ] **Combat with more than one answer.** Blows, initiative, reach, fleeing
       and loot exist; there are no criticals and no skill in it.
       *Verification: the same fight won two different ways.*

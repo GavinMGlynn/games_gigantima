@@ -46,7 +46,12 @@ int gg_attack_power(const gg_game *g, int who) {
 int gg_guard_power(const gg_game *g, int who) {
     if (who < 0 || who >= g->actors) return 0;
     const gg_item_def *a = held(g, who, GG_SLOT_ARMOUR);
-    return g->actor[who].guard + (a ? a->guard : 0);
+    // And what is in the other hand. A blade hangs between you and a blow as
+    // well as making one, which is the whole difference between a sword and a
+    // hammer: the hammer hits harder and the sword keeps you alive. Most
+    // weapons have no guard at all and add nothing here.
+    const gg_item_def *w = held(g, who, GG_SLOT_WEAPON);
+    return g->actor[who].guard + (a ? a->guard : 0) + (w ? w->guard : 0);
 }
 
 int gg_reach(const gg_game *g, int who) {

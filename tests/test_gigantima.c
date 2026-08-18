@@ -4932,6 +4932,13 @@ static void each_kind_of_creature_needs_a_different_answer(void) {
             CHECK(!same, "%s and %s fight identically", a->id, b->id);
         }
 
+    // Arms are a choice, and the choice shows in the fight. A hammer hits
+    // hardest, a sword keeps you alive, and a stone reaches - so what beats
+    // one creature is not what beats another.
+    const int sword_vs_warden = duel("WARDEN", GG_ITEM_SWORD, true);
+    const int sword_vs_adept = duel("ADEPT", GG_ITEM_SWORD, true);
+    const int hammer_vs_adept_close = duel("ADEPT", GG_ITEM_HAMMER, true);
+
     // A warden is armour. A stone will not get through it and a hammer will,
     // which is the whole reason to carry a real weapon.
     const int stone_vs_warden = duel("WARDEN", GG_ITEM_STONE, true);
@@ -4957,6 +4964,29 @@ static void each_kind_of_creature_needs_a_different_answer(void) {
     // adept is not what beats a warden.
     CHECK(close_vs_adept != hammer_vs_warden || stand_vs_adept != stone_vs_warden,
           "every fight in this world has the same shape");
+
+    SDL_Log("gigantima: a warden loses %d of 20 to a sword and a hammer %d; "
+            "an adept loses %d to a sword and %d to a hammer",
+            sword_vs_warden, hammer_vs_warden, sword_vs_adept,
+            hammer_vs_adept_close);
+
+    // The hammer is the answer to armour: it does more damage, and against
+    // something with a guard of five that is what tells.
+    CHECK(hammer_vs_warden > sword_vs_warden,
+          "a sword does as well against armour as a hammer (%d against %d)",
+          sword_vs_warden, hammer_vs_warden);
+
+    // And the sword is the answer to something that hits back hard: what it
+    // turns aside is worth more than the damage it gives up.
+    CHECK(sword_vs_adept > hammer_vs_adept_close,
+          "a sword is no better than a hammer against something shooting at "
+          "you (%d against %d)", sword_vs_adept, hammer_vs_adept_close);
+
+    // A weapon that turns a blow is the only reason that last line is true, so
+    // it is worth stating: a sword raises what you turn aside and a hammer does
+    // not.
+    CHECK(GG_ITEM[GG_ITEM_SWORD].guard > 0 && GG_ITEM[GG_ITEM_HAMMER].guard == 0,
+          "the sword and the hammer defend alike");
 
     restore_bestiary();
 }
@@ -7056,6 +7086,12 @@ static void a_thing_can_be_bought_and_a_thing_can_be_sold(void) {
     if (sable < 0) { gg_game_free(&g); restore_dialogue(); return; }
 
     // --- buying --------------------------------------------------------------
+    // What was in the pack before the shopping, so the bill can be checked
+    // against what actually changed hands.
+    int kept[GG_ITEM_COUNT];
+    for (int k = 0; k < GG_ITEM_COUNT; k++)
+        kept[k] = gg_pack_count(&g, (gg_item_id)k);
+
     const int purse = gg_pack_count(&g, GG_ITEM_GOLD);
     CHECK(purse > 0, "a journey begins penniless");
     CHECK(gg_pack_count(&g, GG_ITEM_SHIELD) == 0, "it begins with a shield too");
@@ -7067,11 +7103,21 @@ static void a_thing_can_be_bought_and_a_thing_can_be_sold(void) {
     CHECK(gg_pack_count(&g, GG_ITEM_HAMMER) == 1, "and %d hammers",
           gg_pack_count(&g, GG_ITEM_HAMMER));
 
+    // What was spent is exactly what was bought - whatever that turns out to
+    // be. Written from the pack rather than from a list, so adding a thing to
+    // Sable's stock does not make this test wrong.
     const int after = gg_pack_count(&g, GG_ITEM_GOLD);
     const int spent = purse - after;
-    CHECK(spent == gg_price_to_buy(GG_ITEM_SHIELD) + gg_price_to_buy(GG_ITEM_HAMMER),
-          "a shield and a hammer cost %d gold, and they are worth %d", spent,
-          gg_price_to_buy(GG_ITEM_SHIELD) + gg_price_to_buy(GG_ITEM_HAMMER));
+    int worth = 0;
+    for (int k = 0; k < GG_ITEM_COUNT; k++) {
+        if (k == GG_ITEM_GOLD) continue;
+        const int more = gg_pack_count(&g, (gg_item_id)k) - kept[k];
+        if (more > 0 && GG_ITEM[k].value >= GG_ITEM[GG_ITEM_GOLD].value)
+            worth += gg_price_to_buy((gg_item_id)k) * more;
+    }
+    CHECK(spent == worth, "the purse is %d lighter and what he handed over is "
+          "worth %d", spent, worth);
+    CHECK(spent > 0, "nothing was bought at all");
 
     // Asking again buys nothing: a merchant with sense does not sell a second
     // shield to somebody wearing one.
