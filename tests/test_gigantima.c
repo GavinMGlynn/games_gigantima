@@ -5521,6 +5521,171 @@ static void the_tune_follows_where_you_are_and_what_hour_it_is(void) {
     gg_game_free(&g);
 }
 
+// ---------------------------------------------------------------------------
+// The tunes themselves
+// ---------------------------------------------------------------------------
+// What can honestly be checked about music is not whether it is any good - a
+// test cannot hear - but that it is a piece of music rather than a tone, that
+// it comes round without a click, and that walking from a town into a field
+// does not put a hole in it. Whether it is worth listening to is settled by
+// `--music FILE.wav`, which writes one recording of every tune with the
+// crossfades between them and can be played by a person.
+//
+// The largest step between one sample and the next in a stretch, which is what
+// a click *is*: a waveform that jumps further than it ever does on its own.
+static int worst_step(const int16_t *pcm, int from, int to) {
+    int worst = 0;
+    for (int i = from + 1; i < to; i++) {
+        const int d = pcm[i] - pcm[i - 1];
+        const int mag = d < 0 ? -d : d;
+        if (mag > worst) worst = mag;
+    }
+    return worst;
+}
+
+static int rms_of(const int16_t *pcm, int from, int to) {
+    if (to <= from) return 0;
+    double sum = 0.0;
+    for (int i = from; i < to; i++) sum += (double)pcm[i] * (double)pcm[i];
+    return (int)SDL_sqrt(sum / (double)(to - from));
+}
+
+static void every_tune_comes_round_without_a_click(void) {
+    CHECK(gg_audio_load(gg_asset_path("sounds/")), "the sounds would not load");
+    gg_audio_volumes(10, 0);          // the music alone, at full
+
+    const int rate = gg_audio_rate();
+    const int tunes = gg_audio_tune_count();
+    CHECK(tunes > 1, "there is only one tune");
+
+    for (int i = 0; i < tunes; i++) {
+        const int loop = gg_audio_tune_frames(i);
+        CHECK(loop > rate * 15,
+              "%s is %d seconds long, which comes round often enough to nag",
+              gg_audio_tune_name(i), loop / rate);
+        if (loop <= 0) continue;
+
+        // One whole round and a little more, so the join is inside what is
+        // rendered rather than at the end of it.
+        const int n = loop + rate;
+        int16_t *pcm = SDL_malloc((size_t)n * sizeof *pcm);
+        CHECK(pcm != nullptr, "out of memory");
+        if (!pcm) return;
+        gg_audio_music_stop();
+        gg_audio_music_play(i);
+        gg_audio_render(pcm, n);
+
+        // Nothing reaches full scale: the tunes are baked with headroom so
+        // that a blow and a footfall on top of one still fit.
+        int peak = 0;
+        for (int k = 0; k < n; k++) {
+            const int mag = pcm[k] < 0 ? -pcm[k] : pcm[k];
+            if (mag > peak) peak = mag;
+        }
+        CHECK(peak > 1000, "%s is silence (peak %d)", gg_audio_tune_name(i), peak);
+        CHECK(peak < 26000, "%s peaks at %d, leaving nothing for the effects",
+              gg_audio_tune_name(i), peak);
+
+        // It comes round to its own beginning, exactly. Anything else - a
+        // restart part way in, an off-by-one in the wrap - is a different
+        // piece of music every time round.
+        int same = 0;
+        for (int k = 0; k < rate; k++) if (pcm[loop + k] == pcm[k]) same++;
+        CHECK(same == rate,
+              "%s does not come round to its beginning: %d of %d samples "
+              "after the wrap differ", gg_audio_tune_name(i), rate - same, rate);
+
+        // And the join is not a step. Measured against the piece's own
+        // waveform rather than against a number picked here: what makes a
+        // click is a jump bigger than the music ever makes on its own.
+        const int inside = worst_step(pcm, rate, loop - rate);
+        const int join = worst_step(pcm, loop - 2, loop + 2);
+        SDL_Log("gigantima: %s loops every %d s; the join steps %d against %d "
+                "inside it", gg_audio_tune_name(i), loop / rate, join, inside);
+        CHECK(join <= inside, "%s clicks where it comes round: %d against %d",
+              gg_audio_tune_name(i), join, inside);
+        SDL_free(pcm);
+    }
+    gg_audio_music_stop();
+    gg_audio_quit();
+}
+
+// The plan's own verification, the second half: a tune that changes with the
+// region and the hour *without a seam*. The change is a crossfade, and the two
+// ways a crossfade goes wrong are a click and a hole - so both are measured.
+static void the_music_changes_without_a_seam(void) {
+    CHECK(gg_audio_load(gg_asset_path("sounds/")), "the sounds would not load");
+    gg_audio_volumes(10, 0);
+
+    const int rate = gg_audio_rate();
+    const int part = rate * 2;
+    const int n = part * 2;
+    int16_t *pcm = SDL_malloc((size_t)n * sizeof *pcm);
+    CHECK(pcm != nullptr, "out of memory");
+    if (!pcm) return;
+
+    for (int to = 1; to < gg_audio_tune_count(); to++) {
+        gg_audio_music_stop();
+        gg_audio_music_play(0);
+        gg_audio_render(pcm, part);
+        CHECK(gg_audio_playing() == 0, "the first tune is not the one playing");
+        CHECK(gg_audio_fading() == 0, "the first tune faded in from nothing");
+
+        gg_audio_music_play(to);          // the crossfade begins here
+        const int fade = gg_audio_fading();
+        CHECK(fade >= rate / 4,
+              "the change into %s is a cut, not a fade: %d frames",
+              gg_audio_tune_name(to), fade);
+        CHECK(gg_audio_playing() == 0,
+              "the change into %s dropped the tune it was leaving at once",
+              gg_audio_tune_name(to));
+
+        // Half way through it, both are still sounding.
+        gg_audio_render(pcm + part, fade / 2);
+        CHECK(gg_audio_fading() > 0 && gg_audio_fading() < fade,
+              "the fade into %s did not run down: %d of %d",
+              gg_audio_tune_name(to), gg_audio_fading(), fade);
+        CHECK(gg_audio_playing() == 0, "the fade into %s ended early",
+              gg_audio_tune_name(to));
+
+        gg_audio_render(pcm + part + fade / 2, part - fade / 2);
+        CHECK(gg_audio_fading() == 0 && gg_audio_playing() == to,
+              "the fade into %s never finished", gg_audio_tune_name(to));
+
+        // No click: nothing across the change steps further than the two tunes
+        // step on their own.
+        const int before = worst_step(pcm, rate / 4, part - rate / 4);
+        const int after  = worst_step(pcm, part + rate, n - rate / 4);
+        const int steady = before > after ? before : after;
+        const int across = worst_step(pcm, part - 8, part + rate / 2 + 8);
+        CHECK(across <= steady * 2,
+              "the change into %s steps %d where the music itself steps %d",
+              gg_audio_tune_name(to), across, steady);
+
+        // And no hole: a crossfade of two unrelated tunes dips, but only to
+        // about seven tenths in the middle. Half is the floor, and silence
+        // would mean one of them stopped before the other started.
+        const int loud_before = rms_of(pcm, part - rate / 2, part);
+        const int loud_after  = rms_of(pcm, part + rate, part + rate * 3 / 2);
+        const int quietest = loud_before < loud_after ? loud_before : loud_after;
+        int dip = quietest;
+        for (int at = part; at + rate / 10 < part + rate / 2; at += rate / 20) {
+            const int here = rms_of(pcm, at, at + rate / 10);
+            if (here < dip) dip = here;
+        }
+        SDL_Log("gigantima: into %s the crossfade steps %d against %d and dips "
+                "to %d of %d", gg_audio_tune_name(to), across, steady, dip,
+                quietest);
+        CHECK(dip * 2 >= quietest,
+              "the change into %s falls to %d from %d - a hole, not a fade",
+              gg_audio_tune_name(to), dip, quietest);
+    }
+
+    SDL_free(pcm);
+    gg_audio_music_stop();
+    gg_audio_quit();
+}
+
 // The simulation says what happened; it does not know that anything listens.
 static void the_world_says_what_it_did_and_forgets_it(void) {
     gg_game g;
@@ -8865,6 +9030,8 @@ int main(void) {
     RUN(what_makes_the_game_reachable_survives_being_put_down);
 
     RUN(the_tune_follows_where_you_are_and_what_hour_it_is);
+    RUN(every_tune_comes_round_without_a_click);
+    RUN(the_music_changes_without_a_seam);
     RUN(the_world_says_what_it_did_and_forgets_it);
     RUN(every_event_has_a_sound_baked_for_it);
 

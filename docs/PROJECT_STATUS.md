@@ -603,10 +603,40 @@ reproducible by anyone who runs it. It is deterministic, so the committed files
 and the script cannot drift.
 
 **The ceiling is real and worth stating: these are tones and noise, not
-recordings.** A footfall is filtered noise under a fast envelope; the tunes are
-a drone and an arpeggio wandering a mode. They establish the mechanism and they
-are meant to be replaced by something composed. Replacing any of them is a file
-swap — nothing in the code knows how they were made.
+recordings.** A footfall is filtered noise under a fast envelope. Replacing any
+of them is a file swap — nothing in the code knows how they were made.
+
+**The tunes are written down.** They were a drone with an arpeggio wandering a
+mode, which is recognisably a random walk after about eight seconds and leaves
+nothing to remember. Each of the five now has a chord progression, a bass, an
+inner voice that repeats every bar, and a melody in phrases that answer each
+other — a market dance in six for a town in the morning, a lullaby in Dorian for
+the same town at night, a travelling tune over open fifths for the road, a
+sparse Phrygian one for the road after dark, and six notes in forty seconds
+under the fells where the point is the room rather than the tune.
+
+Three voices and a room:
+
+| | |
+| --- | --- |
+| pluck | Karplus–Strong — noise in a delay line fed back through an average of itself. Two lines of arithmetic and it is a plucked string, which is the sound a game of market stalls and standing stones wants for its melody. |
+| pad | detuned triangles under a slow vibrato, for the harmony |
+| bass | a sine with a little of its own second harmonic, for the floor |
+| room | a Schroeder reverb, four combs into two allpasses — dry tones sound like a test signal however well composed they are |
+
+**The loop is seamless by construction rather than by fading.** Each piece is a
+whole number of bars ending on the tonic; notes written near the end wrap round
+and sound under the beginning; and the reverb is run over two copies with the
+second kept, so the tail of the last bar is already present under the first
+exactly as it will be when the loop comes round. The quarter-second fades that
+used to hide the join are gone. Removing the reverb wrap does not break the
+join — the notes still wrap — but it makes every tune *start* from silence,
+which turns a crossfade into it into a hole; the test catches that, which is how
+the two halves of the rule were found to be separate.
+
+Each tune is normalised to a fixed peak rather than to whatever it happened to
+reach, so five tunes are five tunes at one volume and a crossfade between two of
+them does not step.
 
 **SDL_mixer has been removed.** It was pinned in `ext/` against this work and
 turned out not to be needed: SDL3 loads and converts WAVs on its own, so
@@ -621,6 +651,13 @@ and hands them over. That is the arrangement the bump rumble already had,
 generalised, so adding a sound is a case in one switch rather than a hook in the
 middle of a rule. Overflow drops the newest: a lost footstep is nothing, and a
 queue that grows is a leak.
+
+**What the game sounds like can be captured.** `--music FILE.wav` walks every
+tune in turn, records eight seconds of each with the crossfades between them,
+and writes one file — out of the mixer rather than off a sound card, so no
+device is opened and the recording is the same on a machine with speakers and
+one without. A thing you cannot capture is a thing you cannot check, and a
+crossfade is not visible in a screenshot.
 
 Music is chosen by **where you are and what hour it is** — town or wilderness,
 day or night, and one mood for underground where there is no hour — and changes
@@ -642,6 +679,22 @@ dead is now the inverse. Plus the plan's own, in CI: four headless captures
 through SDL's disk audio driver at four volume settings — everything off is
 silent, music alone and effects alone are each audible, and both together are
 louder than either.*
+
+*Verification of the tunes: `every_tune_comes_round_without_a_click` — each is
+rendered for one whole round and a little more, and the samples after the wrap
+must equal the samples at the beginning **exactly**, the join must not step
+further than the piece steps inside itself, and the peak must leave room for a
+blow on top. `the_music_changes_without_a_seam` renders a change and checks both
+ways a crossfade goes wrong: that it is a fade at all — half a second, counting
+down, with the tune it is leaving still sounding half way through — and that the
+loudness never falls below half of the quieter of the two, which is a hole
+rather than a fade. That a change is a fade cannot be measured off the waveform
+honestly, because a cut between two quiet passages steps no further than the
+music does on its own, so the mixer is asked instead. Mutation-tested four ways:
+a cut in place of the crossfade, a loop that restarts part way in, the outgoing
+tune dropped at once, and the composer's reverb wrap removed — each breaks a
+named check. Whether any of it is worth listening to is not something a test can
+say; that is what the recording is for.*
 
 ### The bestiary
 
@@ -1883,14 +1936,13 @@ Named plainly, because a reader should not have to infer absence:
 | | |
 | --- | --- |
 | The story beyond the second | two storylines that interlock, and three small quests beside them. What is missing is a third |
-| Combat depth | blows, initiative, reach, loot and fleeing exist; there are no skills and no criticals |
-| Magic beyond three effects | light, heal and harm. No summoning, no travel, no enchantment, no mana - reagents are the whole cost |
-| Trade | nothing. Items carry a value in copper, and no one buys or sells |
-| Trade in conversation | a topic can give a thing, take a thing and raise a flag, which is enough for a story. Nobody haggles, and no price is ever paid |
-| Composed audio | the sounds are synthesised tones and noise, and the tunes a drone and an arpeggio. The mechanism is finished; the music is placeholder |
+| Combat depth | blows, initiative, reach, loot, fleeing, flanking and a telling blow exist; there are no skills, and nothing a player *chooses* between except where to stand and who to bring |
+| Magic beyond six effects | light, heal, harm, sleep, ward and travel. No summoning, no enchantment, and no mana — reagents and the circle are the whole cost |
+| Haggling | a merchant buys and sells at the item table's own prices, and a topic can give, take and raise a flag. Nobody haggles, and no price ever moves |
+| Recorded audio | every sound is arithmetic. The effects are tones and noise; the tunes are written down and played on synthesised voices, but nothing here is a recording of anything |
 | Editor conveniences | no undo, no fill, no copy, no file dialog - it saves beside the profiles under one name |
-| Party roles | up to four follow, and have health and a level, but nothing distinguishes one companion from another - no classes, no skills, no orders to give |
-| Screens not yet needed | no character sheet or map page — there is nothing yet for them to show |
+| Party depth | four companions with their own health, damage, guard, speed and reach, and three orders to give. No classes and no skills, and nobody carries their own kit |
+| A map page | the character sheet exists; there is no page that shows the world, only the debug window |
 
 ---
 

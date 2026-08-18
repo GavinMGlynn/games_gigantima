@@ -401,10 +401,15 @@ here. Nothing is on this list that is not already admitted to somewhere.
       its rows and finds each of those facts on it — and it opens with one key
       or one press of the stick, scrolls with the directions, closes with
       anything, costs no turn, and fits at both text sizes.*
-- [ ] **Music worth listening to.** The tunes are a drone and an arpeggio. The
-      mechanism is finished; what runs on it is placeholder.
-      *Verification: a captured recording of each, and a tune that changes with
-      the region and the hour without a seam.*
+- [x] **Music worth listening to.** Five pieces written down rather than
+      wandered — a chord progression, a bass, an inner voice and a melody in
+      phrases — played on a plucked string, a pad and a bass in a room. Each
+      loops seamlessly by construction rather than by fading out.
+      *Verification: `--music FILE.wav` writes one recording of all five with
+      the crossfades between them, which is a file a person can play. The tests
+      check what a test honestly can: that each loop comes round to its own
+      beginning exactly and without a step, and that a change of tune is a
+      half-second fade rather than a cut and never leaves a hole.*
 - [ ] **The editor, for people who are not me.** No undo, no fill, no way to
       open a file by name.
       *Verification: a mistake undone, an area filled, and a map opened that the

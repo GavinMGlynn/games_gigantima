@@ -306,6 +306,7 @@ None of it is needed to play; all of it is useful for looking into something.
 gigantima [--profile NAME] [--seed N] [--play] [--new] [--map FILE.ggmap]
           [--at X,Y] [--time HH:MM] [--scale N] [--fullscreen] [--no-rumble]
           [--debug] [--turns N] [--screen NAME] [--shot FILE.bmp] [--shot-at TURN]
+          [--music FILE.wav]
           [--record FILE.ggreplay] [--replay FILE.ggreplay] [--pad-loop]
 ```
 
@@ -321,6 +322,7 @@ gigantima [--profile NAME] [--seed N] [--play] [--new] [--map FILE.ggmap]
 | `--debug` | the debug window: the whole map, the clock, and everyone in it |
 | `--turns N` | play N turns headless and quit, saving on the way out |
 | `--shot FILE.bmp`, `--shot-at TURN` | write a frame and quit |
+| `--music FILE.wav` | record every tune, with the crossfades between them, and quit |
 | `--screen NAME` | open on a named page, for photographing one |
 | `--record FILE` | write down every action of this session |
 | `--replay FILE` | play a recording back, and say whether it ended in the same world |

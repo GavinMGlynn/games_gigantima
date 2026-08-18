@@ -183,8 +183,11 @@ torch and it lights the room; put it away and the night closes back in.
 
 Sound is generated rather than recorded: `tools/make_sounds.py` writes every
 effect and every tune out of arithmetic, so there is no third-party audio to
-license or attribute — and no illusion that a drone and an arpeggio are a score.
-Music follows the region and the hour and crossfades when either changes.
+license or attribute. The five tunes are *written down* — a chord progression, a
+bass, an inner voice and a melody in phrases, on a plucked string and a pad in a
+room — and each loops seamlessly rather than fading out. Music follows the
+region and the hour and crossfades when either changes; `--music FILE.wav`
+records the lot if you would rather hear it than play to it.
 
 ### The editor
 

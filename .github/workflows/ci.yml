@@ -87,6 +87,18 @@ jobs:
             test -s "screen-$s.bmp" || { echo "$s drew nothing"; exit 1; }
           done
 
+      # The music, out of the mixer rather than off a sound card. A crossfade
+      # that clicks or leaves a hole is not visible in a screenshot, and the
+      # unit tests measure it - this is that the capture itself still works, so
+      # anybody wanting to hear the game can get a file out of it.
+      - name: Smoke test - the music can be recorded
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+        run: |
+          ./build/gigantima --music music.wav
+          test -s music.wav || { echo "no recording was written"; exit 1; }
+
       # Two shipped maps with ways out into each other. The crossing itself is
       # checked by the unit tests; this is that the maps on disk are ones the
       # game will actually open and walk between.

@@ -66,6 +66,11 @@ typedef struct {
     const char *shot_path;
     uint32_t    shot_at;
 
+    // The same idea for the ears: --music <file.wav> walks every tune, writes
+    // one recording of the lot and exits. A thing you cannot capture is a
+    // thing you cannot check, and a crossfade is not visible in a screenshot.
+    const char *music_path;
+
     uint32_t    seed;
     const char *profile;
     const char *map_path;         // --map FILE: play an authored map
@@ -879,6 +884,67 @@ static SDL_AppResult run_replay(gg_app *app) {
     return SDL_APP_SUCCESS;
 }
 
+// --- capturing what the game sounds like ------------------------------------
+// One recording of every tune in turn, with the crossfades between them, taken
+// out of the mixer rather than off a sound card: no device is opened, so the
+// file is the same on a machine with speakers and one without, and nothing is
+// lost to whatever a card happened to take while the file was being written.
+static bool write_wav(const char *path, const int16_t *pcm, int frames, int rate) {
+    SDL_IOStream *io = SDL_IOFromFile(path, "wb");
+    if (!io) {
+        SDL_Log("gigantima: cannot write %s: %s", path, SDL_GetError());
+        return false;
+    }
+    const uint32_t data = (uint32_t)frames * 2u;
+    const uint8_t head[] = {
+        'R','I','F','F', 0,0,0,0, 'W','A','V','E', 'f','m','t',' ',
+        16,0,0,0, 1,0, 1,0, 0,0,0,0, 0,0,0,0, 2,0, 16,0,
+        'd','a','t','a', 0,0,0,0,
+    };
+    uint8_t h[sizeof head];
+    SDL_memcpy(h, head, sizeof head);
+    const uint32_t riff = 36u + data, byterate = (uint32_t)rate * 2u;
+    SDL_memcpy(h + 4,  &riff, 4);
+    SDL_memcpy(h + 24, &rate, 4);
+    SDL_memcpy(h + 28, &byterate, 4);
+    SDL_memcpy(h + 40, &data, 4);
+
+    bool ok = SDL_WriteIO(io, h, sizeof h) == sizeof h;
+    ok = ok && SDL_WriteIO(io, pcm, data) == data;
+    SDL_CloseIO(io);
+    return ok;
+}
+
+#define CAPTURE_SECONDS 8
+
+static SDL_AppResult capture_music(gg_app *app) {
+    if (!gg_audio_load(gg_asset_path("sounds/"))) {
+        SDL_Log("gigantima: no sounds to record");
+        return SDL_APP_FAILURE;
+    }
+    gg_audio_volumes(10, 0);
+
+    const int rate = gg_audio_rate();
+    const int tunes = gg_audio_tune_count();
+    const int frames = rate * CAPTURE_SECONDS;
+    int16_t *pcm = SDL_malloc((size_t)frames * (size_t)tunes * sizeof *pcm);
+    if (!pcm) return SDL_APP_FAILURE;
+
+    for (int i = 0; i < tunes; i++) {
+        gg_audio_music_play(i);
+        gg_audio_render(pcm + (size_t)i * (size_t)frames, frames);
+        SDL_Log("gigantima: recorded %s", gg_audio_tune_name(i));
+    }
+
+    const bool ok = write_wav(app->music_path, pcm, frames * tunes, rate);
+    if (ok)
+        SDL_Log("gigantima: wrote %s - %d tunes, %d seconds each, %d Hz",
+                app->music_path, tunes, CAPTURE_SECONDS, rate);
+    SDL_free(pcm);
+    gg_audio_quit();
+    return ok ? SDL_APP_SUCCESS : SDL_APP_FAILURE;
+}
+
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     SDL_SetAppMetadata("Gigantima", "0.1.0", "dev.gavin.gigantima");
 
@@ -903,6 +969,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
             seed_set = true;   // so --seed 0 means 0, not "unset"
         } else if (SDL_strcmp(argv[i], "--profile") == 0 && i + 1 < argc) {
             app->profile = argv[++i];
+        } else if (SDL_strcmp(argv[i], "--music") == 0 && i + 1 < argc) {
+            app->music_path = argv[++i];
         } else if (SDL_strcmp(argv[i], "--shot") == 0 && i + 1 < argc) {
             app->shot_path = argv[++i];
         } else if (SDL_strcmp(argv[i], "--shot-at") == 0 && i + 1 < argc) {
@@ -1039,6 +1107,9 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
                 app->map_path ? " from " : "", app->map_path ? app->map_path : "");
         return SDL_APP_FAILURE;
     }
+
+    // Nothing below this needs a world, a window or a device.
+    if (app->music_path) return capture_music(app);
 
     if (app->clock_set) {
         app->game.minutes = (uint32_t)app->clock_min;

@@ -36,6 +36,11 @@ what that release had; this is what has closed since.
 - **Magic beyond light, heal and harm**: a word that puts somebody to sleep, a
   ward that turns blows for a while, and one that sets you down on the far side
   of whatever is in the way. Nystul teaches the three new runes.
+- **Music that is written down.** Five pieces with a chord progression, a bass,
+  an inner voice and a melody in phrases, played on a plucked string, a pad and
+  a bass in a room, each looping seamlessly rather than fading out. `--music
+  FILE.wav` records all five with the crossfades, so you can hear the lot
+  without playing to the right place at the right hour.
 - **A character sheet**, behind `Z` on a keyboard and the left stick on a pad:
   the level and what is left of it, what is held and what each thing is worth,
   who walks with you and what they were told, and every word collected.
@@ -51,8 +56,7 @@ what that release had; this is what has closed since.
 
 ### Still open
 
-Music that is not placeholder, an editor with undo and fill, bridges, and the
-region byte.
+An editor with undo and fill, bridges, and the region byte.
 
 ### Note
 

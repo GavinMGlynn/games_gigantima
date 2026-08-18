@@ -173,6 +173,23 @@ static void SDLCALL feed(void *user, SDL_AudioStream *stream,
 // ---------------------------------------------------------------------------
 // Lifetime
 // ---------------------------------------------------------------------------
+// Loads every clip and nothing else. Split out because a capture wants the
+// mixer without a device: with one open, SDL is pulling frames out of the same
+// mixer at the speed of a sound card, and a recording taken beside that is
+// missing whatever the card took.
+bool gg_audio_load(const char *sounds_dir) {
+    if (g_ready) return true;
+    bool any = false;
+    for (int i = 0; i < GG_EV_COUNT; i++)
+        if (FX_FILE[i] && load_clip(sounds_dir, FX_FILE[i], &g_fx[i])) any = true;
+    for (int i = 0; i < TUNES; i++) {
+        char name[64];
+        SDL_snprintf(name, sizeof name, "mus_%s.wav", TUNE_NAME[i]);
+        if (load_clip(sounds_dir, name, &g_music[i])) any = true;
+    }
+    return any;
+}
+
 bool gg_audio_init(const char *sounds_dir) {
     if (g_ready) return true;
 
@@ -271,6 +288,61 @@ int gg_audio_tune_for(const gg_game *g) {
 
     if (town) return day ? 2 : 3;
     return day ? 0 : 1;
+}
+
+// Starts, or crossfades to, one tune by index. The selection is in
+// gg_audio_music_for; this is the part that moves the mixer, split out so a
+// capture can ask for a tune the world is not currently in.
+void gg_audio_music_play(int want) {
+    if (want < 0 || want >= TUNES) return;
+    if (want == g_tune && g_next_tune < 0) return;
+    if (want == g_next_tune) return;      // already on its way
+
+    if (g_out) SDL_LockAudioStream(g_out);
+    if (g_tune < 0) {
+        // Nothing playing: start, rather than fade in from silence.
+        g_tune = want;
+        g_music_at = 0;
+        g_next_tune = -1;
+        g_fade = 0;
+    } else {
+        g_next_tune = want;
+        g_next_at = 0;
+        g_fade = FADE_FRAMES;
+    }
+    if (g_out) SDL_UnlockAudioStream(g_out);
+}
+
+// Silence, and forget where everything was. The mixer keeps where each tune has
+// got to, which is what makes it a mixer; a capture that wants to hear one tune
+// from its beginning has to be able to say so.
+void gg_audio_music_stop(void) {
+    if (g_out) SDL_LockAudioStream(g_out);
+    g_tune = g_next_tune = -1;
+    g_music_at = g_next_at = 0;
+    g_fade = 0;
+    if (g_out) SDL_UnlockAudioStream(g_out);
+}
+
+// Exactly what the device would be handed, without a device. This is how the
+// music is *checked*: a crossfade that clicks or drops to silence is a fault
+// nobody can see in a screenshot and nobody should have to catch by ear.
+void gg_audio_render(int16_t *out, int frames) {
+    if (!out || frames <= 0) return;
+    mix_into(out, frames);
+}
+
+int gg_audio_rate(void) { return MIX_RATE; }
+
+// What the mixer is doing, for a test that wants to know that a change of tune
+// is a *fade* rather than a cut. Measuring that off the waveform cannot be done
+// honestly - a cut between two quiet passages steps no further than the music
+// does on its own - so the fact itself is asked for instead.
+int gg_audio_playing(void) { return g_tune; }
+int gg_audio_fading(void)  { return g_fade; }
+
+int gg_audio_tune_frames(int i) {
+    return (i >= 0 && i < TUNES) ? g_music[i].frames : 0;
 }
 
 void gg_audio_music_for(const gg_game *g) {

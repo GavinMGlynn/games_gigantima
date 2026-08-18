@@ -22,6 +22,10 @@
 // available at all, which is not fatal: a silent game is a playable one, so the
 // caller logs and carries on.
 bool gg_audio_init(const char *sounds_dir);
+
+// The clips without a device, for rendering the mix rather than playing it.
+// False if not one sound could be read. See gg_audio_render.
+bool gg_audio_load(const char *sounds_dir);
 void gg_audio_quit(void);
 
 // Whether there is any sound to be had. False after a failed init.
@@ -47,5 +51,31 @@ int gg_audio_tune_for(const gg_game *g);
 // The names of the tunes, in the order gg_audio_tune_for returns.
 const char *gg_audio_tune_name(int i);
 int gg_audio_tune_count(void);
+
+// Starts, or crossfades to, one tune by index - the half of gg_audio_music_for
+// that moves the mixer, without the half that decides. A capture uses it to
+// walk through every tune in one recording.
+void gg_audio_music_play(int tune);
+
+// Silence, and forget where every tune had got to - so the next one starts at
+// its beginning rather than wherever it was last left.
+void gg_audio_music_stop(void);
+
+// Renders exactly what the device would be handed, without a device, and says
+// at what rate. This is how the music is checked: a crossfade that clicks or
+// drops to silence cannot be seen in a screenshot and should not have to be
+// caught by ear.
+void gg_audio_render(int16_t *out, int frames);
+int  gg_audio_rate(void);
+
+// Which tune is playing, or -1, and how many frames of crossfade are left.
+// A change of tune is a fade of half a second; that it is a fade at all cannot
+// be measured off the waveform honestly, so it is asked for.
+int gg_audio_playing(void);
+int gg_audio_fading(void);
+
+// How long one tune is, in frames. A loop's length is the one number needed to
+// render exactly one round of it and look at where it joins.
+int gg_audio_tune_frames(int i);
 
 #endif // GG_AUDIO_H
