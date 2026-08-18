@@ -3,6 +3,7 @@
 #include "gfx/gg_font.h"
 #include "gfx/gg_atlas.h"
 #include "core/gg_magic.h"
+#include "core/gg_combat.h"
 
 // A parchment-and-ink palette, sampled to sit beside the LPC art rather than
 // fight it: the panel is the dark earth of the tileset, the rules are its
@@ -314,6 +315,286 @@ void gg_ui_pack(const gg_game *g, SDL_Renderer *ren, SDL_Texture *items) {
     if (gg_font_width(hint) > (int)box.w - 32)
         hint = "U use  R ready  P set down  I close";
     gg_font_draw(ren, x, fy, DIM, hint);
+}
+
+// ---------------------------------------------------------------------------
+// Who thou art
+// ---------------------------------------------------------------------------
+// Ultima called it ztats and put it behind Z, and so does this.
+//
+// Built as a **list of lines first and drawn second**, rather than laid out
+// against the panel as it goes. Two reasons, and the second is the one that
+// matters: it is the only way the page can scroll without the layout knowing
+// how tall it is, and the interface is drawn at two sizes, so a page that fits
+// at one and runs through the bottom of the panel at the other is exactly the
+// bug this shape cannot have.
+enum { SHEET_HEAD, SHEET_ROW, SHEET_TEXT, SHEET_GAP };
+
+typedef struct {
+    char    left[56];
+    char    right[72];
+    uint8_t style;
+} gg_sheet_row;
+
+#define SHEET_ROWS_MAX 96
+
+static void sheet_add(gg_sheet_row *rows, int *n, uint8_t style,
+                      const char *left, const char *right) {
+    if (*n >= SHEET_ROWS_MAX) return;
+    gg_sheet_row *r = &rows[(*n)++];
+    SDL_zerop(r);
+    r->style = style;
+    if (left)  SDL_strlcpy(r->left, left, sizeof r->left);
+    if (right) SDL_strlcpy(r->right, right, sizeof r->right);
+}
+
+// What is in one hand, one slot at a time, with what it is actually worth
+// rather than only its name: a page that says "a hammer" and not what a hammer
+// does is a page a player reads once.
+static void sheet_slot(const gg_game *g, gg_sheet_row *rows, int *n,
+                       gg_slot_id slot, const char *label) {
+    const int i = g->equipped[slot];
+    if (!gg_pack_slot_ok(g, i)) {
+        sheet_add(rows, n, SHEET_ROW, label, "nothing");
+        return;
+    }
+    const gg_item_def *d = &GG_ITEM[g->pack[i].kind];
+    char worth[72] = { 0 };
+    char one[32];
+    if (d->damage) {
+        SDL_snprintf(one, sizeof one, "%d damage", d->damage);
+        SDL_strlcat(worth, one, sizeof worth);
+    }
+    if (d->guard) {
+        if (worth[0]) SDL_strlcat(worth, ", ", sizeof worth);
+        SDL_snprintf(one, sizeof one, "%d guard", d->guard);
+        SDL_strlcat(worth, one, sizeof worth);
+    }
+    if (d->reach > 1) {
+        if (worth[0]) SDL_strlcat(worth, ", ", sizeof worth);
+        SDL_snprintf(one, sizeof one, "reaches %d", d->reach);
+        SDL_strlcat(worth, one, sizeof worth);
+    }
+    if (d->light) {
+        if (worth[0]) SDL_strlcat(worth, ", ", sizeof worth);
+        SDL_snprintf(one, sizeof one, "lights %d", d->light);
+        SDL_strlcat(worth, one, sizeof worth);
+    }
+
+    char text[72];
+    if (worth[0]) SDL_snprintf(text, sizeof text, "%s  -  %s", d->one, worth);
+    else          SDL_strlcpy(text, d->one, sizeof text);
+    sheet_add(rows, n, SHEET_ROW, label, text);
+}
+
+// Every word the Avatar has, wrapped to as many rows as it takes. The runes are
+// pulled out and shown together, because they are the ones that make a spell
+// and a player looking for them should not have to read the whole list.
+static bool sheet_is_rune(const char *word) {
+    for (int r = 0; r < gg_magic_runes(); r++)
+        if (SDL_strcasecmp(gg_magic_rune(r)->word, word) == 0) return true;
+    return false;
+}
+
+static int sheet_word_count(const gg_game *g, bool runes_wanted) {
+    int n = 0;
+    for (int i = 0; i < g->knownn; i++)
+        if (sheet_is_rune(g->known[i]) == runes_wanted) n++;
+    return n;
+}
+
+static void sheet_words(const gg_game *g, gg_sheet_row *rows, int *n,
+                        bool runes_wanted) {
+    char line[56] = { 0 };
+    int shown = 0;
+    for (int i = 0; i < g->knownn; i++) {
+        if (sheet_is_rune(g->known[i]) != runes_wanted) continue;
+
+        char next[56];
+        SDL_snprintf(next, sizeof next, "%s%s", line[0] ? " " : "", g->known[i]);
+        if (SDL_strlen(line) + SDL_strlen(next) >= sizeof line - 1) {
+            sheet_add(rows, n, SHEET_TEXT, line, nullptr);
+            line[0] = '\0';
+            SDL_strlcpy(line, g->known[i], sizeof line);
+        } else {
+            SDL_strlcat(line, next, sizeof line);
+        }
+        shown++;
+    }
+    if (line[0]) sheet_add(rows, n, SHEET_TEXT, line, nullptr);
+    if (shown == 0) sheet_add(rows, n, SHEET_TEXT, "none yet", nullptr);
+}
+
+static int sheet_build(const gg_game *g, gg_sheet_row *rows) {
+    const gg_actor *p = gg_player_const(g);
+    int n = 0;
+    char l[56], r[72];
+
+    // Who, and how far along. The experience counter spent on nothing for a
+    // long while; this is where a player sees what it is for.
+    if (p->level < GG_LEVEL_MAX) {
+        const int have = g->exp - gg_level_cost(p->level);
+        const int want = gg_level_cost(p->level + 1) - gg_level_cost(p->level);
+        SDL_snprintf(l, sizeof l, "Level %d", p->level);
+        SDL_snprintf(r, sizeof r, "%d of %d toward the next  (%d in all)",
+                     have, want, g->exp);
+    } else {
+        SDL_snprintf(l, sizeof l, "Level %d", p->level);
+        SDL_snprintf(r, sizeof r, "as far as it goes  (%d in all)", g->exp);
+    }
+    sheet_add(rows, &n, SHEET_ROW, l, r);
+
+    SDL_snprintf(r, sizeof r, "%d of %d", p->hp, p->hp_max);
+    sheet_add(rows, &n, SHEET_ROW, "Health", r);
+
+    SDL_snprintf(r, sizeof r, "%d to strike with, %d to turn a blow",
+                 gg_attack_power(g, g->player), gg_guard_power(g, g->player));
+    sheet_add(rows, &n, SHEET_ROW, "In a fight", r);
+
+    char load[24];
+    gg_ui_weight(load, sizeof load, gg_pack_weight(g));
+    SDL_snprintf(r, sizeof r, "%d gold, %s of %d stone carried",
+                 gg_pack_count(g, GG_ITEM_GOLD), load, GG_CARRY_MAX / 100);
+    sheet_add(rows, &n, SHEET_ROW, "Carrying", r);
+
+    sheet_add(rows, &n, SHEET_GAP, nullptr, nullptr);
+    sheet_add(rows, &n, SHEET_HEAD, "What thou bearest", nullptr);
+    sheet_slot(g, rows, &n, GG_SLOT_WEAPON, "In hand");
+    sheet_slot(g, rows, &n, GG_SLOT_ARMOUR, "Worn");
+    sheet_slot(g, rows, &n, GG_SLOT_LIGHT,  "Alight");
+
+    // Spells that are running are worn as much as anything in a hand is, and
+    // the ward has nowhere else to be seen except the band.
+    if (g->light_turns > 0) {
+        SDL_snprintf(r, sizeof r, "reaches %d, for %d turns more",
+                     g->light_power, g->light_turns);
+        sheet_add(rows, &n, SHEET_ROW, "A cold light", r);
+    }
+    if (g->ward_turns > 0) {
+        SDL_snprintf(r, sizeof r, "%d guard, for %d turns more",
+                     g->ward_power, g->ward_turns);
+        sheet_add(rows, &n, SHEET_ROW, "A ward", r);
+    }
+
+    if (gg_party_size(g) > 0) {
+        sheet_add(rows, &n, SHEET_GAP, nullptr, nullptr);
+        sheet_add(rows, &n, SHEET_HEAD, "Who walks with thee", nullptr);
+        for (int slot = 1; slot <= GG_PARTY_MAX; slot++) {
+            const int who = gg_party_at(g, slot);
+            if (who < 0) continue;
+            const gg_actor *c = &g->actor[who];
+            SDL_snprintf(l, sizeof l, "%d. %s", slot, c->name);
+            char how[32] = { 0 };
+            if (c->reach > 1) SDL_snprintf(how, sizeof how, ", throws %d", c->reach);
+            SDL_snprintf(r, sizeof r, "%d of %d,  %d damage %d guard, speed %d%s"
+                         "  -  %s", c->hp, c->hp_max, c->damage, c->guard,
+                         c->speed, how, GG_STANCE_NAME[c->stance]);
+            sheet_add(rows, &n, SHEET_ROW, l, r);
+        }
+    }
+
+    sheet_add(rows, &n, SHEET_GAP, nullptr, nullptr);
+    // The runes are counted with the runes, below, not twice: a heading that
+    // says twelve above a list of two is a heading nobody trusts again.
+    SDL_snprintf(l, sizeof l, "Words thou knowest (%d)",
+                 sheet_word_count(g, false));
+    sheet_add(rows, &n, SHEET_HEAD, l, nullptr);
+    sheet_words(g, rows, &n, false);
+
+    if (gg_magic_runes() > 0) {
+        sheet_add(rows, &n, SHEET_GAP, nullptr, nullptr);
+        int have = 0;
+        for (int i = 0; i < gg_magic_runes(); i++)
+            if (gg_knows(g, gg_magic_rune(i)->word)) have++;
+        SDL_snprintf(l, sizeof l, "Runes (%d of %d)", have, gg_magic_runes());
+        sheet_add(rows, &n, SHEET_HEAD, l, nullptr);
+        sheet_words(g, rows, &n, true);
+    }
+    return n;
+}
+
+int gg_ui_sheet_rows(const gg_game *g) {
+    static gg_sheet_row rows[SHEET_ROWS_MAX];
+    return sheet_build(g, rows);
+}
+
+bool gg_ui_sheet_row(const gg_game *g, int i, const char **left,
+                     const char **right) {
+    static gg_sheet_row rows[SHEET_ROWS_MAX];
+    const int n = sheet_build(g, rows);
+    if (i < 0 || i >= n) return false;
+    if (left)  *left  = rows[i].left;
+    if (right) *right = rows[i].right;
+    return true;
+}
+
+// How many rows the panel shows at once. The frontend needs it to clamp the
+// scroll, and it depends on the font size, so it cannot be a constant.
+int gg_ui_sheet_fits(void) {
+    const int line = gg_font_height();
+    const int row = line + 3;
+    const int height = GG_VIEW_H - 40;
+    const int fits = (height - (line + 8) - (line + 28)) / row;
+    return fits > 1 ? fits : 1;
+}
+
+void gg_ui_sheet(const gg_game *g, SDL_Renderer *ren) {
+    static gg_sheet_row rows[SHEET_ROWS_MAX];
+    const int n = sheet_build(g, rows);
+
+    const int line = gg_font_height();
+    const int row = line + 3;
+    const int fits = gg_ui_sheet_fits();
+    const int shown = n < fits ? n : fits;
+    const int height = (line + 8) + shown * row + (line + 28);
+    const SDL_FRect box = { 50, (float)((GG_VIEW_H - height) / 2),
+                            (float)(GG_SCREEN_W - 100), (float)height };
+    panel(ren, box, 242);
+
+    const int x = (int)box.x + 16;
+    // The right-hand column starts wherever the widest label ends, so a long
+    // name or a three-figure level cannot push a value off the panel.
+    int col = 0;
+    for (int i = 0; i < n; i++)
+        if (rows[i].style == SHEET_ROW) {
+            const int w = gg_font_width(rows[i].left);
+            if (w > col) col = w;
+        }
+    col += line;
+
+    int y = (int)box.y + 12;
+    gg_font_printf(ren, x, y, AMBER, "%s", gg_player_const(g)->name);
+    if (n > fits)
+        gg_font_printf(ren, (int)(box.x + box.w) - 16 - gg_font_width("more below"),
+                       y, DIM, "%s", "more below");
+    y += line + 8;
+
+    int top = g->sheet_cursor;
+    if (top > n - fits) top = n - fits;
+    if (top < 0) top = 0;
+
+    for (int i = top; i < n && i - top < fits; i++) {
+        const gg_sheet_row *sr = &rows[i];
+        switch (sr->style) {
+        case SHEET_HEAD:
+            gg_font_printf(ren, x, y, AMBER, "%s", sr->left);
+            break;
+        case SHEET_ROW:
+            gg_font_printf(ren, x, y, DIM, "%s", sr->left);
+            gg_font_printf(ren, x + col, y, INK, "%s", sr->right);
+            break;
+        case SHEET_TEXT:
+            gg_font_printf(ren, x + line, y, INK, "%s", sr->left);
+            break;
+        default:
+            break;
+        }
+        y += row;
+    }
+
+    gg_font_draw(ren, x, (int)(box.y + box.h) - line - 12, DIM,
+                 n > fits ? "arrows to read on   Z or any key to close"
+                          : "Z or any key to close");
 }
 
 void gg_ui_journal(const gg_game *g, SDL_Renderer *ren) {

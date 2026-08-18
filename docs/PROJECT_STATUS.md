@@ -1504,6 +1504,43 @@ held-index repair, the map removal, and the weight check — and confirming each
 failed. Plus `--shot` frames of an apple lying where it fell, the pack panel,
 and the same night scene with a torch held and stowed.*
 
+### Who thou art
+
+The character sheet, behind **Z** — Ultima put its character summary there and
+called it ztats, and anybody who played it tries that key first — and behind the
+**left stick** on a pad, which was the last control nothing else wanted.
+
+It carries the four things that had nowhere else to be: the level and how far
+along it is (the experience counter spent on nothing for a long while and was
+still only a number in the band), what is held and **what each thing is worth**
+rather than only its name, who walks with you with their numbers and what they
+were told, and every word collected — with the runes pulled out and counted
+separately, because they are the ones that make a spell.
+
+**Built as a list of lines and drawn second**, rather than laid out against the
+panel as it goes. That is what lets it scroll without the layout knowing how
+tall it is, and the interface is drawn at two sizes: a page that fits at one and
+runs through the bottom of the panel at the other is exactly the bug this shape
+cannot have. The right-hand column starts where the widest label ends, so a long
+name cannot push a value off the panel.
+
+**The scroll is bounded from both ends by different halves of the program.** The
+simulation stops the cursor at zero; how many rows there are and how many fit
+depend on the font, which `src/core/` may not know about, so the frontend clamps
+the other end immediately after the action. It is neither saved nor hashed:
+where a page happens to be scrolled is not a fact about the world.
+
+*Verification: `the_character_sheet_says_who_the_avatar_is` — the page is
+**read** rather than photographed, through `gg_ui_sheet_row`, because a
+screenshot proves it drew and not that it says the right thing. It checks that
+one action opens it, that the directions scroll it and anything else closes it,
+that reading costs no turn, and that the level, the progress toward the next,
+the sword in hand and what it is worth, a word learned, a rune, both counts, a
+companion and their order all appear. Then the row count and how many fit are
+checked at both text sizes. Mutation-tested three ways: a sheet that does not
+scroll, a word count that includes the runes, and a page that does not say who
+throws. Plus `--screen sheet --shot` in CI at both sizes.*
+
 ### Screens
 
 Six: title, journeys, naming, options, world, paused. The pages own their own

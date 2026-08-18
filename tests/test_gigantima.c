@@ -26,6 +26,7 @@
 #include "ui/gg_menu.h"
 #include "ui/gg_screens.h"
 #include "gfx/gg_font.h"
+#include "ui/gg_ui.h"
 #include "platform/gg_settings.h"
 #include "platform/gg_input.h"
 
@@ -6943,6 +6944,104 @@ done:
     restore_dialogue();
 }
 
+// ---------------------------------------------------------------------------
+// Who thou art
+// ---------------------------------------------------------------------------
+// Does any row of the sheet contain this? The page is read rather than
+// photographed: a screenshot proves it drew, not that it says the right thing.
+static bool sheet_says(const gg_game *g, const char *needle) {
+    const char *left = nullptr, *right = nullptr;
+    for (int i = 0; gg_ui_sheet_row(g, i, &left, &right); i++)
+        if (SDL_strstr(left, needle) || SDL_strstr(right, needle)) return true;
+    return false;
+}
+
+static void the_character_sheet_says_who_the_avatar_is(void) {
+    CHECK(gg_bestiary_load(gg_asset_path("bestiary.txt")), "no bestiary");
+    CHECK(gg_dialogue_load(gg_asset_path("dialogue.txt")), "no book");
+    CHECK(gg_magic_load(gg_asset_path("spells.txt")), "no spells");
+
+    gg_game g;
+    int cx = 0, cy = 0;
+    CHECK(set_up_encounter(&g, 81, &cx, &cy), "setup failed");
+
+    // Reachable: one action opens it, and it is a page rather than a menu -
+    // the directions scroll and anything else closes it.
+    CHECK(g.mode == GG_MODE_PLAY, "not in the world to begin with");
+    const uint32_t turn = g.turn;
+    gg_game_act(&g, GG_ACT_SHEET);
+    CHECK(g.mode == GG_MODE_SHEET, "asking for the sheet did not open it");
+    CHECK(g.sheet_cursor == 0, "the sheet opened part way down");
+    gg_game_act(&g, GG_ACT_S);
+    CHECK(g.mode == GG_MODE_SHEET, "scrolling closed the sheet");
+    CHECK(g.sheet_cursor == 1, "the sheet did not scroll");
+    gg_game_act(&g, GG_ACT_N);
+    gg_game_act(&g, GG_ACT_N);
+    CHECK(g.sheet_cursor == 0, "the sheet scrolled off the top");
+    gg_game_act(&g, GG_ACT_WAIT);
+    CHECK(g.mode == GG_MODE_PLAY, "the sheet would not close");
+    // And no turn passed while it was open: reading is free, and the key that
+    // closes it must not also be a turn spent standing still.
+    CHECK(g.turn == turn, "reading the sheet cost %u turns", g.turn - turn);
+
+    // What it says. Every one of these is a fact the page exists to carry, and
+    // none of them was on any other page before it.
+    gg_player(&g)->level = 3;
+    g.exp = gg_level_cost(3) + 17;
+    CHECK(sheet_says(&g, "Level 3"), "the sheet does not say the level");
+    CHECK(sheet_says(&g, "17 of"), "the sheet does not say how far along");
+
+    gg_pack_add(&g, GG_ITEM_SWORD, 1);
+    g.pack_cursor = gg_pack_find(&g, GG_ITEM_SWORD);
+    g.mode = GG_MODE_PACK;
+    gg_game_act(&g, GG_ACT_EQUIP);
+    g.mode = GG_MODE_PLAY;
+    CHECK(sheet_says(&g, "arming sword"), "the sheet does not say what is held");
+    CHECK(sheet_says(&g, "damage"), "the sheet does not say what it is worth");
+
+    gg_learn(&g, "caravan");
+    CHECK(sheet_says(&g, "caravan"), "the sheet does not say what is known");
+    gg_learn(&g, "MANI");
+    CHECK(sheet_says(&g, "MANI"), "the sheet does not say which runes are known");
+
+    // The two counts are separate, and neither of them counts the other's
+    // words: a heading that says twelve above a list of two is a heading
+    // nobody trusts twice.
+    CHECK(sheet_says(&g, "Words thou knowest (3)"),
+          "the word count includes the runes");
+    CHECK(sheet_says(&g, "Runes (1 of"), "the rune count is wrong");
+
+    const int mate = bring_along(&g, "Gwenno", cx - 1, cy);
+    CHECK(mate >= 0, "Gwenno would not come along");
+    if (mate >= 0) {
+        order_the_party(&g, GG_STANCE_BACK);
+        CHECK(sheet_says(&g, "Gwenno"), "the sheet does not say who is with you");
+        CHECK(sheet_says(&g, "back"), "the sheet does not say what they were told");
+        CHECK(sheet_says(&g, "throws 3"),
+              "the sheet does not say that Gwenno throws");
+    }
+
+    // Readable at both text sizes. The page is built as a list and windowed,
+    // so the only thing the size changes is how many rows fit - and at twice
+    // the size there must still be room for more than a heading, or the page
+    // is unreadable rather than merely long.
+    const int rows = gg_ui_sheet_rows(&g);
+    CHECK(rows > 12, "the sheet has only %d rows", rows);
+    for (int scale = 1; scale <= 2; scale++) {
+        gg_font_scale(scale);
+        const int fits = gg_ui_sheet_fits();
+        CHECK(fits >= 8, "only %d rows fit at text scale %d", fits, scale);
+        CHECK(fits <= rows + 8, "the sheet claims room for %d rows of %d",
+              fits, rows);
+    }
+    gg_font_scale(1);
+
+    gg_game_free(&g);
+    restore_bestiary();
+    restore_dialogue();
+    gg_magic_clear();
+}
+
 // "Playable" has to mean winnable, not merely reachable: a story that walks the
 // player up to a man who kills them every time is a story with no ending in it.
 // And it has to mean *earned*, or the road between is decoration.
@@ -8789,6 +8888,7 @@ int main(void) {
     RUN(a_party_that_walked_the_road_can_beat_the_man_at_the_end_of_it);
     RUN(two_companions_are_worth_choosing_between);
     RUN(a_companion_does_what_it_is_told);
+    RUN(the_character_sheet_says_who_the_avatar_is);
     RUN(every_shipped_map_is_a_place_you_can_walk_to);
     RUN(each_place_holds_what_the_bestiary_says_it_does);
     RUN(a_map_written_as_text_is_the_same_map);

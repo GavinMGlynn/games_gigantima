@@ -36,6 +36,9 @@ what that release had; this is what has closed since.
 - **Magic beyond light, heal and harm**: a word that puts somebody to sleep, a
   ward that turns blows for a while, and one that sets you down on the far side
   of whatever is in the way. Nystul teaches the three new runes.
+- **A character sheet**, behind `Z` on a keyboard and the left stick on a pad:
+  the level and what is left of it, what is held and what each thing is worth,
+  who walks with you and what they were told, and every word collected.
 - **Companions who are somebody.** Who a person is in a fight is a line in the
   book beside what they say, so the vale's two are different answers rather than
   different numbers — one stands in front of things, the other throws from three
@@ -48,8 +51,8 @@ what that release had; this is what has closed since.
 
 ### Still open
 
-A character sheet, music that is not placeholder, an editor with undo and fill,
-bridges, and the region byte.
+Music that is not placeholder, an editor with undo and fill, bridges, and the
+region byte.
 
 ### Note
 

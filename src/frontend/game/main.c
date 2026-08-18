@@ -231,6 +231,8 @@ static void draw(gg_app *app) {
             gg_ui_spells(&app->game, app->ren);
         else if (app->game.mode == GG_MODE_JOURNAL)
             gg_ui_journal(&app->game, app->ren);
+        else if (app->game.mode == GG_MODE_SHEET)
+            gg_ui_sheet(&app->game, app->ren);
         else if (app->game.mode == GG_MODE_ENDING ||
                  app->game.mode == GG_MODE_GAMEOVER)
             gg_ui_ending(&app->game, app->ren);
@@ -1102,6 +1104,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
             { "fight",    GG_SCREEN_PLAY },
             { "spells",   GG_SCREEN_PLAY },
             { "magic",    GG_SCREEN_PLAY },
+            { "sheet",    GG_SCREEN_PLAY },
             { "journal",  GG_SCREEN_PLAY },
             { "travel",   GG_SCREEN_PLAY },
             { "return",   GG_SCREEN_PLAY },
@@ -1248,7 +1251,8 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
             if (app->game.mode == GG_MODE_CONVERSE ||
                 app->game.mode == GG_MODE_PACK ||
                 app->game.mode == GG_MODE_SPELL ||
-                app->game.mode == GG_MODE_JOURNAL) {
+                app->game.mode == GG_MODE_JOURNAL ||
+                app->game.mode == GG_MODE_SHEET) {
                 act(app, GG_ACT_WAIT);
                 return SDL_APP_CONTINUE;
             }
@@ -1383,6 +1387,14 @@ static bool step_once(gg_app *app) {
         const gg_action a = gg_input_take(&app->in);
         if (a != GG_ACT_NONE) {
             act(app, a);
+            // The other half of the sheet's scroll. How far it can go depends
+            // on the font, which is this side of the line and not the
+            // simulation's business - see gg_game_act.
+            if (app->game.mode == GG_MODE_SHEET) {
+                const int most = gg_ui_sheet_rows(&app->game) - gg_ui_sheet_fits();
+                if (app->game.sheet_cursor > most)
+                    app->game.sheet_cursor = most > 0 ? most : 0;
+            }
             if (app->game.blocked_bump) {
                 app->game.blocked_bump = false;
                 gg_input_rumble(&app->in, 0x2000, 0x1000, 60);
@@ -1599,6 +1611,35 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
             gg_spawn_named(&app->game, "SLINGER", pl->x + 3, pl->y - 1);
             act(app, GG_ACT_FIGHT);
             act(app, GG_ACT_FIGHT);
+        }
+
+        // Who the Avatar is, with something on every part of the page: two
+        // companions under different orders, a hand and an arm with something
+        // in them, a light burning, and a vocabulary worth scrolling.
+        if (app->screen_name && SDL_strcmp(app->screen_name, "sheet") == 0) {
+            int took = 0;
+            for (int i = 0; i < app->game.actors && took < 2; i++)
+                if (i != app->game.player && app->game.actor[i].active &&
+                    gg_party_join(&app->game, i)) {
+                    if (took == 1) app->game.actor[i].stance = GG_STANCE_BACK;
+                    took++;
+                }
+            for (int i = 0; i < gg_magic_runes(); i++)
+                gg_learn(&app->game, gg_magic_rune(i)->word);
+            gg_pack_add(&app->game, GG_ITEM_SWORD, 1);
+            gg_pack_add(&app->game, GG_ITEM_SHIELD, 1);
+            gg_pack_add(&app->game, GG_ITEM_ASH, 1);
+            static const gg_item_id READY[] = { GG_ITEM_SWORD, GG_ITEM_SHIELD };
+            for (size_t k = 0; k < GG_COUNTOF(READY); k++) {
+                app->game.pack_cursor = gg_pack_find(&app->game, READY[k]);
+                app->game.mode = GG_MODE_PACK;
+                act(app, GG_ACT_EQUIP);
+            }
+            app->game.mode = GG_MODE_PLAY;
+            for (int i = 0; i < gg_magic_spells(); i++)
+                if (gg_magic_spell(i)->effect == GG_SPELL_LIGHT)
+                    gg_cast(&app->game, i);
+            act(app, GG_ACT_SHEET);
         }
 
         // Two brigands, a ward and a word that puts one of them down. Both of

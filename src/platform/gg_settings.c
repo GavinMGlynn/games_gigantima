@@ -30,6 +30,9 @@ void gg_settings_default_keys(gg_settings *s) {
     s->key[GG_ACT_FIGHT]   = SDL_SCANCODE_F;
     s->key[GG_ACT_CAST]    = SDL_SCANCODE_C;
     s->key[GG_ACT_JOURNAL] = SDL_SCANCODE_J;
+    // Z, because Ultima put the character summary behind Z and called it
+    // ztats, and anybody who played it will try that key first.
+    s->key[GG_ACT_SHEET]   = SDL_SCANCODE_Z;
     s->key[GG_ACT_PACK]    = SDL_SCANCODE_I;
     s->key[GG_ACT_USE]     = SDL_SCANCODE_U;
     s->key[GG_ACT_EQUIP]   = SDL_SCANCODE_R;

@@ -140,6 +140,11 @@ bool gg_input_event(gg_input *in, const SDL_Event *ev) {
         case SDL_GAMEPAD_BUTTON_BACK:
             // The other menu button, and the pack is the other menu.
             in->latched = GG_ACT_PACK; return true;
+        case SDL_GAMEPAD_BUTTON_LEFT_STICK:
+            // The last button on a pad that nothing else wanted. Pressing the
+            // stick opens a page you close with B, so catching it by accident
+            // costs a keypress and nothing else.
+            in->latched = GG_ACT_SHEET; return true;
         case SDL_GAMEPAD_BUTTON_START:
             in->pause_latched = true; return true;
         default: return false;

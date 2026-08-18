@@ -22,6 +22,7 @@ typedef enum {
     GG_MODE_PACK,        // looking through what you carry
     GG_MODE_SPELL,       // choosing a spell to speak
     GG_MODE_JOURNAL,     // reading what has happened so far
+    GG_MODE_SHEET,       // reading who you are
     GG_MODE_GAMEOVER,
     GG_MODE_ENDING,      // the story is finished
 } gg_mode;
@@ -47,6 +48,7 @@ typedef enum {
     GG_ACT_FIGHT,
     GG_ACT_CAST,
     GG_ACT_JOURNAL,
+    GG_ACT_SHEET,
     GG_ACT_PACK,
     GG_ACT_USE,
     GG_ACT_EQUIP,
@@ -293,6 +295,10 @@ typedef struct {
 
     // Which entry the journal is open at.
     int journal_cursor;
+
+    // Which row the character sheet is scrolled to. Not saved: it is where a
+    // page happens to be scrolled, not anything about the world.
+    int sheet_cursor;
 
     // Rolling message log, newest last.
     char log[GG_LOG_LINES][GG_LOG_WIDTH];

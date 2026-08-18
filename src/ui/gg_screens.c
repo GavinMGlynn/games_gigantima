@@ -157,8 +157,8 @@ static const gg_action BINDABLE[] = {
     GG_ACT_NW, GG_ACT_NE, GG_ACT_SW, GG_ACT_SE,
     GG_ACT_WAIT,
     GG_ACT_TALK, GG_ACT_LOOK, GG_ACT_OPEN, GG_ACT_GET, GG_ACT_FIGHT,
-    GG_ACT_CAST, GG_ACT_JOURNAL, GG_ACT_PACK, GG_ACT_USE, GG_ACT_EQUIP,
-    GG_ACT_DROP,
+    GG_ACT_CAST, GG_ACT_JOURNAL, GG_ACT_SHEET, GG_ACT_PACK, GG_ACT_USE,
+    GG_ACT_EQUIP, GG_ACT_DROP,
 };
 #define BINDABLE_N ((int)(sizeof BINDABLE / sizeof BINDABLE[0]))
 #define KEY_PAGES  ((BINDABLE_N + KEYS_PER_PAGE - 1) / KEYS_PER_PAGE)
@@ -184,6 +184,7 @@ static const char *bindable_name(gg_action a) {
     case GG_ACT_FIGHT:   return "Strike";
     case GG_ACT_CAST:    return "Cast a spell";
     case GG_ACT_JOURNAL: return "Journal";
+    case GG_ACT_SHEET:   return "Who thou art";
     case GG_ACT_PACK:    return "Pack";
     case GG_ACT_USE:     return "Use";
     case GG_ACT_EQUIP:   return "Ready";

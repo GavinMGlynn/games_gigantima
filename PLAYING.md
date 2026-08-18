@@ -132,6 +132,7 @@ can reach its circle, and are carrying its herbs.
 | `F` | strike what you face, or throw a readied stone |
 | `C` | the book of spells |
 | `J` | the journal — what has happened so far |
+| `Z` | who thou art — level, what is held, who walks with thee, every word thou knowest |
 | `I` | what you carry |
 | `U` / `R` / `P` | use it, ready it, put it down |
 | `Space` / `.` / keypad `5` | wait a turn |
@@ -158,6 +159,7 @@ the stick and the d-pad both walk.
 | **Left trigger** | take what is underfoot |
 | **Right trigger** | the journal |
 | **Back** | what you carry |
+| **Left stick (click)** | who thou art |
 | **Start** | pause, and "that will do" on a menu |
 
 Inside the pack those same four face buttons carry the pack's verbs instead:

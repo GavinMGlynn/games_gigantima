@@ -393,10 +393,14 @@ here. Nothing is on this list that is not already admitted to somewhere.
       of 20 and Gwenno 4; against something that throws from five tiles, Gwenno
       wins 20 and Dupre 7. Neither is the one to bring to both. Each order is
       tested in a situation the other two would fail.*
-- [ ] **A character sheet**, now that there is something to put on it — level,
-      experience, what is held, what is known.
-      *Verification: reachable and readable by keyboard and pad, at both text
-      sizes.*
+- [x] **A character sheet**, behind Z as Ultima's was: the level and how far
+      along it is, what is held and what each thing is worth, who walks with you
+      and what they were told, and every word collected with the runes counted
+      apart.
+      *Verification: the page is read rather than photographed — a test walks
+      its rows and finds each of those facts on it — and it opens with one key
+      or one press of the stick, scrolls with the directions, closes with
+      anything, costs no turn, and fits at both text sizes.*
 - [ ] **Music worth listening to.** The tunes are a drone and an arpeggio. The
       mechanism is finished; what runs on it is placeholder.
       *Verification: a captured recording of each, and a tune that changes with

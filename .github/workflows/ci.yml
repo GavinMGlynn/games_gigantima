@@ -82,7 +82,7 @@ jobs:
           SDL_RENDER_DRIVER: software
           SDL_AUDIODRIVER: dummy
         run: |
-          for s in title profiles name options keys pause play pack talk party fight spells magic journal; do
+          for s in title profiles name options keys pause play pack talk party fight spells magic sheet journal; do
             ./build/gigantima --screen "$s" --profile CI --shot "screen-$s.bmp"
             test -s "screen-$s.bmp" || { echo "$s drew nothing"; exit 1; }
           done
@@ -176,7 +176,7 @@ jobs:
         run: |
           mkdir -p "$XDG_DATA_HOME/gigantima/gigantima"
           printf 'text_scale = 2\n' > "$XDG_DATA_HOME/gigantima/gigantima/settings.txt"
-          for s in title profiles name options keys pause play pack talk spells journal; do
+          for s in title profiles name options keys pause play pack talk spells sheet journal; do
             ./build/gigantima --screen "$s" --profile CIBig --new --shot "big-$s.bmp"
             test -s "big-$s.bmp" || { echo "$s drew nothing at large text"; exit 1; }
           done

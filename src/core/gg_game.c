@@ -1397,6 +1397,25 @@ void gg_game_act(gg_game *g, gg_action a) {
         return;
     }
 
+    // The character sheet is open. Like the journal it is a record and not a
+    // menu, so the directions scroll it and anything else closes it.
+    //
+    // The cursor is only stopped at nothing here: how many rows the sheet has
+    // and how many of them fit depend on the font, which the simulation must
+    // not know about. The frontend bounds it the other way, immediately after
+    // this returns - and it is neither saved nor hashed, because where a page
+    // happens to be scrolled is not a fact about the world.
+    if (g->mode == GG_MODE_SHEET) {
+        int dx, dy;
+        if (gg_action_delta(a, &dx, &dy)) {
+            if (dy) g->sheet_cursor += dy > 0 ? 1 : -1;
+            if (g->sheet_cursor < 0) g->sheet_cursor = 0;
+            return;
+        }
+        g->mode = GG_MODE_PLAY;
+        return;
+    }
+
     // The book is open: the directions run down it and choosing speaks. Only
     // spells whose runes are known are in it at all, so the list is the answer
     // to "what can I do", not a catalogue of what somebody else can.
@@ -1468,6 +1487,11 @@ void gg_game_act(gg_game *g, gg_action a) {
     case GG_ACT_JOURNAL:
         g->mode = GG_MODE_JOURNAL;
         g->journal_cursor = 0;
+        break;
+
+    case GG_ACT_SHEET:
+        g->mode = GG_MODE_SHEET;
+        g->sheet_cursor = 0;
         break;
 
     case GG_ACT_CAST: {
