@@ -163,7 +163,6 @@ bool gg_bestiary_load(const char *path) {
             b->reach = 1;
             b->notice = 8;
             b->haunts = 0;
-            b->haunt_x = b->haunt_y = -1;
             b->worth = 0;                 // 0 means "as much as it can take"
             continue;
         }
@@ -220,12 +219,20 @@ bool gg_bestiary_load(const char *path) {
                 ok = false;
                 break;
             }
-            b->haunts = (uint8_t)v;
+            if (b->haunts >= GG_BEAST_HAUNTS_MAX) {
+                complain(path, lineno, "more places than one creature may haunt");
+                ok = false;
+                break;
+            }
+            gg_haunt *h = &b->haunt[b->haunts++];
+            SDL_zerop(h);
+            h->howmany = (uint8_t)v;
+            h->x = h->y = -1;
 
-            // An optional map, and an optional tile in it.
+            // An optional place, and an optional tile in it.
             char where[GG_MAP_NAME_MAX];
             if (next_token(&rest, where, sizeof where)) {
-                SDL_strlcpy(b->haunt_map, where, sizeof b->haunt_map);
+                SDL_strlcpy(h->map, where, sizeof h->map);
                 char tx[16], ty[16];
                 if (next_token(&rest, tx, sizeof tx)) {
                     int px = 0, py = 0;
@@ -236,8 +243,8 @@ bool gg_bestiary_load(const char *path) {
                         ok = false;
                         break;
                     }
-                    b->haunt_x = (int16_t)px;
-                    b->haunt_y = (int16_t)py;
+                    h->x = (int16_t)px;
+                    h->y = (int16_t)py;
                 }
             }
         } else if (SDL_strcasecmp(key, "loot") == 0) {

@@ -1398,56 +1398,80 @@ static void populate_from_map(gg_game *g) {
 //
 // Called once per map per world: a map walked back into is remembered rather
 // than re-read, so nothing is stocked twice.
-static void stock_creatures(gg_game *g, bool first_world) {
-    // Away from the town's own doorstep for the ones with nowhere to be: the
-    // vale should be safe to leave a house in, and dangerous to walk out of.
+static void stock_creatures(gg_game *g) {
+    // Away from the town's own doorstep for the ones with nowhere to be: a
+    // town should be safe to leave a house in, and dangerous to walk out of.
     int cx = g->map.start_x, cy = g->map.start_y;
+    bool has_town = false;
     for (int i = 0; i < g->map.regions; i++)
         if (g->map.region[i].kind == GG_REGION_TOWN) {
             cx = g->map.region[i].x + g->map.region[i].w / 2;
             cy = g->map.region[i].y + g->map.region[i].h / 2;
+            has_town = true;
             break;
         }
 
     for (int kind = 0; kind < gg_bestiary_count(); kind++) {
         const gg_beast *b = gg_bestiary_at(kind);
-        if (!b || b->haunts == 0) continue;
+        if (!b) continue;
 
-        const bool named = b->haunt_map[0] != '\0';
-        if (named) {
-            // As a place, not as a filename - the bestiary may say `stones` or
-            // `stones.ggmap` and mean the same map. See place_of.
-            char want[GG_MAP_NAME_MAX];
-            place_of(b->haunt_map, want, sizeof want);
-            if (SDL_strcasecmp(want, g->here) != 0) continue;
-        } else if (!first_world) {
-            continue;
-        }
+        for (int h = 0; h < b->haunts; h++) {
+            const gg_haunt *where = &b->haunt[h];
+            if (where->howmany == 0) continue;
 
-        // A tile of its own: exactly there, or the nearest place it fits.
-        // Somewhere near where the story says beats nowhere at all.
-        if (named && b->haunt_x >= 0) {
-            bool placed = false;
-            for (int r = 0; r < 12 && !placed; r++)
-                for (int oy = -r; oy <= r && !placed; oy++)
-                    for (int ox = -r; ox <= r && !placed; ox++)
-                        if (gg_spawn_foe(g, kind, b->haunt_x + ox,
-                                         b->haunt_y + oy) >= 0)
-                            placed = true;
-            if (!placed)
-                SDL_Log("gigantima: nowhere to put %s at %d,%d in %s", b->id,
-                        b->haunt_x, b->haunt_y, g->here);
-            if (b->haunts <= 1) continue;
-        }
+            // Which place this line is about. A named one has to be the map
+            // underfoot - compared as a *place*, so `stones` and
+            // `stones.ggmap` are the same answer. An unnamed one means a world
+            // the generator built, and nothing else: an authored map holds what
+            // it is written to hold, or Wyndle is a town with brigands in it.
+            const bool named = where->map[0] != '\0';
+            if (named) {
+                char want[GG_MAP_NAME_MAX];
+                place_of(where->map, want, sizeof want);
+                if (SDL_strcasecmp(want, g->here) != 0) continue;
+            } else if (!g->generated) {
+                continue;
+            }
 
-        int placed = 0;
-        for (int tries = 0; tries < 300 && placed < b->haunts; tries++) {
-            const int x = gg_rand_belowi(&g->rng, g->map.w);
-            const int y = gg_rand_belowi(&g->rng, g->map.h);
-            if (!named && gg_dist_cheb(cx, cy, x, y) < 24) continue;
-            const gg_cell *c = gg_map_at_const(&g->map, x, y);
-            if (!c || (c->flags & GG_CELL_INDOORS)) continue;
-            if (gg_spawn_foe(g, kind, x, y) >= 0) placed++;
+            int placed = 0;
+
+            // A tile of its own: exactly there, or the nearest place it fits.
+            // Somewhere near where the story says beats nowhere at all.
+            if (named && where->x >= 0) {
+                bool put = false;
+                for (int r = 0; r < 12 && !put; r++)
+                    for (int oy = -r; oy <= r && !put; oy++)
+                        for (int ox = -r; ox <= r && !put; ox++)
+                            if (gg_spawn_foe(g, kind, where->x + ox,
+                                             where->y + oy) >= 0)
+                                put = true;
+                if (!put)
+                    SDL_Log("gigantima: nowhere to put %s at %d,%d in %s", b->id,
+                            where->x, where->y, g->here);
+                else
+                    placed++;
+            }
+
+            for (int tries = 0; tries < 300 && placed < where->howmany; tries++) {
+                const int x = gg_rand_belowi(&g->rng, g->map.w);
+                const int y = gg_rand_belowi(&g->rng, g->map.h);
+                // Away from the town, in any map that has one, for anything
+                // being scattered rather than placed. This used to apply only
+                // to the creatures with no map named - and the moment the vale
+                // said `haunts 4 vale` out loud, four brigands appeared in the
+                // middle of Britain and killed the people the story needs.
+                if (has_town && where->x < 0 &&
+                    gg_dist_cheb(cx, cy, x, y) < 24) continue;
+                const gg_cell *c = gg_map_at_const(&g->map, x, y);
+                if (!c) continue;
+                // Indoors is off limits only to the wanderers, which should not
+                // turn up in somebody's kitchen. A creature that *names* a map
+                // means to be in it, and the whole of the deep is indoors: the
+                // rule that keeps brigands out of houses kept everything out of
+                // the dungeon.
+                if (!named && (c->flags & GG_CELL_INDOORS)) continue;
+                if (gg_spawn_foe(g, kind, x, y) >= 0) placed++;
+            }
         }
     }
 }
@@ -1510,7 +1534,7 @@ static bool finish_new_game(gg_game *g, const char *profile) {
 
     populate_from_map(g);
 
-    stock_creatures(g, true);
+    stock_creatures(g);
 
     g->mode = GG_MODE_PLAY;
     gg_log(g, "%s. Day %u, %s.", g->map.name, g->day, gg_game_place(g));
@@ -1827,7 +1851,7 @@ bool gg_game_travel(gg_game *g, const char *path, int x, int y) {
             g->actor[g->actors++] = taken.who[i];
     } else {
         populate_from_map(g);
-        stock_creatures(g, false);
+        stock_creatures(g);
     }
     SDL_free(taken.who);
 

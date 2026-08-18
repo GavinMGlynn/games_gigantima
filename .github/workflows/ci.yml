@@ -96,8 +96,8 @@ jobs:
           SDL_RENDER_DRIVER: software
           SDL_AUDIODRIVER: dummy
         run: |
-          ./build/gigantima --map assets/maps/vale.ggmap --profile CIWalk --new \
-            --play --shot-at 0 --screen travel --shot travel.bmp > travel.log 2>&1
+          ./build/gigantima --map assets/maps/vale.map.txt --seed 3 --profile CIWalk \
+            --new --play --shot-at 0 --screen travel --shot travel.bmp > travel.log 2>&1
           cat travel.log
           test -s travel.bmp || { echo "the crossing drew nothing"; exit 1; }
           grep -q "The Standing Stones" travel.log || {
@@ -112,8 +112,8 @@ jobs:
           SDL_RENDER_DRIVER: software
           SDL_AUDIODRIVER: dummy
         run: |
-          ./build/gigantima --map assets/maps/vale.ggmap --profile CIReturn --new \
-            --play --shot-at 0 --screen return --shot return.bmp > return.log 2>&1
+          ./build/gigantima --map assets/maps/vale.map.txt --seed 3 --profile CIReturn \
+            --new --play --shot-at 0 --screen return --shot return.bmp > return.log 2>&1
           cat return.log
           test -s return.bmp || { echo "the return drew nothing"; exit 1; }
           grep -q "found 3 silver still at" return.log || {
@@ -130,8 +130,12 @@ jobs:
           SDL_RENDER_DRIVER: software
           SDL_AUDIODRIVER: dummy
         run: |
-          ./build/gigantima --map assets/maps/vale.ggmap --profile CIEnd --new \
-            --play --shot-at 0 --screen ending --shot ending.bmp > ending.log 2>&1
+          # A seed, because the world's dice come from the clock now and this
+          # has to be the same journey every time. That a *prepared party
+          # usually* wins is measured by the balance test; this proves the
+          # story can be finished at all, deterministically.
+          ./build/gigantima --map assets/maps/vale.map.txt --seed 3 --profile CIEnd \
+            --new --play --shot-at 0 --screen ending --shot ending.bmp > ending.log 2>&1
           cat ending.log
           test -s ending.bmp || { echo "the ending drew nothing"; exit 1; }
           grep -q "Rugar has fallen" ending.log || {
@@ -149,8 +153,8 @@ jobs:
           SDL_RENDER_DRIVER: software
           SDL_AUDIODRIVER: dummy
         run: |
-          ./build/gigantima --map assets/maps/vale.ggmap --profile CIRec --new \
-            --play --shot-at 0 --screen ending --record story.ggreplay \
+          ./build/gigantima --map assets/maps/vale.map.txt --seed 3 --profile CIRec \
+            --new --play --shot-at 0 --screen ending --record story.ggreplay \
             --shot recorded.bmp > record.log 2>&1
           grep -q "recorded" record.log || { cat record.log; exit 1; }
           ./build/gigantima --replay story.ggreplay > replay.log 2>&1

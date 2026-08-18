@@ -5324,13 +5324,18 @@ static void who_lives_in_the_town_comes_out_of_the_book(void) {
     // And with the shipped book, the town is the eight it names.
     gg_game h;
     CHECK(gg_game_new(&h, 72, "Vale"), "new game failed");
+    // Only the people whose home this town *is*. The book holds more than one
+    // town now, and somebody who lives in Wyndle has no business standing in
+    // Britain - which is the whole point of a person naming where they live.
     int shipped = 0, placed = 0;
-    for (int i = 0; i < gg_dialogue_speakers(); i++)
-        if (gg_dialogue_speaker(i)->lives) shipped++;
+    for (int i = 0; i < gg_dialogue_speakers(); i++) {
+        const gg_speaker *d = gg_dialogue_speaker(i);
+        if (d->lives && SDL_strcasecmp(d->home, "Britain") == 0) shipped++;
+    }
     for (int i = 0; i < h.actors; i++)
         if (i != h.player && h.actor[i].active && !h.actor[i].hostile) placed++;
-    CHECK(shipped > 0, "the shipped book names nobody who lives anywhere");
-    CHECK(placed == shipped, "the book names %d residents and the town holds %d",
+    CHECK(shipped > 0, "the shipped book names nobody who lives in Britain");
+    CHECK(placed == shipped, "the book names %d of Britain and the town holds %d",
           shipped, placed);
     gg_game_free(&h);
 }
@@ -5631,14 +5636,24 @@ static void the_vale_is_peopled_by_the_book(void) {
     CHECK(gg_dialogue_load(gg_asset_path("dialogue.txt")), "no book");
 
     gg_game g;
-    CHECK(gg_game_new_from_map(&g, gg_asset_path("maps/vale.ggmap"), "Villager", 4242),
+    CHECK(gg_game_new_from_map(&g, gg_asset_path("maps/vale.map.txt"), "Villager", 4242),
           "the vale would not open");
 
-    // Everybody the book says lives in Britain is here, once.
+    // Everybody the book says lives in Britain is here, once - and nobody who
+    // lives anywhere else is.
     int residents = 0;
     for (int i = 0; i < gg_dialogue_speakers(); i++) {
         const gg_speaker *d = gg_dialogue_speaker(i);
         if (!d || !d->lives) continue;
+        if (SDL_strcasecmp(d->home, "Britain") != 0) {
+            int strangers = 0;
+            for (int k = 0; k < g.actors; k++)
+                if (g.actor[k].active && SDL_strcmp(g.actor[k].name, d->name) == 0)
+                    strangers++;
+            CHECK(strangers == 0, "%s lives in %s and is standing in the vale",
+                  d->name, d->home);
+            continue;
+        }
         residents++;
         int here = 0;
         for (int k = 0; k < g.actors; k++)
@@ -5669,7 +5684,7 @@ static void the_vale_is_peopled_by_the_book(void) {
     // The standing stones have no Britain in them and so have none of Britain's
     // people - the rule that keeps a town from following you over a hill.
     gg_game s;
-    CHECK(gg_game_new_from_map(&s, gg_asset_path("maps/stones.ggmap"), "Walker", 4242),
+    CHECK(gg_game_new_from_map(&s, gg_asset_path("maps/stones.map.txt"), "Walker", 4242),
           "the stones would not open");
     for (int i = 0; i < s.actors; i++)
         if (i != s.player && s.actor[i].active)
@@ -6024,7 +6039,7 @@ static int fights_won_against_rugar(bool prepared) {
     int won = 0;
     for (uint32_t seed = 1; seed <= 20; seed++) {
         gg_game g;
-        CHECK(gg_game_new_from_map(&g, gg_asset_path("maps/vale.ggmap"),
+        CHECK(gg_game_new_from_map(&g, gg_asset_path("maps/vale.map.txt"),
                                    "Fighter", 4242), "the vale would not open");
 
         if (prepared) {
@@ -6061,7 +6076,7 @@ static int fights_won_against_rugar(bool prepared) {
         p->from_x = p->x;
         p->from_y = p->y;
         gg_game_act(&g, GG_ACT_N);
-        CHECK(gg_game_travel(&g, gg_asset_path("maps/stones.ggmap"),
+        CHECK(gg_game_travel(&g, gg_asset_path("maps/stones.map.txt"),
                              g.travel_x, g.travel_y), "the crossing failed");
 
         // A seed apiece, so twenty fights are twenty fights and not one fight
@@ -6190,7 +6205,7 @@ static void a_companion_rises_with_the_avatar(void) {
     CHECK(gg_dialogue_load(gg_asset_path("dialogue.txt")), "no book");
 
     gg_game g;
-    CHECK(gg_game_new_from_map(&g, gg_asset_path("maps/vale.ggmap"), "Party", 4242),
+    CHECK(gg_game_new_from_map(&g, gg_asset_path("maps/vale.map.txt"), "Party", 4242),
           "the vale would not open");
     ask_the_town(&g);
     CHECK(gg_party_size(&g) == 2, "the vale sent %d along", gg_party_size(&g));
@@ -6253,7 +6268,7 @@ static void a_journey_that_fights_its_way_north_arrives_stronger(void) {
     }
 
     gg_game g;
-    CHECK(gg_game_new_from_map(&g, gg_asset_path("maps/vale.ggmap"), "Fighter", 4242),
+    CHECK(gg_game_new_from_map(&g, gg_asset_path("maps/vale.map.txt"), "Fighter", 4242),
           "the vale would not open");
 
     const int start_level = gg_player_const(&g)->level;
@@ -6356,7 +6371,7 @@ static void two_journeys_through_one_map_are_not_the_same_journey(void) {
     // Where trouble is, in a world built from `seed`.
     #define TROUBLE(seed, into) do {                                          \
         gg_game w;                                                            \
-        CHECK(gg_game_new_from_map(&w, gg_asset_path("maps/vale.ggmap"),      \
+        CHECK(gg_game_new_from_map(&w, gg_asset_path("maps/vale.map.txt"),      \
                                    "Rolls", (seed)), "the vale would not open"); \
         (into) = 0;                                                           \
         for (int i = 0; i < w.actors; i++) {                                  \
@@ -6381,7 +6396,7 @@ static void two_journeys_through_one_map_are_not_the_same_journey(void) {
     // And the world remembers which seed it was, so a bug report can name it
     // and a replay can rebuild it.
     gg_game g;
-    CHECK(gg_game_new_from_map(&g, gg_asset_path("maps/vale.ggmap"), "Rolls", 909u),
+    CHECK(gg_game_new_from_map(&g, gg_asset_path("maps/vale.map.txt"), "Rolls", 909u),
           "the vale would not open");
     CHECK(g.map.seed == 909u, "the world says it was seeded %u", g.map.seed);
 
@@ -6424,7 +6439,10 @@ static const char *write_text_map(const char *text) {
 // repository was a blob that a format change would strand. This is the same map
 // as something anybody can read, and the claim is that it is the *same* map.
 static void a_map_written_as_text_is_the_same_map(void) {
-    static const char *const SHIPPED[] = { "maps/vale.ggmap", "maps/stones.ggmap" };
+    static const char *const SHIPPED[] = {
+        "maps/vale.map.txt", "maps/stones.map.txt", "maps/fells.map.txt",
+        "maps/deep.map.txt", "maps/wyndle.map.txt",
+    };
 
     for (size_t i = 0; i < GG_COUNTOF(SHIPPED); i++) {
         gg_map from;
@@ -6591,6 +6609,164 @@ static void a_map_that_does_not_parse_loads_nothing(void) {
     }
 }
 
+// Where a map of that name lives, in either form. The frontend has the same
+// rule; a test that hard-coded one extension would stop noticing the other.
+static const char *gg_asset_path_for_place(const char *place) {
+    static char buf[1024];
+    char bare[GG_MAP_NAME_MAX];
+    SDL_strlcpy(bare, place, sizeof bare);
+    char *dot = SDL_strchr(bare, '.');
+    if (dot) *dot = '\0';
+
+    static const char *const FORMS[] = { "maps/%s.ggmap", "maps/%s.map.txt" };
+    for (size_t f = 0; f < GG_COUNTOF(FORMS); f++) {
+        char rel[GG_MAP_NAME_MAX + 24];
+        SDL_snprintf(rel, sizeof rel, FORMS[f], bare);
+        SDL_strlcpy(buf, gg_asset_path(rel), sizeof buf);
+        SDL_IOStream *io = SDL_IOFromFile(buf, "rb");
+        if (io) { SDL_CloseIO(io); return buf; }
+    }
+    return buf;
+}
+
+// ---------------------------------------------------------------------------
+// The world, as a whole
+// ---------------------------------------------------------------------------
+// Every map that ships, and every way between them. A world of five places is
+// only a world if you can get from any of them to the rest and back, and if
+// each is somewhere rather than an empty field.
+static void every_shipped_map_is_a_place_you_can_walk_to(void) {
+    CHECK(gg_bestiary_load(gg_asset_path("bestiary.txt")), "no bestiary");
+    CHECK(gg_dialogue_load(gg_asset_path("dialogue.txt")), "no book");
+
+    static const char *const PLACES[] = { "vale", "stones", "fells", "deep", "wyndle" };
+
+    // Which places lead where, so the links can be checked both ways round.
+    bool leads[GG_COUNTOF(PLACES)][GG_COUNTOF(PLACES)];
+    SDL_zeroa(leads);
+
+    for (size_t i = 0; i < GG_COUNTOF(PLACES); i++) {
+        gg_game g;
+        CHECK(gg_game_new_from_map(&g, gg_asset_path_for_place(PLACES[i]),
+                                   "Walker", 31u + (uint32_t)i),
+              "%s would not open", PLACES[i]);
+        if (!g.map.cell) continue;
+
+        CHECK(g.map.name[0] != '\0', "%s has no name", PLACES[i]);
+        CHECK(gg_map_walkable(&g.map, g.map.start_x, g.map.start_y),
+              "%s starts inside something at %d,%d", PLACES[i], g.map.start_x,
+              g.map.start_y);
+        CHECK(g.map.regions > 0, "%s is in no region, so it has no name to show",
+              PLACES[i]);
+
+        // Somebody or something is in it: a place with nothing in it is a
+        // field. A town has people; the country has trouble.
+        int people = 0, trouble = 0;
+        for (int k = 0; k < g.actors; k++) {
+            if (k == g.player || !g.actor[k].active) continue;
+            if (g.actor[k].hostile) trouble++;
+            else people++;
+        }
+        CHECK(people + trouble > 0, "%s holds nobody at all", PLACES[i]);
+
+        // Every way out leads somewhere that exists, and lands on ground you
+        // can stand on.
+        CHECK(g.map.portals > 0, "%s has no way out of it", PLACES[i]);
+        for (int k = 0; k < g.map.portals; k++) {
+            const gg_portal *w = &g.map.portal[k];
+            CHECK(gg_map_walkable(&g.map, w->x, w->y),
+                  "%s has a way out at %d,%d that cannot be stood on",
+                  PLACES[i], w->x, w->y);
+
+            gg_map to;
+            SDL_zero(to);
+            const bool there = gg_map_load(&to, gg_asset_path_for_place(w->to));
+            CHECK(there, "%s leads to %s, which is not a map that ships",
+                  PLACES[i], w->to);
+            if (!there) continue;
+            CHECK(gg_map_walkable(&to, w->to_x, w->to_y),
+                  "%s lands in %s at %d,%d, which cannot be stood on",
+                  PLACES[i], w->to, w->to_x, w->to_y);
+            gg_map_free(&to);
+
+            for (size_t t = 0; t < GG_COUNTOF(PLACES); t++)
+                if (SDL_strcasecmp(PLACES[t], w->to) == 0) leads[i][t] = true;
+        }
+        gg_game_free(&g);
+    }
+
+    // Both ways round. A door you can only go through one way is a trap, and
+    // the one time this game does that on purpose it will say so here.
+    for (size_t i = 0; i < GG_COUNTOF(PLACES); i++)
+        for (size_t k = 0; k < GG_COUNTOF(PLACES); k++)
+            if (leads[i][k])
+                CHECK(leads[k][i], "%s leads to %s and %s does not lead back",
+                      PLACES[i], PLACES[k], PLACES[k]);
+
+    // And the whole of it hangs together: every place reachable from the vale,
+    // walking only through ways out.
+    bool seen[GG_COUNTOF(PLACES)];
+    SDL_zeroa(seen);
+    seen[0] = true;
+    for (size_t pass = 0; pass < GG_COUNTOF(PLACES); pass++)
+        for (size_t i = 0; i < GG_COUNTOF(PLACES); i++)
+            if (seen[i])
+                for (size_t k = 0; k < GG_COUNTOF(PLACES); k++)
+                    if (leads[i][k]) seen[k] = true;
+    for (size_t i = 0; i < GG_COUNTOF(PLACES); i++)
+        CHECK(seen[i], "%s cannot be reached from the vale at all", PLACES[i]);
+
+    restore_bestiary();
+    restore_dialogue();
+}
+
+// The country is stocked with what the bestiary says haunts it, and a town is
+// not stocked with anything that would eat the townsfolk.
+static void each_place_holds_what_the_bestiary_says_it_does(void) {
+    CHECK(gg_bestiary_load(gg_asset_path("bestiary.txt")), "no bestiary");
+    CHECK(gg_dialogue_load(gg_asset_path("dialogue.txt")), "no book");
+
+    static const struct { const char *place; const char *kind; bool people; }
+    WANT[] = {
+        { "fells",  "HILLMAN", false },
+        { "deep",   "LURKER",  false },
+        { "wyndle", nullptr,   true  },
+    };
+
+    for (size_t i = 0; i < GG_COUNTOF(WANT); i++) {
+        gg_game g;
+        CHECK(gg_game_new_from_map(&g, gg_asset_path_for_place(WANT[i].place),
+                                   "Stocked", 55u), "%s would not open",
+              WANT[i].place);
+        if (!g.map.cell) continue;
+
+        int of_kind = 0, people = 0, hostile = 0;
+        for (int k = 0; k < g.actors; k++) {
+            if (k == g.player || !g.actor[k].active) continue;
+            if (g.actor[k].hostile) hostile++; else people++;
+            const gg_beast *b = gg_bestiary_at(g.actor[k].beast);
+            if (WANT[i].kind && b && g.actor[k].hostile &&
+                SDL_strcasecmp(b->id, WANT[i].kind) == 0) of_kind++;
+        }
+
+        if (WANT[i].kind) {
+            CHECK(of_kind > 0, "%s holds none of what the bestiary says haunts "
+                  "it (%s)", WANT[i].place, WANT[i].kind);
+            CHECK(people == 0, "%s holds %d people, and nobody lives there",
+                  WANT[i].place, people);
+        }
+        if (WANT[i].people) {
+            CHECK(people > 0, "%s is a town with nobody in it", WANT[i].place);
+            CHECK(hostile == 0, "%s is a town with %d hostiles standing in it",
+                  WANT[i].place, hostile);
+        }
+        gg_game_free(&g);
+    }
+
+    restore_bestiary();
+    restore_dialogue();
+}
+
 // The plan's own verification for the storyline: playable start to finish.
 //
 // Every step is the game's own - words are learned by asking, the crossing is
@@ -6604,7 +6780,7 @@ static void the_whole_story_can_be_played_from_start_to_finish(void) {
     CHECK(gg_bestiary_load(gg_asset_path("bestiary.txt")), "no bestiary");
 
     gg_game g;
-    CHECK(gg_game_new_from_map(&g, gg_asset_path("maps/vale.ggmap"), "Hero", 4242),
+    CHECK(gg_game_new_from_map(&g, gg_asset_path("maps/vale.map.txt"), "Hero", 4242),
           "the vale would not open");
 
     const int caravan = gg_quest_find("CARAVAN");
@@ -6647,7 +6823,7 @@ static void the_whole_story_can_be_played_from_start_to_finish(void) {
     p->from_y = p->y;
     gg_game_act(&g, GG_ACT_N);
     CHECK(g.want_travel, "the way out of the vale asked for nothing");
-    CHECK(gg_game_travel(&g, gg_asset_path("maps/stones.ggmap"),
+    CHECK(gg_game_travel(&g, gg_asset_path("maps/stones.map.txt"),
                          g.travel_x, g.travel_y), "the crossing failed");
     gg_quests_tick(&g);
     CHECK(gg_flag(&g, "stood_among_the_stones"),
@@ -6716,7 +6892,7 @@ static void the_whole_story_can_be_played_from_start_to_finish(void) {
     p->from_y = p->y;
     gg_game_act(&g, GG_ACT_S);
     CHECK(g.want_travel, "the way back asked for nothing");
-    CHECK(gg_game_travel(&g, gg_asset_path("maps/vale.ggmap"),
+    CHECK(gg_game_travel(&g, gg_asset_path("maps/vale.map.txt"),
                          g.travel_x, g.travel_y), "the way back failed");
     gg_quests_tick(&g);
 
@@ -6948,6 +7124,12 @@ static void a_map_you_leave_is_as_you_left_it(void) {
         g.actor[aldith].hp = 7;
         g.actor[aldith].schedn = 0;     // so nothing walks them off again
     }
+
+    // Somebody to leave alive, put there on purpose. An authored map holds
+    // what it is written to hold - the wandering creatures belong to worlds the
+    // generator builds - so a test that wants a survivor has to place one.
+    const int spared = gg_spawn_named(&g, "BRIGAND", 17, 9);
+    CHECK(spared > 0, "no second brigand could be placed");
 
     // How many are still on their feet here, so the return can be asked for
     // the same number: what this remembers is not "everybody" and not
@@ -7376,6 +7558,8 @@ int main(void) {
 
     RUN(walking_between_two_maps_takes_everything_with_you);
     RUN(a_party_that_walked_the_road_can_beat_the_man_at_the_end_of_it);
+    RUN(every_shipped_map_is_a_place_you_can_walk_to);
+    RUN(each_place_holds_what_the_bestiary_says_it_does);
     RUN(a_map_written_as_text_is_the_same_map);
     RUN(a_map_written_by_hand_is_playable);
     RUN(a_map_that_does_not_parse_loads_nothing);

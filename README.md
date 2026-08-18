@@ -200,8 +200,8 @@ gigantima_editor [--open FILE.ggmap] [--size W H] [--tool N] [--shot FILE.bmp]
 
 A map it writes is played with `gigantima --map FILE.ggmap`, and nothing about
 the game had to change for that to be true. Maps link to each other with ways
-out — a tile, a map, and where to arrive — so `assets/maps/vale.ggmap` and
-`assets/maps/stones.ggmap` are one world with a road between them. Everything
+out — a tile, a map, and where to arrive — so `assets/maps/vale.map.txt` and
+`assets/maps/stones.map.txt` are one world with a road between them. Everything
 about the party crosses with you; a map you leave, though, forgets what you did
 there.
 

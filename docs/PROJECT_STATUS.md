@@ -675,7 +675,7 @@ scenery, and the loader refuses one — but a default of 1 made that check
 unreachable, which the malformed-bestiary test caught.
 
 **Where it is found is a line in the same file.** `haunts 4` is how many of it
-a world holds, scattered where there is room; `haunts 1 stones.ggmap 24 22` puts
+a world holds, scattered where there is room; `haunts 1 stones 24 22` puts
 one of it in a named map on a named tile, the first time that map is walked
 into. That is how the storyline's villain stands in the middle of the ring
 without a line of C knowing where he is.
@@ -701,7 +701,7 @@ changes, and the whole of a quest's state is one number: how far along it is.
 **The conditions are things the world already knows how to answer** — a word
 you have learned, something you are carrying, a flag another stage raised, how
 many have fallen to the party, how many walk with you, and where you are
-standing (`when at stones.ggmap 24 22 6`, which is a map and optionally a spot
+standing (`when at stones 24 22 6`, which is a map and optionally a spot
 in it). Nothing here reached into
 the simulation to invent new state, because a condition that needs its own
 bookkeeping is a condition that can go out of step with the world. The one
@@ -762,7 +762,7 @@ mechanisms were added to make it sayable in those files, and nothing else in the
 game knows the story exists.
 
 **Where a creature is found is in the bestiary.** `haunts 4` is how many of it a
-world holds, put down where there is room; `haunts 1 stones.ggmap 24 22` is one
+world holds, put down where there is room; `haunts 1 stones 24 22` is one
 of it, in that map, on that tile, the first time the map is walked into. Stocking
 happens once per map per world — a map walked back into is remembered, not
 re-read — so the villain is never there twice.
@@ -905,6 +905,51 @@ breaking the rule they pin — making every speed equal, clearing line of sight,
 dropping no loot, and putting townsfolk on the other side. Plus a `--shot` frame
 of an exchange of blows, now taken in CI.*
 
+### The world
+
+Five places, all of them shipped as text in `assets/maps/`:
+
+| | |
+| --- | --- |
+| `vale` | The Vale of Gigantima — Britain, its eight people, and the roads north and east |
+| `stones` | The Standing Stones — the ring at the end of the north road |
+| `fells` | The Fells — rock, a valley the road winds up, and a hole in the ground at the head of it |
+| `deep` | The Deep — rooms and corridors under the fells, **indoors throughout**, so it is dark |
+| `wyndle` | Wyndle — a second town at the east end of the road, with four people of its own |
+
+They are one seamless scale with no load screens: what separates them is a way
+out, a tile that names a place and where in it you arrive. Every way out leads
+back, and all five are reachable from the vale on foot.
+
+**A town holds its own people.** The book's residents name where they live, so
+Britain's eight are in the vale and Wyndle's four are in Wyndle, and neither
+turns up in the other. **The country holds what the bestiary says.** Hill men in
+the fells — slow, heavy, and they do not run, which makes them a different
+problem from a brigand, who breaks off when it is going badly — and lurkers in
+the deep, quick and thin and noticing from a long way off in the dark.
+
+Two rules the new maps forced out into the open:
+
+- **A creature may name several places.** A brigand is in the vale *and* in
+  whatever the generator builds, so `haunts` is a list. A map that no line names
+  holds none of it — which is what stops a town being stocked with the things
+  that would eat it. Before this, "unplaced" meant "wherever the game started",
+  and starting in Wyndle put four brigands in it.
+- **Indoors is off limits only to the wanderers.** That rule keeps brigands out
+  of somebody's kitchen; the whole of the deep is indoors, so it kept everything
+  out of the dungeon. A creature that names a map means to be in it.
+- **Stay-out-of-town follows the town, not the naming.** The exclusion used to
+  apply only to creatures with no map named, so the moment the vale said
+  `haunts 4 vale` out loud, four brigands appeared in the middle of Britain and
+  killed the people the story needs.
+
+*Verification: `every_shipped_map_is_a_place_you_can_walk_to` — every map named,
+starting somewhere you can stand, holding somebody, with every way out leading
+to a map that exists and landing somewhere you can stand, every link mutual, and
+all five reachable from the vale. `each_place_holds_what_the_bestiary_says_it_does`
+requires the fells to hold hill men, the deep to hold lurkers, and Wyndle to
+hold people and nothing hostile. Plus a frame of each place stood in.*
+
 ### A map as text
 
 `.ggmap` is what the editor writes, and it was the only form a map could have.
@@ -933,7 +978,7 @@ Three decisions the format turns on:
   Standing Stones" — and anything after it would be eaten.
 
 **A map is a place, not a file.** `here` is the file's name without its
-extension, so `vale.ggmap` and `vale.map.txt` are both `vale`; the story says
+extension, so `vale.map.txt` and `vale.map.txt` are both `vale`; the story says
 `when at vale`, the bestiary says `haunts 1 stones 24 22`, and which file that
 is is the frontend's business. Without it, playing the text form of the shipped
 vale left the storyline unable to notice you had been anywhere.
@@ -969,7 +1014,7 @@ comes from is not its business. The world keeps it — `map.seed` is the seed of
 the *world*, not of the terrain — so a save carries it, the debug window shows
 it, and a bug report can name it.
 
-Two consequences worth stating. `--seed N --map vale.ggmap` now reproduces a
+Two consequences worth stating. `--seed N --map vale.map.txt` now reproduces a
 journey through the vale exactly, which it never did. And a **replay of a map
 game must carry the seed**: the terrain comes off the disk but everything
 stocked in it and every roll after that comes from the seed, so a recording
@@ -1464,7 +1509,7 @@ can be a file that somebody reads, diffs, and trims by hand to the shortest
 sequence that still breaks.
 
     # gigantima replay
-    map vale.ggmap
+    map vale
     profile Avatar
     act N
     act TALK
@@ -1528,7 +1573,7 @@ Named plainly, because a reader should not have to infer absence:
 | | |
 | --- | --- |
 | The story beyond the first | one storyline, playable start to finish, and three small quests beside it. What is missing is a second one |
-| Combat depth | blows, initiative, reach, loot and fleeing exist; there are no skills, no criticals and three kinds of foe |
+| Combat depth | blows, initiative, reach, loot and fleeing exist; there are no skills and no criticals |
 | Magic beyond three effects | light, heal and harm. No summoning, no travel, no enchantment, no mana - reagents are the whole cost |
 | Arms | a hammer, a throwing stone and a shield. No swords: this art set has none that stand on their own |
 | Trade | nothing. Items carry a value in copper, and no one buys or sells |

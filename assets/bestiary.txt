@@ -16,10 +16,14 @@
 #     flees N            health below which it would rather be elsewhere
 #     loot ID MIN MAX PC  a line of its loot table, PC per cent of the time
 #     worth N            what killing it teaches the party; defaults to its health
-#     haunts N           how many of it a world holds, put down where there is room
-#     haunts N MAP       how many that map holds, the first time it is walked into
-#     haunts N MAP X Y   and standing on that tile - which is how a story places
+#     haunts N           how many of it a world the *generator* builds holds
+#     haunts N PLACE     how many that map holds, the first time it is walked into
+#     haunts N PLACE X Y and standing on that tile - which is how a story places
 #                        its villain without a line of C knowing where he is
+#
+# A creature may have several `haunts` lines: a brigand is in the vale and in a
+# generated world both. A map that no line names has none of it, which is what
+# keeps a town from being stocked with the things that would eat it.
 #
 # This art set has no monsters in it at all - it is people, head to foot - so
 # the vale's trouble is people. A caravan that never arrived is better served
@@ -47,6 +51,7 @@ creature BRIGAND
   loot GOLD 6 14 100
   loot HAMMER 1 1 50
   haunts 4
+  haunts 4 vale
 
 creature OUTLAW
   name an outlaw
@@ -62,6 +67,7 @@ creature OUTLAW
   loot STONE 2 4 100
   loot SHIELD 1 1 40
   haunts 2
+  haunts 2 vale
 
 # The one that throws. Slower and softer than the others, and dangerous at a
 # distance rather than beside you - which is what a reach above one buys.
@@ -79,6 +85,7 @@ creature SLINGER
   loot STONE 3 6 100
   loot GOLD 2 6 50
   haunts 2
+  haunts 2 vale
 
 # The one the story is about. He is not a wandering brigand: he is at the
 # standing stones, in the middle of the ring, and the caravan's silver is on
@@ -98,3 +105,41 @@ creature CHIEF
   loot SILVER 3 3 100
   loot GOLD 20 40 100
   haunts 1 stones 24 22
+
+# The fells are not empty. Hill folk who fight where they stand: slow, heavy,
+# and they do not run - which makes them a different problem from a brigand,
+# who will break off when it is going badly.
+creature HILLMAN
+  name a hill man
+  art OUTLAW
+  health 22
+  level 2
+  speed 90
+  damage 5
+  guard 2
+  reach 1
+  notice 12
+  flees 0
+  worth 30
+  loot GOLD 8 20 100
+  loot BLOODMOSS 1 2 40
+  haunts 5 fells
+
+# And what is under them. Quick, thin, and it notices from a long way off in the
+# dark - the opposite trade to a hill man, and the reason to bring a light and
+# somebody to hold it.
+creature LURKER
+  name something in the dark
+  art BRIGAND
+  health 12
+  level 2
+  speed 170
+  damage 3
+  guard 0
+  reach 1
+  notice 14
+  flees 3
+  worth 25
+  loot SILVER 1 1 30
+  loot NIGHTSHADE 1 2 50
+  haunts 7 deep

@@ -25,9 +25,11 @@
 # records absolute positions instead, and a map that names somebody itself keeps
 # its own version of them rather than the book's.
 #
-# Everyone here lives in Britain, which is the region the generator's town is
-# called and the region the vale ships with - so these eight are in both. A map
-# with no region of that name has never heard of them.
+# The first eight live in Britain, which is the region the generator's town is
+# called and the region the vale ships with - so those eight are in both. The
+# four after them live in Wyndle, down the road east, and appear only in a map
+# that has a region of that name. A map with neither has never heard of any of
+# them.
 #
 # Everyone begins knowing NAME and JOB and nothing else. Every other word in
 # this file has to be taught by some topic, or nobody can ever ask it - which is
@@ -238,3 +240,87 @@ topic caravan
 topic light
   say A light with no fire? Now that IS a riddle, and I do not care for it.
 bye Ha! Off with thee.
+
+# ---------------------------------------------------------------------------
+# Wyndle, at the east end of the road. A smaller place than Britain, and its
+# people know the country the road runs into rather than the vale's troubles.
+# ---------------------------------------------------------------------------
+
+person Marrow
+art ELDER
+home Wyndle
+at 07 -4 -6
+at 12 0 0
+at 18 4 -6
+at 22 -4 6
+greet Wyndle, traveller. Smaller than Britain and quieter, which suits us.
+topic name
+  say Marrow. I have kept the mill since my father could not.
+topic job mill
+  say Corn in, flour out, and the vale's bread is half of it.
+  say Or it was. Ask Corin what comes down the road now.
+  teach corin
+topic corin
+  say He watches the east road, and he has been watching it hard of late.
+topic fells
+  say Rock and wind, and a road that goes up into it and does not come back.
+  say My grandfather said there were doors in the hills. I never saw one.
+  teach doors
+bye Mind the road, and the weather on it.
+
+person Corin
+art GUARD
+home Wyndle
+at 06 6 4
+at 11 8 -2
+at 17 0 8
+at 23 -8 4
+greet I watch this road. Lately it watches back.
+topic name
+  say Corin. Wyndle's watch, such as it is - one man and a good view.
+topic job watch road
+  say Nothing comes down out of the fells now. Not carts, not folk, not word.
+  say The last man who went up came back changed and would not say how.
+  teach fells
+topic fells
+  say Up past the standing stones, where the road turns to rock.
+  say There is a hollow at the head of it with a hole in the ground.
+  teach deep
+topic deep doors
+  say A way under the hills. Old work, and not ours.
+  say If thou goest down there, go with a light and go with company.
+bye Keep to the road.
+
+person Sable
+art MERCHANT
+home Wyndle
+at 08 -6 0
+at 13 -2 2
+at 19 -6 0
+at 01 -6 -4
+greet Buying or selling? I do both, badly, and I am the only one here.
+topic name
+  say Sable. My father called me that and I have not improved on it.
+topic job trade
+  say Whatever comes through. Which is why I am poorer than I was.
+topic caravan
+  say Thy caravan? Half of what it carried was mine, and I have seen none of it.
+bye Come back when thou hast something worth my while.
+
+person Bryn
+art HEALER
+home Wyndle
+at 07 4 6
+at 12 6 2
+at 20 4 6
+at 02 4 6
+greet Sit if thou art hurt. Stand if thou art only tired.
+topic name
+  say Bryn. I keep what herbs grow this side of the hills.
+topic job herbs healing
+  say I mend what walks in, same as Katrina does in the vale.
+  say Take a phial. Thou art going up there, and everybody does.
+  gives POTION 1
+topic deep
+  say Cold and dark and older than the mill. Take two lights, not one.
+bye Go carefully.

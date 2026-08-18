@@ -10,10 +10,22 @@
 
 #include "core/gg_common.h"
 #include "core/gg_ids.h"
+#include "core/gg_world.h"
 
 #define GG_BEASTS_MAX     16
+// How many places one kind of creature may be found in.
+#define GG_BEAST_HAUNTS_MAX 4
 #define GG_BEAST_LOOT_MAX  3
 #define GG_BEAST_NAME_MAX 24
+
+// One place a creature is found, and how many of it are there. An empty `map`
+// means "any world the generator builds", which is the only place that is not a
+// map with a name.
+typedef struct {
+    char    map[GG_MAP_NAME_MAX];
+    int16_t x, y;                     // -1,-1 unless a tile was named
+    uint8_t howmany;
+} gg_haunt;
 
 // One line of a loot table: some of a thing, some of the time.
 typedef struct {
@@ -42,20 +54,20 @@ typedef struct {
     gg_loot loot[GG_BEAST_LOOT_MAX];
     int     loots;
 
-    // Where it is found. `haunts` alone is how many of it a world holds, put
-    // down wherever there is room; naming a map puts them in that map instead,
-    // the first time it is walked into; naming a tile as well puts them there.
-    // A story's villain stands where the story says, and nothing in C knows
-    // where that is.
     // What killing it teaches, in experience. Defaults to its health, which is
     // the plainest rule there is - what a thing can take is what it is worth -
     // and a line in the file overrides it for anything the rule flatters or
     // cheats.
     uint16_t worth;
 
-    uint8_t haunts;
-    char    haunt_map[GG_MAP_NAME_MAX];
-    int16_t haunt_x, haunt_y;           // -1,-1 when no tile is named
+    // Where it is found, and there may be several answers: a brigand is in the
+    // vale *and* in whatever the generator builds, and a map that names none of
+    // them has none of it. `haunts N` alone means a generated world; `haunts N
+    // PLACE` means that map, the first time it is walked into; `haunts N PLACE
+    // X Y` puts them on that tile, which is how a story's villain stands where
+    // the story says with nothing in C knowing where that is.
+    gg_haunt haunt[GG_BEAST_HAUNTS_MAX];
+    int      haunts;
 } gg_beast;
 
 // All or nothing, and every complaint names the file and the line.

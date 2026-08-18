@@ -93,8 +93,8 @@ Then go north. The road out of the vale is at the top of the map and it is not
 safe — what you take off the brigands on it is what makes the man at the end of
 it beatable. Bring what he took back to Iolo and the story ends.
 
-**Take somebody with you.** Rugar beats a party that walked up alone almost
-every time, and loses to one that came prepared 17 times in 20.
+**Take somebody with you.** Rugar beats a party that walked up alone every time
+out of twenty, and loses to one that came prepared fifteen times in twenty.
 
 ---
 
@@ -177,12 +177,15 @@ The world is one seamless scale — towns and wilderness are the same grid, with
 no load screen and no scale change. What separates one map from another is a
 **way out**: a tile that says which map it leads to and where in it you arrive.
 
-Two ship with the game, in `assets/maps/`:
+Five ship with the game, in `assets/maps/`, all of them as text you can read:
 
 | | |
 | --- | --- |
-| `vale.ggmap` | The Vale of Gigantima — Britain, its houses, the eight townsfolk, and the road north. Where a new journey begins. |
-| `stones.ggmap` | The Standing Stones — the ring at the end of the north road, and what waits in it. |
+| `vale.map.txt` | The Vale of Gigantima — Britain, its houses, the eight townsfolk, and the roads north and east. Where a new journey begins. |
+| `stones.map.txt` | The Standing Stones — the ring at the end of the north road, and what waits in it. |
+| `fells.map.txt` | The Fells — rock and wind, a valley the road winds up, and a hole in the ground at the head of it. |
+| `deep.map.txt` | The Deep — rooms and corridors under the fells. **It is dark down there**; take two torches, not one. |
+| `wyndle.map.txt` | Wyndle — a second town at the east end of the road, with four people who know the country rather than the vale. |
 
 A map you leave is kept as you left it: what you took off its floor stays taken,
 who fell on it stays fallen, and who is still standing is where you last saw
@@ -191,7 +194,7 @@ them. Up to twelve are held at once, and they are carried in your save.
 To start a journey in a particular map:
 
 ```sh
-./gigantima --map assets/maps/vale.ggmap --new --play
+./gigantima --map assets/maps/vale.map.txt --new --play
 ```
 
 A map is looked for in `assets/maps/` first and then beside your saved
@@ -207,7 +210,7 @@ content is never a code change.
 
 ```sh
 ./gigantima_editor                       # a blank map
-./gigantima_editor --open assets/maps/vale.ggmap
+./gigantima_editor --open assets/maps/vale.map.txt
 ./gigantima_editor --size 96 96          # a new map of that size
 ```
 
@@ -232,7 +235,7 @@ form, so `--map mymap.map.txt` works, and the editor writes text when the name
 ends in `.map.txt`. To convert one:
 
 ```sh
-./gigantima_editor --open assets/maps/vale.ggmap --export vale.map.txt
+./gigantima_editor --open assets/maps/vale.map.txt --export vale.map.txt
 ```
 
 Saved maps go beside your journeys (see below) as `authored.ggmap` unless you

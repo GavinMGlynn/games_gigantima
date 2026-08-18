@@ -320,10 +320,15 @@ here. Nothing is on this list that is not already admitted to somewhere.
       written by hand is playable, nine malformed ones are refused with the line
       they are wrong on, and the whole storyline plays through in a world whose
       maps are text and nothing else.*
-- [ ] **More world.** More than two maps: the fells the road runs into, a place
-      under the ground, and a second town that is not Britain.
-      *Verification: each is walkable, linked, stocked and named, and the
-      journey between them is one seamless scale with no load screen.*
+- [x] **More world.** Five places rather than two: the vale, the standing
+      stones, **the fells** the north road runs up into, **the deep** under
+      them — dark, so a torch is the difference between seeing and not — and
+      **Wyndle**, a second town down the east road with four people of its own.
+      All five ship as text, which is what made authoring them possible.
+      *Verification: every shipped map opens, is named, starts on ground you can
+      stand on, holds somebody or something, and every way out of it leads to a
+      map that exists, lands somewhere you can stand, and leads back. All five
+      are reachable from the vale by walking.*
 - [ ] **A second storyline**, on that world, interlocking with the first through
       flags rather than sitting beside it.
       *Verification: playable start to finish, and finishing one changes what
