@@ -80,12 +80,34 @@ bool gg_map_walkable(const gg_map *m, int x, int y) {
 }
 
 int gg_map_region_at(const gg_map *m, int x, int y) {
+    const gg_cell *c = gg_map_at_const(m, x, y);
+    if (!c || c->region == 0) return -1;
+    const int i = (int)c->region - 1;
+    // Checked rather than trusted: the byte comes off a file, and an index past
+    // the end would read a region that is not there.
+    return i < m->regions ? i : -1;
+}
+
+void gg_map_regions_stamp(gg_map *m) {
+    const size_t cells = (size_t)m->w * (size_t)m->h;
+    for (size_t i = 0; i < cells; i++) m->cell[i].region = 0;
+
     for (int i = 0; i < m->regions; i++) {
         const gg_region *r = &m->region[i];
-        if (x >= r->x && y >= r->y && x < r->x + r->w && y < r->y + r->h)
-            return i;
+        for (int y = r->y; y < r->y + r->h; y++)
+            for (int x = r->x; x < r->x + r->w; x++) {
+                gg_cell *c = gg_map_at(m, x, y);
+                if (c) c->region = (uint8_t)(i + 1);
+            }
     }
-    return -1;
+}
+
+bool gg_map_region_set(gg_map *m, int x, int y, int region) {
+    if (region >= m->regions) return false;
+    gg_cell *c = gg_map_at(m, x, y);
+    if (!c) return false;
+    c->region = (uint8_t)(region < 0 ? 0 : region + 1);
+    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -728,6 +750,8 @@ bool gg_map_generate(gg_map *m, int w, int h, uint32_t seed) {
         if (gg_map_place_prop(m, m->start_x + r, m->start_y + 1, GG_PROP_CAMPFIRE))
             break;
     }
+    // The boxes are drawn; this is what puts the cells in them.
+    gg_map_regions_stamp(m);
     return true;
 }
 
@@ -962,6 +986,8 @@ bool gg_map_read(gg_map *m, SDL_IOStream *io) {
             m->cell[i].terrain = GG_TILE_GRASS;
         if (m->cell[i].prop > GG_PROP_COUNT)
             m->cell[i].prop = GG_NO_PROP;
+        // A cell claiming a region this map does not have belongs to none.
+        if ((int)m->cell[i].region > m->regions) m->cell[i].region = 0;
     }
     return true;
 }

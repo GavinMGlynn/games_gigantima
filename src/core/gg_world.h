@@ -28,7 +28,16 @@ typedef struct {
     uint8_t terrain;   // gg_tile_id
     uint8_t prop;      // gg_prop_id + 1, or GG_NO_PROP
     uint8_t flags;     // GG_CELL_*
-    uint8_t region;    // region index, for naming and for NPC home lookup
+    // Which place this cell belongs to: a region index **plus one**, so zero is
+    // "nowhere in particular" and a freshly cleared map is not all Britain.
+    //
+    // This is the authority, not the bounding boxes. It was written and read by
+    // nothing for a long while, and the choice was to use it or drop it - and
+    // using it is what lets a place be a *shape*. A town is not a rectangle,
+    // and a lookup that walks a list of boxes cannot say otherwise however the
+    // boxes are arranged. The box survives for what a box is good at: roughly
+    // where a place is, which is what an NPC's hours are offsets from.
+    uint8_t region;
 } gg_cell;
 
 #define GG_REGION_MAX   32
@@ -157,9 +166,23 @@ static inline const gg_cell *gg_map_at_const(const gg_map *m, int x, int y) {
 // the map edge a wall without a border of blocking tiles.
 bool gg_map_walkable(const gg_map *m, int x, int y);
 
-// Which region contains this tile, or -1. Linear over regions on purpose:
-// there are at most GG_REGION_MAX of them and this is not on a hot path.
+// Which region contains this tile, or -1. One byte on the cell, so a place can
+// be any shape and the answer costs nothing - the HUD asks this every frame.
 int gg_map_region_at(const gg_map *m, int x, int y);
+
+// Puts every cell inside a region's box into that region, and every cell in no
+// box into none. The boxes are what the editor drags out and what a text map
+// writes, so this is how they become cells - called after a map is generated,
+// after one is read, and by the editor whenever a region changes.
+//
+// Later regions win where two boxes overlap, which is the same rule the old
+// list walk had backwards and the only one that lets a place be carved out of
+// another.
+void gg_map_regions_stamp(gg_map *m);
+
+// Adds or removes one cell from a region, which is what makes a place a shape
+// rather than a box. False if the index is not a region this map has.
+bool gg_map_region_set(gg_map *m, int x, int y, int region);
 
 // --- placing props ---------------------------------------------------------
 // The tile range a prop occupies if anchored at (x, y). The anchor is the
@@ -212,9 +235,15 @@ bool gg_map_generate(gg_map *m, int w, int h, uint32_t seed);
 // test, and a reader that guesses at a missing section is worse than one that
 // says no.
 //
-// A map written as *text* is immune to this - it names its terrain rather than
-// numbering it - which is one more reason the shipped maps are text.
-#define GG_MAP_VERSION 5
+// Version 6 is the region byte meaning something. It was written and read by
+// nothing, so a version 5 file carries whatever happened to be in it - and it
+// is now the authority on which place a cell is in, which would make every
+// tile of an older map belong nowhere.
+//
+// A map written as *text* is immune to all of this - it names its terrain
+// rather than numbering it, and says which place each tile is in only when the
+// boxes do not - which is one more reason the shipped maps are text.
+#define GG_MAP_VERSION 6
 
 bool gg_map_save(const gg_map *m, const char *path);
 bool gg_map_load(gg_map *m, const char *path);

@@ -276,17 +276,20 @@ and **LeakSanitizer** catches, at 1.9 MB in 230 allocations. Plus `--ask` and a
 
 ### Map file format
 
-Version 5, little-endian, fixed-width. Round-trips byte for byte — the cells,
+Version 6, little-endian, fixed-width. Round-trips byte for byte — the cells,
 the things lying on the ground, and the people with their days. A file that is not a map, is truncated, is
 a different version, or claims implausible dimensions is rejected with a named
 message and without leaking the partial allocation. Terrain and prop ids are
 clamped on load, and an item id past the table or a pile lying off the map is
 refused outright, so a corrupt file cannot index off the end of anything.
 
-Version 2 added the ground items, version 3 the people, 4 the ways out, and 5 is
-the bridge — a new terrain in the middle of the enum shifts every id after it,
-so a version 4 file read as a version 5 one would turn every wooden floor into a
-plank deck over nothing. No version reads another. Nothing outside a test ever
+Version 2 added the ground items, 3 the people, 4 the ways out, 5 the bridge and
+6 the region byte meaning something. The last two are both cases of a byte
+changing meaning rather than a section being added: a new terrain in the middle
+of the enum shifts every id after it, so a version 4 file read as a version 5
+one would turn every wooden floor into a plank deck over nothing; and a version
+5 file's region bytes are whatever happened to be in them, which as of 6 is the
+authority on which place a tile is in. No version reads another. Nothing outside a test ever
 wrote an older one, and a reader that guesses at a missing section is worse than
 one that says no. **A map written as text is immune to all of this**: it names
 its terrain rather than numbering it, which is one more reason the shipped maps
@@ -526,6 +529,41 @@ the pathfinder, whose node budget answers "no" for its own reasons. The
 deep-water invariant is checked over twenty-five worlds by
 `deep_water_is_never_adjacent_to_land`, which is what caught the shelving. Plus
 a `--shot` of the crossing.*
+
+### A place is a shape
+
+The map's `region` byte sat in every cell, written by nothing and read by
+nothing: places were a list of boxes, and `gg_map_region_at` walked it. The
+choice was to use the byte or drop it from the format, and using it is what
+lets a place be a **shape** — a town built around a lake is not a rectangle, and
+a lookup over boxes cannot say otherwise however the boxes are arranged.
+
+The byte is a region index **plus one**, so zero is "nowhere in particular" and
+a cleared map is not all Britain. It is the authority; the box survives for what
+a box is good at, which is roughly where a place is — an NPC's hours are offsets
+from its centre. `gg_map_regions_stamp` turns boxes into cells and is called
+after a map is generated and after a text one is read; the binary form carries
+the cells whole and is trusted.
+
+**The text form writes a picture of which place each tile is in, and only when
+that says something the boxes do not.** A map of plain rectangles stays exactly
+as short as it was; a carved one grows a second picture, `rrow` beside `row`,
+one character per tile indexing the regions listed above it. A second full-size
+picture in every file to repeat what the line above already said would be noise.
+
+Removing a place closes the list **in order** rather than moving the last one
+into the hole, because every cell carries an index: the swap happens to come out
+right with two regions and renames a town with four.
+
+*Verification: `a_place_can_be_a_shape_and_not_only_a_box` — a town drawn as a
+box, a bite carved out of the middle of it, and the game asked where it is
+standing on both sides of the hole; then the same map through both file forms,
+with a check that the text one wrote the picture and that a map of plain boxes
+did not; then four places with the first removed, and each of the other three
+still answering to its own name. Mutation-tested four ways: a text form that
+drops the shape, a reader that always restamps from the boxes, a lookup that
+answers "the first place" to everything, and a list that closes its gap by
+swapping.*
 
 ### Shorelines
 
@@ -2042,5 +2080,3 @@ Named plainly, because a reader should not have to infer absence:
 
 Deliberate, documented, with the cost to close:
 
-- **The map's `region` byte is written and never read** beyond the region
-  bounding boxes. It is there for the editor.

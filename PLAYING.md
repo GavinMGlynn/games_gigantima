@@ -240,7 +240,7 @@ content is never a code change.
 | --- | --- |
 | `1`–`8` | the tools: ground, things, litter, people, their day, regions, start, ways out |
 | Left button | put down what the tool places |
-| Right button | rub out what the tool places — the same tool is the brush and the rubber |
+| Right button | rub out what the tool places — the same tool is the brush and the rubber. On the regions tool it takes **one tile** out of a place, which is how a town stops being a rectangle; `Shift` and the right button take the whole place away |
 | `[` `]` | change what the brush is |
 | `Z` / `Y` | take it back · put it back — thirty deep, and a drag is one step |
 | `F` | fill the run of ground under the cursor with the brush |

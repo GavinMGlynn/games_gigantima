@@ -36,6 +36,9 @@ what that release had; this is what has closed since.
 - **Magic beyond light, heal and harm**: a word that puts somebody to sleep, a
   ward that turns blows for a while, and one that sets you down on the far side
   of whatever is in the way. Nystul teaches the three new runes.
+- **A place is a shape.** The map's region byte was written by nothing and read
+  by nothing; it now says which place each tile is in, so a town can be carved
+  around a lake instead of being a rectangle.
 - **Roads that cross water.** A plank bridge, so the road out of town runs
   straight north over the lake instead of being aimed around it.
 - **An editor for people who are not me.** Undo and redo thirty deep, fill, and
@@ -63,11 +66,13 @@ what that release had; this is what has closed since.
 
 ### Still open
 
-The map's region byte, which is written and read by nothing.
+Nothing on the completion plan: all 58 items of Phase 0 to Phase 5 are done.
+What is thin now is quantity again — two storylines, five maps, nine kinds of
+creature — and the next phase has not been written yet.
 
 ### Note
 
-The save and map formats have moved (versions 14 and 5) and there is no migration, so a journey
+The save and map formats have moved (versions 15 and 6) and there is no migration, so a journey
 saved by 0.1.0-beta.1 will not resume on a build from `main`.
 
 ## 0.1.0-beta.1

@@ -608,16 +608,18 @@ void gg_edit_erase(gg_editor *e, int x, int y) {
         return;
     }
 
+    // One cell out of the place it is in. A place is a shape, so rubbing at
+    // one is how it stops being a rectangle - and rubbing at all of it is how
+    // it goes away, which is what shift is for. See gg_edit_region_remove.
     case GG_TOOL_REGION: {
-        for (int i = 0; i < e->map.regions; i++) {
-            const gg_region *r = &e->map.region[i];
-            if (x >= r->x && x < r->x + r->w && y >= r->y && y < r->y + r->h) {
-                e->map.region[i] = e->map.region[--e->map.regions];
-                say(e, "region gone");
-                e->dirty = true;
-                return;
-            }
+        const int which = gg_map_region_at(&e->map, x, y);
+        if (which < 0) {
+            say(e, "nothing here belongs anywhere");
+            return;
         }
+        gg_map_region_set(&e->map, x, y, -1);
+        say(e, "that tile is no longer in %s", e->map.region[which].name);
+        e->dirty = true;
         return;
     }
 
@@ -658,8 +660,49 @@ void gg_edit_drag_end(gg_editor *e, int x, int y) {
     SDL_snprintf(r->name, GG_MAP_NAME_MAX, "%s %d",
                  REGION_KIND_NAME[e->region_kind], e->map.regions + 1);
     e->map.regions++;
+    // The box is where it roughly is; these are the tiles it actually covers,
+    // and from here they can be rubbed at one at a time.
+    for (int cy = y0; cy <= y1; cy++)
+        for (int cx = x0; cx <= x1; cx++)
+            gg_map_region_set(&e->map, cx, cy, e->map.regions - 1);
     e->dirty = true;
     say(e, "%s, %dx%d", r->name, r->w, r->h);
+}
+
+bool gg_edit_region_remove(gg_editor *e, int x, int y) {
+    if (!e->open) return false;
+    // By the box rather than by the cell, so a region that has been rubbed
+    // away to nothing can still be got rid of.
+    int which = -1;
+    for (int i = 0; i < e->map.regions; i++) {
+        const gg_region *r = &e->map.region[i];
+        if (x >= r->x && x < r->x + r->w && y >= r->y && y < r->y + r->h) which = i;
+    }
+    if (which < 0) {
+        say(e, "there is no place here to remove");
+        return false;
+    }
+
+    mark(e);
+    char gone[GG_MAP_NAME_MAX];
+    SDL_strlcpy(gone, e->map.region[which].name, sizeof gone);
+
+    // Closed in order, not swapped with the last: every cell carries a region
+    // *index*, so moving one region on top of another renames a whole town.
+    for (int i = which; i < e->map.regions - 1; i++)
+        e->map.region[i] = e->map.region[i + 1];
+    e->map.regions--;
+
+    const size_t cells = (size_t)e->map.w * (size_t)e->map.h;
+    for (size_t i = 0; i < cells; i++) {
+        uint8_t *r = &e->map.cell[i].region;
+        if (*r == (uint8_t)(which + 1)) *r = 0;
+        else if (*r > (uint8_t)(which + 1)) (*r)--;
+    }
+
+    e->dirty = true;
+    say(e, "%s is gone", gone);
+    return true;
 }
 
 // ---------------------------------------------------------------------------

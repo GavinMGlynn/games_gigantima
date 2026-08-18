@@ -448,6 +448,7 @@ static void draw_palette(gg_app *a) {
         "Z undo    Y redo",
         "F fill    E name it",
         "L where a way out goes",
+        "shift-right a place away",
         "G grid    C check",
         "+ - zoom  arrows scroll",
     };
@@ -674,6 +675,13 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event) {
                 gg_edit_apply(&app->ed, tx, ty);
             }
         } else if (event->button.button == SDL_BUTTON_RIGHT) {
+            // Shift takes a whole place away; the plain rubber takes one tile
+            // out of it, which is how a town stops being a rectangle.
+            if (app->ed.tool == GG_TOOL_REGION &&
+                (SDL_GetModState() & SDL_KMOD_SHIFT)) {
+                gg_edit_region_remove(&app->ed, tx, ty);
+                return SDL_APP_CONTINUE;
+            }
             app->erasing = true;
             gg_edit_stroke(&app->ed, true);
             gg_edit_erase(&app->ed, tx, ty);

@@ -155,6 +155,11 @@ void gg_edit_name_actor(gg_editor *e, const char *name);
 // whose places are all called "town 1" is a map nobody can write a story in.
 bool gg_edit_name_region(gg_editor *e, int x, int y, const char *name);
 
+// Removes the whole place whose box covers (x, y) - by the box rather than by
+// the cell, so one rubbed away to nothing can still be got rid of. The rubber
+// on the region tool takes one cell at a time; this is what shift does.
+bool gg_edit_region_remove(gg_editor *e, int x, int y);
+
 // And the map itself, which is what the status band shows a player.
 void gg_edit_name_map(gg_editor *e, const char *name);
 

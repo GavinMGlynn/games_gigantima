@@ -17,6 +17,12 @@ found, not when someone remembers.
 
 `[x]` done · `[ ]` not started, or **In progress** where the text says so
 
+**Every item on this plan is done — 58 of 58, Phase 0 to Phase 5.** What is thin
+now is quantity again: two storylines, five maps, nine kinds of creature. A
+sixth phase would be more of that, and it has not been written yet. Everything
+still missing is named under *What does not exist* in `PROJECT_STATUS.md`, and
+the tails found along the way are at the bottom of this file.
+
 ---
 
 ## Phase 0 — Foundations
@@ -279,11 +285,12 @@ that is reachable while content is C, so the editor comes before the content.
 
 ## Phase 5 — More of it
 
-Phases 0 to 4 built a game and finished every part of it. What is thin now is
+Phases 0 to 4 built a game and finished every part of it. What was thin then was
 **quantity**, not quality: one storyline, three kinds of creature, two maps, and
-a handful of systems that exist but have nothing to spend themselves on. This
-phase is the list of those, in the order they unblock each other — the items
-near the top make the ones below them possible or worth having.
+a handful of systems that existed but had nothing to spend themselves on. This
+phase was the list of those, in the order they unblocked each other — the items
+near the top made the ones below them possible or worth having. All sixteen are
+done.
 
 Every gap named in `PROJECT_STATUS.md` under *What does not exist* is an item
 here. Nothing is on this list that is not already admitted to somewhere.
@@ -424,9 +431,13 @@ here. Nothing is on this list that is not already admitted to somewhere.
       nothing grows on it.
       *Verification: twelve worlds, every one of which bridges, with the town
       walkable from the top of the map in each — and a frame of the crossing.*
-- [ ] **The region byte, used or removed.** It is written into every map cell
-      and read by nothing.
-      *Verification: either something reads it, or it is gone from the format.*
+- [x] **The region byte, used or removed.** Used: it is now what says which
+      place a tile is in, so a place is a shape rather than a box — a town can
+      be carved around a lake. The editor's rubber takes one tile out of a
+      place at a time, and the text form writes a picture of the shape only
+      when the boxes do not already say it.
+      *Verification: a town with a bite out of the middle, which the game
+      agrees it is standing outside of, carried through both file forms.*
 
 ---
 

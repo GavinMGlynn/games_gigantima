@@ -27,11 +27,12 @@
 // has left to sleep, and the ward standing over the Avatar. Version 13 is what
 // each companion was told to do. Version 14 is the map format beneath it moving
 // again for the bridge - a save carries a whole map inside it, so a new map
-// version is a new save version whether or not the game's own half moved.
+// version is a new save version whether or not the game's own half moved - and
+// 15 is that happening once more, for the map's region byte meaning something.
 // There is no migration between any of them - guessing at a section that was
 // never written would resume somebody into a world that is not the one they
 // left, and every version so far has existed for days rather than years.
-#define GG_SAVE_VERSION 14
+#define GG_SAVE_VERSION 15
 
 #define GG_PROFILE_NAME_MAX 32
 #define GG_PROFILES_MAX     64

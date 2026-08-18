@@ -5949,14 +5949,188 @@ static void the_editor_rubs_out_what_it_draws(void) {
     gg_edit_erase(&e, 9, 9);
     CHECK(gg_ground_at(&e.map, 9, 9) < 0, "it is still there");
 
+    // The region rubber takes one tile at a time - a place is a shape, so
+    // rubbing at one is how it stops being a rectangle. Removing the whole
+    // thing is its own call, which is what shift does in the window.
     gg_edit_tool(&e, GG_TOOL_REGION);
     gg_edit_drag_start(&e, 2, 2);
     gg_edit_drag_end(&e, 6, 6);
     CHECK(e.map.regions == 1, "expected one region");
+    CHECK(gg_map_region_at(&e.map, 4, 4) == 0, "the tile is not in the region");
     gg_edit_erase(&e, 4, 4);
+    CHECK(e.map.regions == 1, "rubbing one tile took the whole region");
+    CHECK(gg_map_region_at(&e.map, 4, 4) < 0, "the tile is still in it");
+    CHECK(gg_map_region_at(&e.map, 3, 3) == 0, "and so is the rest of it gone");
+    CHECK(gg_edit_region_remove(&e, 4, 4), "the region would not be removed");
     CHECK(e.map.regions == 0, "the region is still there");
 
     gg_edit_close(&e);
+}
+
+// The map's `region` byte was written into every cell and read by nothing. The
+// choice was to use it or drop it from the format, and using it is what lets a
+// place be a **shape**: a town built around a lake is not a rectangle, and a
+// lookup that walks a list of boxes cannot say otherwise however the boxes are
+// arranged.
+// Does a text file contain this? For checking what a format wrote, rather than
+// only what it reads back - "it wrote nothing it did not need" is a claim about
+// the file and not about the round trip.
+static bool file_holds(const char *path, const char *needle) {
+    size_t n = 0;
+    char *text = SDL_LoadFile(path, &n);
+    if (!text) return false;
+    const bool found = SDL_strstr(text, needle) != nullptr;
+    SDL_free(text);
+    return found;
+}
+
+static void a_place_can_be_a_shape_and_not_only_a_box(void) {
+    gg_editor e;
+    SDL_zero(e);
+    CHECK(gg_edit_new(&e, 32, 32), "could not make a map");
+
+    gg_edit_tool(&e, GG_TOOL_REGION);
+    gg_edit_drag_start(&e, 4, 4);
+    gg_edit_drag_end(&e, 11, 11);
+    CHECK(e.map.regions == 1, "no region was drawn");
+    gg_edit_name_region(&e, 6, 6, "Britain");
+
+    // Every tile of the box is in it, and nothing outside it is.
+    int in = 0;
+    for (int y = 0; y < 32; y++)
+        for (int x = 0; x < 32; x++)
+            if (gg_map_region_at(&e.map, x, y) == 0) in++;
+    CHECK(in == 64, "%d tiles are in the region, expected 64", in);
+
+    // Now carve a bite out of it - a lake in the middle of the town - which is
+    // the thing a box cannot express.
+    for (int y = 6; y <= 9; y++)
+        for (int x = 6; x <= 9; x++)
+            gg_edit_erase(&e, x, y);
+    CHECK(e.map.regions == 1, "carving took the whole region");
+    CHECK(gg_map_region_at(&e.map, 7, 7) < 0, "the bite is still in the town");
+    CHECK(gg_map_region_at(&e.map, 5, 5) == 0, "the rest of the town went too");
+    CHECK(gg_map_region_at(&e.map, 12, 12) < 0, "somewhere outside it joined");
+
+    // The shape is what the game asks about, not the box.
+    gg_game g;
+    SDL_zero(g);
+    CHECK(gg_game_new(&g, 91, "Shaped"), "new game failed");
+    gg_map_free(&g.map);
+    g.map = e.map;                       // borrowed; put back before freeing
+    gg_actor *p = gg_player(&g);
+    p->x = 5; p->y = 5;
+    CHECK(SDL_strcmp(gg_game_place(&g), "Britain") == 0,
+          "standing in the town, the game says '%s'", gg_game_place(&g));
+    p->x = 7; p->y = 7;
+    CHECK(SDL_strcmp(gg_game_place(&g), "Britain") != 0,
+          "standing in the hole, the game still says Britain");
+    SDL_zero(g.map);
+    gg_game_free(&g);
+
+    // And it survives both file forms. The binary carries the cells whole; the
+    // text form writes a picture of which place each tile is in, but only when
+    // that says something the boxes do not - a map of plain rectangles stays as
+    // short as it was.
+    char binary[GG_EDIT_PATH_MAX], text[GG_EDIT_PATH_MAX], boxes[GG_EDIT_PATH_MAX];
+    SDL_strlcpy(binary, gg_pref_file("test_shape.ggmap"), sizeof binary);
+    SDL_strlcpy(text, gg_pref_file("test_shape.map.txt"), sizeof text);
+    SDL_strlcpy(boxes, gg_pref_file("test_boxes.map.txt"), sizeof boxes);
+    CHECK(gg_edit_save(&e, binary), "could not write the binary map");
+    CHECK(gg_edit_save(&e, text), "could not write the text map");
+
+    for (int form = 0; form < 2; form++) {
+        gg_editor back;
+        SDL_zero(back);
+        CHECK(gg_edit_load(&back, form ? text : binary), "the map would not open");
+        CHECK(gg_map_region_at(&back.map, 5, 5) == 0,
+              "form %d lost the town", form);
+        CHECK(gg_map_region_at(&back.map, 7, 7) < 0,
+              "form %d filled the hole back in", form);
+        CHECK(SDL_strcmp(back.map.region[0].name, "Britain") == 0,
+              "form %d lost the name", form);
+        gg_edit_close(&back);
+    }
+
+    // Two places, and the first taken away: every cell carries a region
+    // *index*, so a list that closes its gap by moving the last region on top
+    // of the hole renames a whole town.
+    {
+        gg_editor two;
+        SDL_zero(two);
+        CHECK(gg_edit_new(&two, 32, 32), "could not make a map");
+        gg_edit_tool(&two, GG_TOOL_REGION);
+        gg_edit_drag_start(&two, 2, 2);
+        gg_edit_drag_end(&two, 6, 6);
+        gg_edit_name_region(&two, 4, 4, "Britain");
+        gg_edit_drag_start(&two, 20, 20);
+        gg_edit_drag_end(&two, 26, 26);
+        gg_edit_name_region(&two, 23, 23, "Wyndle");
+        CHECK(two.map.regions == 2, "expected two places");
+
+        // Two more beyond it, because closing the gap by moving the *last*
+        // region into it happens to come out right with two and wrong with
+        // four: the cells above the hole shift down by one, and the regions
+        // have to shift the same way or a town swaps names with a dungeon.
+        gg_edit_drag_start(&two, 20, 2);
+        gg_edit_drag_end(&two, 26, 6);
+        gg_edit_name_region(&two, 23, 4, "The Fells");
+        gg_edit_drag_start(&two, 2, 20);
+        gg_edit_drag_end(&two, 6, 26);
+        gg_edit_name_region(&two, 4, 23, "The Deep");
+        CHECK(two.map.regions == 4, "expected four places");
+
+        CHECK(gg_edit_region_remove(&two, 4, 4), "Britain would not go");
+        CHECK(two.map.regions == 3, "there are %d places left", two.map.regions);
+        static const struct { int x, y; const char *name; } LEFT[] = {
+            { 23, 23, "Wyndle" }, { 23, 4, "The Fells" }, { 4, 23, "The Deep" },
+        };
+        for (size_t k = 0; k < GG_COUNTOF(LEFT); k++) {
+            const int r = gg_map_region_at(&two.map, LEFT[k].x, LEFT[k].y);
+            CHECK(r >= 0 && SDL_strcmp(two.map.region[r].name, LEFT[k].name) == 0,
+                  "the tiles of %s now belong to '%s'", LEFT[k].name,
+                  r >= 0 ? two.map.region[r].name : "nowhere");
+        }
+        gg_edit_close(&two);
+    }
+
+    {
+        gg_editor two;
+        SDL_zero(two);
+        CHECK(gg_edit_new(&two, 32, 32), "could not make a map");
+        gg_edit_tool(&two, GG_TOOL_REGION);
+        gg_edit_drag_start(&two, 20, 20);
+        gg_edit_drag_end(&two, 26, 26);
+        gg_edit_name_region(&two, 23, 23, "Wyndle");
+        CHECK(two.map.regions == 1, "expected one place");
+        const int at = gg_map_region_at(&two.map, 23, 23);
+        CHECK(at == 0, "Wyndle is region %d and there is only one", at);
+        CHECK(at < 0 || SDL_strcmp(two.map.region[at].name, "Wyndle") == 0,
+              "what is left is called '%s'", two.map.region[at < 0 ? 0 : at].name);
+        CHECK(gg_map_region_at(&two.map, 4, 4) < 0,
+              "the tiles of the place that went still belong somewhere");
+        gg_edit_close(&two);
+    }
+
+    // A map whose places *are* boxes writes no picture, so nothing but an
+    // irregular one pays for the format.
+    gg_editor plain;
+    SDL_zero(plain);
+    CHECK(gg_edit_new(&plain, 32, 32), "could not make a second map");
+    gg_edit_tool(&plain, GG_TOOL_REGION);
+    gg_edit_drag_start(&plain, 4, 4);
+    gg_edit_drag_end(&plain, 11, 11);
+    CHECK(gg_edit_save(&plain, boxes), "could not write the plain map");
+    gg_edit_close(&plain);
+
+    CHECK(file_holds(text, "rrow "), "the carved map wrote no picture of it");
+    CHECK(!file_holds(boxes, "rrow "),
+          "a map of plain boxes wrote a picture it did not need");
+
+    gg_edit_close(&e);
+    SDL_RemovePath(binary);
+    SDL_RemovePath(text);
+    SDL_RemovePath(boxes);
 }
 
 // An editor with no undo is an editor people are afraid to try things in, which
@@ -9364,6 +9538,7 @@ int main(void) {
     RUN(a_map_authored_in_the_editor_can_be_played);
     RUN(a_road_crosses_the_water_rather_than_stopping_at_it);
     RUN(the_editor_rubs_out_what_it_draws);
+    RUN(a_place_can_be_a_shape_and_not_only_a_box);
     RUN(a_mistake_can_be_taken_back);
     RUN(an_area_can_be_filled);
     RUN(a_second_map_can_be_opened);

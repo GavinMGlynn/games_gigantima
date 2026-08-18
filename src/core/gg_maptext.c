@@ -92,6 +92,28 @@ static const char *const REGION_KIND[] = {
     "WILD", "TOWN", "DUNGEON", "CASTLE",
 };
 
+// One character per region, for the picture of which place each tile is in.
+// Thirty-two of them, which is GG_REGION_MAX, and none of them `.` - that is
+// what "nowhere" is written as.
+static const char REGION_CHAR[] = "0123456789ABCDEFGHIJKLMNOPQRSTUV";
+
+// Does every cell belong to exactly the region whose box covers it, with the
+// later box winning? Then the boxes say everything and the picture is not
+// written. This is `gg_map_regions_stamp` asked as a question.
+static bool regions_are_boxes(const gg_map *m) {
+    for (int y = 0; y < m->h; y++)
+        for (int x = 0; x < m->w; x++) {
+            int want = 0;
+            for (int i = 0; i < m->regions; i++) {
+                const gg_region *r = &m->region[i];
+                if (x >= r->x && y >= r->y && x < r->x + r->w && y < r->y + r->h)
+                    want = i + 1;
+            }
+            if (gg_map_at_const(m, x, y)->region != (uint8_t)want) return false;
+        }
+    return true;
+}
+
 static int name_index(const char *const *table, int n, const char *word) {
     for (int i = 0; i < n; i++)
         if (table[i] && SDL_strcasecmp(table[i], word) == 0) return i;
@@ -181,6 +203,30 @@ bool gg_map_write_text(const gg_map *m, const char *path) {
             r->name[0] ? r->name : "-");
     }
     if (m->regions) put(&w, "\n");
+
+    // And, only when it says something the boxes do not, a picture of which
+    // place each cell belongs to.
+    //
+    // A place is a *shape*: the box is where it roughly is, the cells are what
+    // it actually covers, and a town carved around a lake is not a rectangle.
+    // Written only when the two disagree, so a map whose places are plain boxes
+    // stays as short as it was - a second full-size picture in every file, to
+    // say what the line above it already said, is noise.
+    if (m->regions > 0 && !regions_are_boxes(m)) {
+        put(&w, "# which place each tile belongs to: . is nowhere, and the\n"
+                "# rest index the regions above in the order they are listed.\n");
+        for (int y = 0; y < m->h; y++) {
+            char row[1024];
+            int n = 0;
+            for (int x = 0; x < m->w && n < (int)sizeof row - 1; x++) {
+                const int r = gg_map_region_at(m, x, y);
+                row[n++] = r < 0 ? '.' : REGION_CHAR[r];
+            }
+            row[n] = '\0';
+            put(&w, "rrow %s\n", row);
+        }
+        put(&w, "\n");
+    }
 
     for (int y = 0; y < m->h; y++)
         for (int x = 0; x < m->w; x++) {
@@ -307,7 +353,8 @@ bool gg_map_read_text(gg_map *m, const char *path) {
     SDL_zero(legend);
 
     bool ok = true;
-    int lineno = 0, row = 0;
+    int lineno = 0, row = 0, rrow = 0;
+    bool placed = false;                // the map carried a picture of its places
     char *cursor = text;
 
     while (ok && cursor && *cursor) {
@@ -424,6 +471,43 @@ bool gg_map_read_text(gg_map *m, const char *path) {
                 c->flags = legend.entry[at].flags;
             }
             row++;
+        } else if (SDL_strcasecmp(key, "rrow") == 0) {
+            // The picture of which place each tile is in, when a map has one.
+            // It comes after the regions it indexes, so they are all known by
+            // the time a character has to be turned into one.
+            if (!out.cell) {
+                complain(path, lineno, "a place row before the `map` line");
+                ok = false;
+                break;
+            }
+            if (rrow >= out.h) {
+                complain(path, lineno, "more place rows than the map is tall");
+                ok = false;
+                break;
+            }
+            if ((int)SDL_strlen(rest) != out.w) {
+                SDL_Log("gigantima: %s:%d: this place row is %d wide and the "
+                        "map is %d", path, lineno, (int)SDL_strlen(rest), out.w);
+                ok = false;
+                break;
+            }
+            for (int x = 0; x < out.w; x++) {
+                if (rest[x] == '.') {
+                    gg_map_at(&out, x, rrow)->region = 0;
+                    continue;
+                }
+                const char *at = SDL_strchr(REGION_CHAR, rest[x]);
+                const int which = at ? (int)(at - REGION_CHAR) : -1;
+                if (which < 0 || which >= out.regions) {
+                    SDL_Log("gigantima: %s:%d: '%c' is not one of this map's "
+                            "%d places", path, lineno, rest[x], out.regions);
+                    ok = false;
+                    break;
+                }
+                gg_map_at(&out, x, rrow)->region = (uint8_t)(which + 1);
+            }
+            rrow++;
+            placed = true;
         } else if (SDL_strcasecmp(key, "region") == 0) {
             char kind[32];
             int box[4];
@@ -559,11 +643,20 @@ bool gg_map_read_text(gg_map *m, const char *path) {
                 out.h);
         ok = false;
     }
+    if (ok && placed && rrow != out.h) {
+        SDL_Log("gigantima: %s has %d place rows and says it is %d tall", path,
+                rrow, out.h);
+        ok = false;
+    }
 
     if (!ok) {
         gg_map_free(&out);
         return false;
     }
+
+    // A map with no picture of its places has plain boxes, so they are stamped
+    // from them. One with a picture said what it meant and is left alone.
+    if (!placed) gg_map_regions_stamp(&out);
 
     gg_map_free(m);
     *m = out;
