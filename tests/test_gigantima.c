@@ -6851,10 +6851,10 @@ static void each_place_holds_what_the_bestiary_says_it_does(void) {
               WANT[i].place);
         if (!g.map.cell) continue;
 
-        int of_kind = 0, people = 0, hostile = 0;
+        int of_kind = 0, people = 0;
         for (int k = 0; k < g.actors; k++) {
             if (k == g.player || !g.actor[k].active) continue;
-            if (g.actor[k].hostile) hostile++; else people++;
+            if (!g.actor[k].hostile) people++;
             const gg_beast *b = gg_bestiary_at(g.actor[k].beast);
             if (WANT[i].kind && b && g.actor[k].hostile &&
                 SDL_strcasecmp(b->id, WANT[i].kind) == 0) of_kind++;
