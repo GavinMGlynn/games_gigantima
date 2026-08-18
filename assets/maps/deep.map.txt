@@ -71,7 +71,7 @@ prop CAMPFIRE 22 18
 prop TABLE 36 28
 prop BARREL 8 30
 prop CRATE 14 32
-item SILVER 4 7 7
+item SILVER 6 7 7
 item GOLD 60 40 8
 item POTION 2 36 30
 item TORCH 2 24 40

@@ -329,10 +329,17 @@ here. Nothing is on this list that is not already admitted to somewhere.
       stand on, holds somebody or something, and every way out of it leads to a
       map that exists, lands somewhere you can stand, and leads back. All five
       are reachable from the vale by walking.*
-- [ ] **A second storyline**, on that world, interlocking with the first through
-      flags rather than sitting beside it.
-      *Verification: playable start to finish, and finishing one changes what
-      the other says.*
+- [x] **A second storyline.** *Under the Hills*: Wyndle's mill has no corn
+      because nothing comes down out of the fells, and the rest of what the
+      caravan was carrying is in a cache under them. Wyndle can tell the whole
+      of it on its own, so it is playable by somebody who never went to the
+      vale — and it is not a stranger to the first: it notices when Rugar
+      falls, and the vale's own brigand quest gains a line when Corin gets the
+      proof.
+      *Verification: played start to finish in a test — asking Wyndle, walking
+      the fells, fighting through the deep, finding the cache and handing it
+      over — with the two flags each story raises for the other checked in both
+      directions. It does not end the game; the caravan getting home does.*
 - [ ] **More that lives in it.** Three kinds of creature and a chief. The art
       set is people, so more of it is more kinds of people, told apart by
       behaviour rather than by sprite.

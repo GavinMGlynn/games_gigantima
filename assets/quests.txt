@@ -107,6 +107,11 @@ quest BRIGANDS
     journal It fits: the road was stopped, and these are who stopped it.
     sets story_understood
     worth 60
+  stage
+    when flag doors_shut
+    journal And not only on the road: some of it went under the hills, and Corin has the proof.
+    sets road_and_under
+    worth 60
 
 quest MAGE
   name Words of Power
@@ -126,3 +131,44 @@ quest MAGE
     journal AN undoes. It is the first word a careful mage learns.
     sets a_mage_now
     worth 50
+
+# The second story, and it does not sit beside the first: it waits on what the
+# first taught, and the first hears about how it ended.
+#
+# Wyndle's mill has no corn because nothing comes down out of the fells. The
+# road up is rock, the hollow at the head of it has a hole in the ground, and
+# what is under it has the rest of what the caravan was carrying.
+quest DOORS
+  name Under the Hills
+  stage
+    when knows fells
+    journal Nothing comes down out of the fells: no carts, no folk, no word.
+    worth 20
+  stage
+    when knows deep
+    journal There is a way under the hills at the head of the valley. Old work.
+    worth 30
+    sets heard_of_doors
+  stage
+    when at fells
+    journal The road turns to rock and climbs. There is a hollow at the top of it.
+    worth 40
+  stage
+    when at deep
+    journal Rooms cut square under the hills, and something quick in the dark.
+    worth 50
+    sets went_under
+  stage
+    when has SILVER 4
+    journal Caravan silver, down here in the dark. Whatever took it never spent it.
+    worth 80
+    sets doors_understood
+  stage
+    when flag caravan_avenged
+    journal Rugar is down and the north road is quiet. What is under it is not.
+    worth 40
+  stage
+    when flag silver_shown
+    journal Corin has the silver and Wyndle has its answer: the road went down, not north.
+    worth 150
+    sets doors_shut

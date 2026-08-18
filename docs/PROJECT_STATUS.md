@@ -905,6 +905,32 @@ breaking the rule they pin — making every speed equal, clearing line of sight,
 dropping no loot, and putting townsfolk on the other side. Plus a `--shot` frame
 of an exchange of blows, now taken in CI.*
 
+### The second storyline
+
+*Under the Hills.* Wyndle's mill has no corn because nothing comes down out of
+the fells; Corin has watched the east road go quiet; Marrow's grandfather spoke
+of doors in the hills. The road up turns to rock, the hollow at the head of the
+valley has a hole in the ground, and the rest of what the caravan was carrying
+is in a cache in the dark. Bring four of it back to Corin and Wyndle has its
+answer: the road went down rather than north.
+
+**It is playable by somebody who never went to the vale.** Wyndle teaches every
+word it asks for — including `silver`, which the vale's Nell also teaches; the
+first version needed her, so a player who started in Wyndle reached Corin with
+proof in hand and no way to say so.
+
+**The two stories are not strangers.** *Under the Hills* has a stage that waits
+on `caravan_avenged` — Rugar falling changes what it says — and the vale's
+brigand quest gains a last line when `doors_shut` goes up. Neither ends the
+game: the caravan getting home does, and a second ending would mean whichever
+story you finished first stopped the other.
+
+*Verification: `the_second_story_can_be_played_and_the_first_hears_of_it` plays
+the whole of it — Wyndle, the fells, four of what haunts the deep fought
+properly, the cache off the floor, the crossing home, and the handover — and
+checks the flags in both directions, that the second story does not end the
+game, and that the whole of it leaves the party several levels up.*
+
 ### The world
 
 Five places, all of them shipped as text in `assets/maps/`:
@@ -1572,7 +1598,7 @@ Named plainly, because a reader should not have to infer absence:
 
 | | |
 | --- | --- |
-| The story beyond the first | one storyline, playable start to finish, and three small quests beside it. What is missing is a second one |
+| The story beyond the second | two storylines that interlock, and three small quests beside them. What is missing is a third |
 | Combat depth | blows, initiative, reach, loot and fleeing exist; there are no skills and no criticals |
 | Magic beyond three effects | light, heal and harm. No summoning, no travel, no enchantment, no mana - reagents are the whole cost |
 | Arms | a hammer, a throwing stone and a shield. No swords: this art set has none that stand on their own |

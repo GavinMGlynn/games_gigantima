@@ -6767,6 +6767,129 @@ static void each_place_holds_what_the_bestiary_says_it_does(void) {
     restore_dialogue();
 }
 
+// The second storyline, played from start to finish - and the two stories are
+// not strangers: this one waits on what the first taught, and the first hears
+// how this one ended.
+static void the_second_story_can_be_played_and_the_first_hears_of_it(void) {
+    CHECK(gg_dialogue_load(gg_asset_path("dialogue.txt")), "no book");
+    CHECK(gg_quests_load(gg_asset_path("quests.txt")), "no quests");
+    CHECK(gg_bestiary_load(gg_asset_path("bestiary.txt")), "no bestiary");
+
+    const int doors = gg_quest_find("DOORS");
+    const int brigands = gg_quest_find("BRIGANDS");
+    CHECK(doors >= 0 && brigands >= 0, "the second story is not in the book");
+    if (doors < 0 || brigands < 0) return;
+
+    gg_game g;
+    CHECK(gg_game_new_from_map(&g, gg_asset_path_for_place("wyndle"), "Digger", 8u),
+          "Wyndle would not open");
+    CHECK(g.quest[doors] == 0, "the second story had begun before it began");
+
+    // --- Wyndle tells you the road is dead ---------------------------------
+    ask_the_town(&g);
+    gg_quests_tick(&g);
+    CHECK(gg_knows(&g, "fells"), "nobody in Wyndle named the fells");
+    CHECK(gg_knows(&g, "deep"), "nobody in Wyndle said what is under them");
+    CHECK(gg_flag(&g, "heard_of_doors"), "asking Wyndle taught the story nothing");
+
+    // --- up the road ---------------------------------------------------------
+    CHECK(gg_game_travel(&g, gg_asset_path_for_place("fells"), 26, 61),
+          "the fells would not open");
+    gg_quests_tick(&g);
+    CHECK(g.quest[doors] >= 3, "standing in the fells went unremarked (stage %u)",
+          g.quest[doors]);
+
+    // --- and under them -------------------------------------------------------
+    CHECK(gg_game_travel(&g, gg_asset_path_for_place("deep"), 24, 44),
+          "the deep would not open");
+    gg_quests_tick(&g);
+    CHECK(gg_flag(&g, "went_under"), "going under the hills went unremarked");
+
+    // What is down there, fought. The brigand quest counts the fallen and its
+    // last stage is where the first story hears about this one, so a player who
+    // walked through the dark without meeting anything would not have earned
+    // that line - and neither should this.
+    gg_player(&g)->level = 20;
+    int felled = 0;
+    for (int i = 0; i < g.actors && felled < 4; i++) {
+        if (!g.actor[i].active || !g.actor[i].hostile) continue;
+        for (int swing = 0; swing < 400 && g.actor[i].active; swing++) {
+            gg_actor *me = gg_player(&g);
+            me->hp = me->hp_max;
+            me->x = g.actor[i].x;
+            me->y = (int16_t)(g.actor[i].y + 1);
+            me->facing = GG_FACE_UP;
+            gg_game_act(&g, GG_ACT_FIGHT);
+        }
+        if (!g.actor[i].active) felled++;
+    }
+    CHECK(felled >= 4, "only %d of what haunts the deep would fall", felled);
+
+    // What is down there, taken off the floor where it lies.
+    const int cache = gg_ground_at(&g.map, 7, 7);
+    CHECK(cache >= 0, "there is no cache in the deep");
+    if (cache >= 0) {
+        gg_player(&g)->x = 7;
+        gg_player(&g)->y = 7;
+        for (int i = 0; i < 4; i++) gg_game_act(&g, GG_ACT_GET);
+    }
+    CHECK(gg_pack_count(&g, GG_ITEM_SILVER) >= 4,
+          "the caravan's silver is not in the pack (%d of it)",
+          gg_pack_count(&g, GG_ITEM_SILVER));
+    gg_quests_tick(&g);
+    CHECK(gg_flag(&g, "doors_understood"), "finding the silver settled nothing");
+
+    // --- the interlock: what the first story did changes what this one says --
+    const uint8_t before = g.quest[doors];
+    CHECK(gg_raise_flag(&g, "caravan_understood"), "could not raise the first "
+          "story's flag");
+    CHECK(gg_raise_flag(&g, "caravan_avenged"), "could not raise the first "
+          "story's flag");
+    gg_quests_tick(&g);
+    CHECK(g.quest[doors] > before,
+          "the second story did not notice the first one being finished");
+
+    // --- home to Wyndle, and hand it over -------------------------------------
+    CHECK(gg_game_travel(&g, gg_asset_path_for_place("wyndle"), 2, 24),
+          "the way back to Wyndle failed");
+    int corin = -1;
+    for (int i = 0; i < g.actors; i++)
+        if (SDL_strcmp(g.actor[i].name, "Corin") == 0) corin = i;
+    CHECK(corin > 0, "Corin is not in Wyndle");
+    if (corin > 0) ask_everything(&g, corin);
+
+    CHECK(gg_flag(&g, "silver_shown"), "Corin would not take the silver");
+    gg_quests_tick(&g);
+    CHECK(gg_flag(&g, "doors_shut"), "the second story did not finish");
+    CHECK(g.quest[doors] == gg_quest_at(doors)->stages,
+          "the second story stopped at stage %u of %d", g.quest[doors],
+          gg_quest_at(doors)->stages);
+
+    // And the first story hears of it, which is the whole of "not sitting
+    // beside each other".
+    {
+        const gg_quest *b = gg_quest_at(brigands);
+        SDL_Log("gigantima: the brigand quest is at stage %u of %d, slain %u",
+                g.quest[brigands], b ? b->stages : -1, g.slain);
+    }
+    CHECK(gg_flag(&g, "road_and_under"),
+          "finishing the second story changed nothing the first one says");
+
+    // Neither of them ends the game: this is a second arc, not a second
+    // ending, and the game is over when the caravan is home.
+    CHECK(!g.story_over, "the second story ended the game");
+
+    // What all that taught the party.
+    CHECK(g.exp > 300, "the whole of the second story taught %d", g.exp);
+    CHECK(gg_player_const(&g)->level > 1, "and left the Avatar at level %u",
+          gg_player_const(&g)->level);
+
+    gg_game_free(&g);
+    restore_dialogue();
+    restore_quests();
+    restore_bestiary();
+}
+
 // The plan's own verification for the storyline: playable start to finish.
 //
 // Every step is the game's own - words are learned by asking, the crossing is
@@ -7568,6 +7691,7 @@ int main(void) {
     RUN(a_companion_rises_with_the_avatar);
     RUN(a_journey_that_fights_its_way_north_arrives_stronger);
     RUN(the_whole_story_can_be_played_from_start_to_finish);
+    RUN(the_second_story_can_be_played_and_the_first_hears_of_it);
     RUN(a_content_file_written_on_windows_still_loads);
     RUN(a_map_you_leave_is_as_you_left_it);
     RUN(a_way_out_that_leads_nowhere_is_refused);

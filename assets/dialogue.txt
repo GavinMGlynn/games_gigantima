@@ -289,6 +289,14 @@ topic fells
 topic deep doors
   say A way under the hills. Old work, and not ours.
   say If thou goest down there, go with a light and go with company.
+  say The carts came up loaded with SILVER out of the north, and none came back.
+  teach silver
+topic silver
+  say Silver? Out of the ground under the fells?
+  say Then that is where the road went, and it went down rather than north.
+  say Leave it with me. Wyndle will hear what happened to its corn.
+  wants SILVER 4
+  raises silver_shown
 bye Keep to the road.
 
 person Sable
