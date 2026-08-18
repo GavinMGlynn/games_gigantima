@@ -52,6 +52,7 @@ static void mix_actor(uint64_t *h, const gg_actor *a) {
     mix_u32(h, a->beast);
     mix_u32(h, a->angered_by);
     mix_u32(h, a->asleep);
+    mix_u32(h, a->stance);
     mix_i32(h, a->x);
     mix_i32(h, a->y);
     mix_u32(h, a->def);

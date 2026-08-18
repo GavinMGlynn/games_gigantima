@@ -122,6 +122,11 @@ static inline int gg_clampi(int v, int lo, int hi) {
 
 static inline int gg_absi(int v) { return v < 0 ? -v : v; }
 
+// Which way, as one step: -1, 0 or 1. Every "move away from that" in the
+// simulation is this, and writing it out three times produced three subtly
+// different versions of it.
+static inline int gg_signi(int v) { return v < 0 ? -1 : v > 0 ? 1 : 0; }
+
 // Chebyshev distance - the number of moves between two tiles when diagonals
 // cost the same as orthogonals, which is how this world moves.
 static inline int gg_dist_cheb(int ax, int ay, int bx, int by) {

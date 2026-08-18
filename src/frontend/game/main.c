@@ -1637,8 +1637,13 @@ SDL_AppResult SDL_AppIterate(void *appstate) {
             int took = 0;
             for (int i = 0; i < app->game.actors && took < 2; i++)
                 if (i != app->game.player && app->game.actor[i].active &&
-                    gg_party_join(&app->game, i))
+                    gg_party_join(&app->game, i)) {
+                    // The second of them under an order, so the frame shows
+                    // what one looks like. A player gives it by asking; this is
+                    // a photograph, and there is nobody here to ask.
+                    if (took == 1) app->game.actor[i].stance = GG_STANCE_STAND;
                     took++;
+                }
             // Walk until something is in the way rather than into it: a
             // blocked move costs no turn, so the frame would otherwise carry a
             // log of nothing but "a brick wall bars the way".

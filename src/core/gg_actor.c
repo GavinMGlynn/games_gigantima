@@ -1,6 +1,12 @@
 // gg_actor.c - actor movement, walk animation and schedule lookup.
 #include "core/gg_actor.h"
 
+// The words an order is given in. One place, so the file that reads them and
+// the log that reports them cannot drift apart.
+const char *const GG_STANCE_NAME[GG_STANCE_COUNT] = {
+    "follow", "stand", "back",
+};
+
 void gg_actor_draw_pos(const gg_actor *a, int *out_x, int *out_y) {
     const int tx = a->x * GG_TILE, ty = a->y * GG_TILE;
     if (a->step == 0) {

@@ -75,6 +75,12 @@ typedef struct {
     bool    trade;
 
     char    raises[GG_FLAG_MAX];
+
+    // And what it *orders*, for a topic asked of somebody walking with you.
+    // A companion is a person, so an order is a thing you say to them in the
+    // same conversation as everything else, and each one answers it in their
+    // own words. `gg_stance` plus one; zero orders nothing.
+    uint8_t orders;
 } gg_topic;
 
 typedef struct {
@@ -97,6 +103,17 @@ typedef struct {
     gg_sched_entry sched[GG_SCHEDULE_MAX];
     int  schedn;
     bool lives;                                // has an art: the world places them
+
+    // And what they are in a fight, for the ones who will come with you. Four
+    // companions who differ in nothing are one companion with four names, so
+    // this is what makes choosing between them a choice - and it belongs in the
+    // book beside their hours and their words, because it is part of who they
+    // are and not a table in C that has to agree with this file.
+    //
+    // Zero means "an ordinary townsperson", which is what everybody who is not
+    // going anywhere with you stays. See gg_person_stats.
+    int16_t health;
+    uint8_t damage, guard, speed, reach;
 
     // The place they live, which is a region name a map may or may not have -
     // "Britain" for everyone in the vale. A map with a region of that name is

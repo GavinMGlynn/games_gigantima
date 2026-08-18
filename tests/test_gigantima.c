@@ -4556,6 +4556,11 @@ static void a_spell_of_light_survives_a_save(void) {
 // creature part way through a sleep. Both are spells in flight rather than
 // things anybody is carrying, and a save that dropped either would resume a
 // player into a fight they thought they had half won.
+// Both live with the party tests further down, because that is what they are
+// for; a save has to carry an order too, so they are declared here.
+static int bring_along(gg_game *g, const char *name, int x, int y);
+static void order_the_party(gg_game *g, gg_stance stance);
+
 static void a_ward_and_a_sleeping_creature_survive_a_save(void) {
     const char *who = "Warded";
     wipe_saves(who);
@@ -4583,6 +4588,14 @@ static void a_ward_and_a_sleeping_creature_survive_a_save(void) {
     CHECK(foe >= 0, "no brigand");
     if (foe < 0) { gg_game_free(&a); goto done; }
 
+    // And somebody walking with the Avatar under an order, because that is the
+    // other thing this version of the save carries.
+    CHECK(gg_dialogue_load(gg_asset_path("dialogue.txt")), "no book");
+    const int mate = bring_along(&a, "Dupre", cx - 1, cy);
+    CHECK(mate >= 0, "Dupre would not come along");
+    if (mate < 0) { gg_game_free(&a); goto done; }
+    order_the_party(&a, GG_STANCE_STAND);
+
     CHECK(gg_cast(&a, 0), "the ward would not be cast");
     CHECK(gg_cast(&a, 1), "the sleep would not be cast");
     CHECK(a.ward_turns == 25 && a.ward_power == 3, "the ward did not take");
@@ -4599,6 +4612,9 @@ static void a_ward_and_a_sleeping_creature_survive_a_save(void) {
     CHECK(b.actor[foe].asleep == a.actor[foe].asleep,
           "the brigand came back with %d turns of sleep, expected %d",
           b.actor[foe].asleep, a.actor[foe].asleep);
+    CHECK(b.actor[mate].stance == GG_STANCE_STAND,
+          "a companion resumed as %s, and was told to stand",
+          GG_STANCE_NAME[b.actor[mate].stance]);
     CHECK(gg_guard_power(&b, b.player) == gg_guard_power(&a, a.player),
           "the resumed Avatar is guarded differently");
     CHECK(gg_state_hash(&b) == gg_state_hash(&a),
@@ -4608,6 +4624,7 @@ static void a_ward_and_a_sleeping_creature_survive_a_save(void) {
     gg_game_free(&a);
 done:
     restore_bestiary();
+    restore_dialogue();
     gg_magic_clear();
     SDL_RemovePath(path);
     wipe_saves(who);
@@ -6595,6 +6612,35 @@ static void ask_everything(gg_game *g, int who) {
 
 // Asks the whole town, twice over: what Nystul teaches is what makes Gwenno
 // worth talking to, so one sweep is not enough for a rumour to cross a square.
+// Tells everybody walking with the Avatar the same thing, through the book -
+// the topic that carries the order, asked of each of them in turn. Poking the
+// field would test the field; this tests the order.
+static void order_the_party(gg_game *g, gg_stance stance) {
+    for (int i = 0; i < g->actors; i++) {
+        if (g->actor[i].party == GG_NOT_IN_PARTY || !g->actor[i].active) continue;
+        const gg_speaker *was = g->speaker;
+        const int talking = g->talking_to;
+        const gg_mode mode = g->mode;
+
+        // The word itself is taught by the companion's own joining line, so a
+        // player who recruited them has it. A harness that put somebody in the
+        // party without the conversation has to catch up.
+        gg_learn(g, GG_STANCE_NAME[stance]);
+
+        g->talking_to = i;
+        g->mode = GG_MODE_CONVERSE;
+        g->speaker = gg_dialogue_find(g->actor[i].name);
+        gg_conversation_refresh(g);
+        if (!ask_about(g, GG_STANCE_NAME[stance]))
+            CHECK(false, "%s cannot be told to %s", g->actor[i].name,
+                  GG_STANCE_NAME[stance]);
+
+        g->speaker = was;
+        g->talking_to = talking;
+        g->mode = mode;
+    }
+}
+
 static void ask_the_town(gg_game *g) {
     for (int sweep = 0; sweep < 3; sweep++)
         for (int i = 0; i < g->actors; i++) {
@@ -6632,6 +6678,11 @@ static int fights_won_against_rugar(bool prepared) {
             ask_the_town(&g);
             CHECK(gg_party_size(&g) == 2, "the vale sent %d along, expected two",
                   gg_party_size(&g));
+
+            // Asking everybody everything includes asking a companion to keep
+            // BACK, which is a real order and not what this measures. So they
+            // are told to follow, the way a player who meant to fight would.
+            order_the_party(&g, GG_STANCE_FOLLOW);
 
             // And armed the way a player is armed: with two things a brigand
             // and an outlaw drop, put in the pack and readied through the
@@ -6690,6 +6741,206 @@ static int fights_won_against_rugar(bool prepared) {
         gg_game_free(&g);
     }
     return won;
+}
+
+// ---------------------------------------------------------------------------
+// Companions who are somebody
+// ---------------------------------------------------------------------------
+// Puts the named person out of the book into the world beside the Avatar and
+// takes them along. Everything about them - health, what they deal, what they
+// turn aside, how fast they act and how far they reach - comes from their block
+// in assets/dialogue.txt and nothing here.
+static int bring_along(gg_game *g, const char *name, int x, int y) {
+    if (g->actors >= GG_ACTORS_MAX) return -1;
+    const int i = g->actors++;
+    gg_actor *a = &g->actor[i];
+    SDL_zerop(a);
+    a->active = true;
+    a->def = GG_ACTOR_NO_DEF;
+    a->facing = GG_FACE_DOWN;
+    a->x = (int16_t)x;
+    a->y = (int16_t)y;
+    a->from_x = a->x;
+    a->from_y = a->y;
+    SDL_strlcpy(a->name, name, sizeof a->name);
+    gg_person_stats(a, gg_dialogue_find(name));
+    return gg_party_join(g, i) ? i : -1;
+}
+
+// One companion, one creature, twenty seeds: how often the pair is left
+// standing. The Avatar is the same both times and carries nothing, so what the
+// number measures is the companion.
+static int fights_won_with(const char *who, const char *beast, int apart) {
+    int won = 0;
+    for (uint32_t seed = 1; seed <= 20; seed++) {
+        gg_game g;
+        int cx = 0, cy = 0;
+        if (!set_up_encounter(&g, 71, &cx, &cy)) return -1;
+        gg_rng_seed(&g.rng, seed * 7919u);
+
+        const int mate = bring_along(&g, who, cx - 1, cy);
+        CHECK(mate >= 0, "%s would not come along", who);
+        const int foe = gg_spawn_named(&g, beast, cx + apart, cy);
+        CHECK(foe >= 0, "no %s", beast);
+        if (mate < 0 || foe < 0) { gg_game_free(&g); return -1; }
+
+        int turns = 0;
+        while (turns < 300 && g.mode == GG_MODE_PLAY && g.actor[foe].active) {
+            const gg_actor *me = gg_player_const(&g);
+            int nx = 0, ny = 0;
+            if (!gg_step_toward(&g, g.player, g.actor[foe].x, g.actor[foe].y,
+                                &nx, &ny)) { gg_game_act(&g, GG_ACT_WAIT); }
+            else gg_game_act(&g, gg_action_toward(nx - me->x, ny - me->y));
+            turns++;
+        }
+        if (!g.actor[foe].active && g.mode != GG_MODE_GAMEOVER) won++;
+        gg_game_free(&g);
+    }
+    return won;
+}
+
+// The plan's own verification: two companions worth choosing between. Not
+// "different numbers" - *different answers*, so each has to be the better one
+// to bring to some fight, and the fights are the shipped bestiary.
+static void two_companions_are_worth_choosing_between(void) {
+    CHECK(gg_bestiary_load(gg_asset_path("bestiary.txt")), "no bestiary");
+    CHECK(gg_dialogue_load(gg_asset_path("dialogue.txt")), "no book");
+
+    // Both are in the book, and the book is what makes them different.
+    const gg_speaker *dupre = gg_dialogue_find("Dupre");
+    const gg_speaker *gwenno = gg_dialogue_find("Gwenno");
+    CHECK(dupre && gwenno, "the vale's two companions are not both in the book");
+    if (!dupre || !gwenno) { restore_bestiary(); restore_dialogue(); return; }
+    CHECK(dupre->health != gwenno->health || dupre->damage != gwenno->damage ||
+          dupre->speed != gwenno->speed || dupre->reach != gwenno->reach,
+          "the two companions are the same person twice");
+
+    // A hill man walks at you and will not run: a fight for somebody who can
+    // stand in front of it. A hedge adept throws from five tiles and never
+    // closes: a fight for somebody who can answer at range.
+    const int d_brawl = fights_won_with("Dupre",  "CHIEF", 1);
+    const int g_brawl = fights_won_with("Gwenno", "CHIEF", 1);
+    const int d_range = fights_won_with("Dupre",  "ADEPT", 6);
+    const int g_range = fights_won_with("Gwenno", "ADEPT", 6);
+
+    SDL_Log("gigantima: at arm's length with Rugar, Dupre wins %d of 20 and "
+            "Gwenno %d; against a hedge adept Dupre wins %d and Gwenno %d",
+            d_brawl, g_brawl, d_range, g_range);
+
+    // A margin, not a win: one fight in twenty is noise, and a test that reads
+    // it as a difference passes even when the numbers stop coming out of the
+    // book at all. Five, because ignoring the book's health entirely still
+    // leaves Dupre one fight ahead of Gwenno in a brawl.
+    CHECK(d_brawl >= g_brawl + 5, "Dupre is not the one to bring to a brawl: "
+          "%d of 20 against %d", d_brawl, g_brawl);
+    CHECK(g_range >= d_range + 5, "Gwenno is not the one to bring against "
+          "something that throws: %d of 20 against %d", g_range, d_range);
+
+    restore_bestiary();
+    restore_dialogue();
+}
+
+// An order is a thing you say to somebody, so it is asked for out of the book
+// like every other word - and what it changes is what they do with their turn.
+//
+// Each of the three is set up so that the *other* two would fail it: the
+// Avatar walks away, which a companion who is following has to answer and one
+// holding its ground has to ignore, and there is something at arm's length,
+// which a companion keeping out of it has to decline.
+static void a_companion_does_what_it_is_told(void) {
+    CHECK(gg_bestiary_load(gg_asset_path("bestiary.txt")), "no bestiary");
+    CHECK(gg_dialogue_load(gg_asset_path("dialogue.txt")), "no book");
+
+    // FOLLOW: the Avatar walks off, and the line goes with them.
+    {
+        gg_game g;
+        int cx = 0, cy = 0;
+        CHECK(set_up_encounter(&g, 72, &cx, &cy), "setup failed");
+        const int mate = bring_along(&g, "Dupre", cx - 1, cy);
+        CHECK(mate >= 0, "Dupre would not come along");
+        if (mate < 0) { gg_game_free(&g); goto done; }
+
+        for (int t = 0; t < 8; t++) gg_game_act(&g, GG_ACT_E);
+        CHECK(gg_dist_cheb(g.actor[mate].x, g.actor[mate].y,
+                           gg_player_const(&g)->x, gg_player_const(&g)->y) <= 2,
+              "a companion following was left %d tiles behind",
+              gg_dist_cheb(g.actor[mate].x, g.actor[mate].y,
+                           gg_player_const(&g)->x, gg_player_const(&g)->y));
+        gg_game_free(&g);
+    }
+
+    // STAND: the same walk, and the same companion, told to hold this ground -
+    // which they do, exactly, not approximately.
+    {
+        gg_game g;
+        int cx = 0, cy = 0;
+        CHECK(set_up_encounter(&g, 72, &cx, &cy), "setup failed");
+        const int mate = bring_along(&g, "Dupre", cx - 1, cy);
+        CHECK(mate >= 0, "Dupre would not come along");
+        if (mate < 0) { gg_game_free(&g); goto done; }
+
+        order_the_party(&g, GG_STANCE_STAND);
+        CHECK(g.actor[mate].stance == GG_STANCE_STAND,
+              "asking for STAND did not order it");
+
+        const int was_x = g.actor[mate].x, was_y = g.actor[mate].y;
+        for (int t = 0; t < 8; t++) gg_game_act(&g, GG_ACT_E);
+        CHECK(g.actor[mate].x == was_x && g.actor[mate].y == was_y,
+              "a companion told to hold this ground walked to %d,%d from %d,%d",
+              g.actor[mate].x, g.actor[mate].y, was_x, was_y);
+        CHECK(gg_dist_cheb(was_x, was_y, gg_player_const(&g)->x,
+                           gg_player_const(&g)->y) > 4,
+              "the Avatar did not go far enough for standing still to show");
+
+        // Holding ground is not refusing to fight: what walks into reach is
+        // still struck.
+        const int foe = gg_spawn_named(&g, "BRIGAND", was_x - 1, was_y);
+        CHECK(foe >= 0, "no brigand");
+        if (foe < 0) { gg_game_free(&g); goto done; }
+        g.actor[foe].hp = g.actor[foe].hp_max = 400;
+        for (int t = 0; t < 12; t++) gg_game_act(&g, GG_ACT_WAIT);
+        CHECK(g.actor[foe].hp < 400, "a companion holding its ground let a "
+              "brigand stand next to it unharmed");
+        CHECK(g.actor[mate].x == was_x && g.actor[mate].y == was_y,
+              "and it left the ground it was told to hold to do it");
+        gg_game_free(&g);
+    }
+
+    // BACK: told to keep out of it, and it does - it steps out of arm's reach
+    // rather than swinging. And it still walks the line, because keeping out
+    // of a fight is not staying behind.
+    {
+        gg_game g;
+        int cx = 0, cy = 0;
+        CHECK(set_up_encounter(&g, 73, &cx, &cy), "setup failed");
+        const int mate = bring_along(&g, "Dupre", cx - 2, cy);
+        const int foe = gg_spawn_named(&g, "BRIGAND", cx - 3, cy);
+        CHECK(mate >= 0 && foe >= 0, "setup failed");
+        if (mate < 0 || foe < 0) { gg_game_free(&g); goto done; }
+        g.actor[foe].hp = g.actor[foe].hp_max = 400;
+        g.actor[foe].speed = 1;           // it is not going to chase this turn
+
+        order_the_party(&g, GG_STANCE_BACK);
+        CHECK(gg_dist_cheb(g.actor[mate].x, g.actor[mate].y,
+                           g.actor[foe].x, g.actor[foe].y) == 1,
+              "the brigand is not at arm's length");
+        for (int t = 0; t < 4; t++) gg_game_act(&g, GG_ACT_WAIT);
+        CHECK(g.actor[foe].hp == 400,
+              "a companion told to keep out of it started a fight");
+        CHECK(gg_dist_cheb(g.actor[mate].x, g.actor[mate].y,
+                           g.actor[foe].x, g.actor[foe].y) > 1,
+              "a companion told to keep out of it stayed at arm's length");
+
+        for (int t = 0; t < 8; t++) gg_game_act(&g, GG_ACT_E);
+        CHECK(gg_dist_cheb(g.actor[mate].x, g.actor[mate].y,
+                           gg_player_const(&g)->x, gg_player_const(&g)->y) <= 3,
+              "a companion keeping out of it stopped walking with the Avatar");
+        gg_game_free(&g);
+    }
+
+done:
+    restore_bestiary();
+    restore_dialogue();
 }
 
 // "Playable" has to mean winnable, not merely reachable: a story that walks the
@@ -8536,6 +8787,8 @@ int main(void) {
 
     RUN(walking_between_two_maps_takes_everything_with_you);
     RUN(a_party_that_walked_the_road_can_beat_the_man_at_the_end_of_it);
+    RUN(two_companions_are_worth_choosing_between);
+    RUN(a_companion_does_what_it_is_told);
     RUN(every_shipped_map_is_a_place_you_can_walk_to);
     RUN(each_place_holds_what_the_bestiary_says_it_does);
     RUN(a_map_written_as_text_is_the_same_map);

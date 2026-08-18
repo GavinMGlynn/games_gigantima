@@ -384,9 +384,15 @@ here. Nothing is on this list that is not already admitted to somewhere.
       standing next to the Avatar — which does nothing at all for eight turns
       and hits on the ninth. A sleeping creature is drawn dim and the ward
       shows in the status band, both photographed.*
-- [ ] **Companions who are somebody.** Up to four follow and they are
-      interchangeable: same health, same damage, no orders.
-      *Verification: two companions who are worth choosing between.*
+- [x] **Companions who are somebody.** Who somebody is in a fight is a line in
+      the same book that holds what they say, so Dupre stands in front of things
+      and Gwenno throws from three paces and dies if anything reaches her. And
+      they take orders — follow, hold this ground, or keep out of it — asked for
+      in the conversation like any other word.
+      *Verification: measured. At arm's length with Rugar, Dupre wins 13 fights
+      of 20 and Gwenno 4; against something that throws from five tiles, Gwenno
+      wins 20 and Dupre 7. Neither is the one to bring to both. Each order is
+      tested in a situation the other two would fail.*
 - [ ] **A character sheet**, now that there is something to put on it — level,
       experience, what is held, what is known.
       *Verification: reachable and readable by keyboard and pad, at both text

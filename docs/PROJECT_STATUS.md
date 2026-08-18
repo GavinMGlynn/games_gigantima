@@ -1311,6 +1311,50 @@ companion needs the same ones the Avatar has, and a second place to keep them is
 the split that bites the first time something hits the party. Experience stays
 on the game: it is the party's, not one person's.
 
+**And they come out of the book.** A `person` block carries a `fights` line —
+`fights health 42 damage 5 guard 2 speed 90 reach 3` — in any subset and any
+order; what is left out is what an ordinary townsperson has. One function,
+`gg_person_stats`, applies it, because a person is placed two ways (out of the
+book by the generator, and out of an authored map by name) and two places that
+decide somebody's health are two places that disagree.
+
+Four companions who differ in nothing are one companion with four names, so the
+vale's two are different **answers** rather than different numbers:
+
+| | |
+| --- | --- |
+| **Dupre** | 42 health, 5 damage, 2 guard, speed 90. Stands in front of things. |
+| **Gwenno** | 26 health, 4 damage, 1 guard, speed 180, reach 3. Throws, and dies if reached. |
+
+Measured on the shipped bestiary: at arm's length with Rugar, Dupre wins 13 of
+20 and Gwenno 4; against a hedge adept that throws from five tiles, Gwenno wins
+20 and Dupre 7. Neither is the one to bring to both.
+
+**A companion gathers initiative the way anything hostile does** — same
+constant, same four-action bound — so `speed` in the book means the same thing
+on both sides of a fight. That was not true before: a companion acted once a
+turn whatever it said, which made half the numbers in the book decorative.
+Anything whose `reach` is more than an arm's length **throws** rather than
+closing, through the same `gg_throw_at` a slinger uses.
+
+**Orders.** Ultima VI gave each companion a combat mode, and it is the
+difference between a party and a train of luggage: the one who cannot take
+another blow is *told* to keep out of it rather than left behind.
+
+| | |
+| --- | --- |
+| `follow` | walk the line, and go and meet what comes near it |
+| `stand` | hold this ground; strike what walks into reach, and go nowhere |
+| `back` | start nothing, step out of arm's reach, and walk the line |
+
+An order is a thing you **say to somebody**, so it is a topic in the book with
+`orders WORD` on it, asked for like every other word — and each companion
+answers it in their own voice rather than in one line of C they would all have
+to share. The words are taught by the companion's own joining line. Joining
+resets the order: it is for this journey, not for ever. The status band shows an
+order that is not `follow`, because an order the player cannot see is one they
+will forget they gave and then wonder why nobody is fighting.
+
 *Verification: `a_companion_follows_through_a_door_without_blocking` (the plan's
 own — in through a real generated doorway, then out and back four times, failing
 if the Avatar is ever blocked or shares a tile),
@@ -1322,6 +1366,23 @@ pin — removing the swap, not closing the gap, and letting a companion keep the
 daily schedule — and removing the swap fails with "the avatar could not move,
 blocked by its own party", which is the plan's verification stated as a failure.
 Plus a `--shot` frame of the line in single file with the party in the HUD.*
+
+*Verification of who they are:
+`two_companions_are_worth_choosing_between` (the plan's own — the four numbers
+above, reported on every run, and each companion required to be **five** fights
+of twenty better than the other at the fight they are for, because one fight in
+twenty is noise and a test that reads it as a difference passes when the numbers
+stop coming out of the book at all), and `a_companion_does_what_it_is_told` —
+three orders, each set up so the other two would fail it: the Avatar walks eight
+tiles away, which a follower has to answer and somebody holding their ground has
+to ignore, and there is a brigand at arm's length, which somebody keeping out of
+it has to decline. The order is given by asking for it in the conversation, not
+by writing to the field. `a_ward_and_a_sleeping_creature_survive_a_save` carries
+an order too. Every rule mutation-tested: the book's health ignored, an order to
+hold ignored, an order to keep back ignored, a companion who never throws, and a
+companion whose speed is not read — each breaks a named test, and the first of
+them is what the five-fight margin exists to catch. Plus a `--shot` frame of the
+band with one of them under orders.*
 
 ### Conversation
 

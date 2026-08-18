@@ -15,6 +15,23 @@
 #define GG_PARTY_MAX      4
 #define GG_NOT_IN_PARTY   0
 
+// What somebody walking with you has been told to do. Ultima VI's companions
+// had a combat mode each and it is the difference between a party and a train
+// of luggage: the one who cannot take another blow is *told* to keep out of it
+// rather than being left behind.
+//
+// Follow is the default and is what a freshly zeroed actor is, which is what a
+// party recruited before any of this existed resumes as.
+typedef enum {
+    GG_STANCE_FOLLOW,   // walk the line, and go and meet what comes near it
+    GG_STANCE_STAND,    // hold this ground; strike what walks into reach
+    GG_STANCE_BACK,     // keep out of it: follow, but start nothing
+    GG_STANCE_COUNT
+} gg_stance;
+
+// What each one is called, for the log and for the file that orders it.
+extern const char *const GG_STANCE_NAME[GG_STANCE_COUNT];
+
 // GG_ACTOR_NAME_MAX, GG_SCHEDULE_MAX and gg_sched_entry are in gg_common.h -
 // see the note there on why.
 
@@ -61,6 +78,9 @@ typedef struct {
     // because nothing sleeps through being hit. This is what makes a spell that
     // does no damage worth a reagent: the fight becomes one fewer at a time.
     uint8_t asleep;
+
+    // What they were told to do, for somebody walking with you. `gg_stance`.
+    uint8_t stance;
 
     // Which row of the bestiary this came from, so its loot table can be
     // rolled when it falls. A save cannot write a pointer, and an index into a

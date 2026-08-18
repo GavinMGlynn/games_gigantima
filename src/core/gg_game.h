@@ -101,6 +101,11 @@ typedef enum {
 // a field after something that has not noticed anybody.
 #define GG_COMPANION_REACH 4
 
+// What somebody the book gives no fighting numbers to is worth. Enough that a
+// townsperson caught in a fight is somebody the world can hurt rather than
+// something that dies to one blow, and no more: a baker is not a soldier.
+#define GG_TOWNSPERSON_HEALTH 18
+
 // How far back the Avatar's footsteps are remembered. One per party slot, plus
 // a couple so the tail of the line is following a real path rather than the
 // leader's current tile.
@@ -431,6 +436,11 @@ int gg_party_at(const gg_game *g, int slot);
 // Takes `who` into the party, giving them the next free slot and stopping them
 // keeping their daily schedule. Returns false if the party is full or they are
 // already in it.
+// Fills in who somebody is out of the book: health, what they deal, what they
+// turn aside, how quickly they act and how far they can reach. A speaker of
+// nullptr - somebody the book has never heard of - is an ordinary townsperson.
+void gg_person_stats(gg_actor *a, const gg_speaker *s);
+
 bool gg_party_join(gg_game *g, int who);
 
 // Puts `who` back to their own life, and closes the gap in the line so nobody

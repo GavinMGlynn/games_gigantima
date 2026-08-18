@@ -174,6 +174,12 @@ void gg_ui_hud(const gg_game *g, SDL_Renderer *ren) {
         gg_font_printf(ren, x + 20, y, INK, "%s", c->name);
         gg_font_printf(ren, x + 130, y, hurt ? BLOOD : DIM, "%d/%d",
                        c->hp, c->hp_max);
+        // What they were told, when it is not the ordinary thing. An order the
+        // player cannot see is an order they will forget they gave, and then
+        // wonder why nobody is fighting.
+        if (c->stance != GG_STANCE_FOLLOW)
+            gg_font_printf(ren, x + 190, y, AMBER, "%s",
+                           GG_STANCE_NAME[c->stance]);
         y += line;
     }
 

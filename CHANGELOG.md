@@ -36,18 +36,24 @@ what that release had; this is what has closed since.
 - **Magic beyond light, heal and harm**: a word that puts somebody to sleep, a
   ward that turns blows for a while, and one that sets you down on the far side
   of whatever is in the way. Nystul teaches the three new runes.
+- **Companions who are somebody.** Who a person is in a fight is a line in the
+  book beside what they say, so the vale's two are different answers rather than
+  different numbers — one stands in front of things, the other throws from three
+  paces and dies if anything reaches her. And they take orders: follow, hold
+  this ground, or keep out of it, asked for in the conversation like any other
+  word.
 - **A world that is not the same twice.** What is *in* a map is rolled from the
   seed, so every journey through the vale has its own trouble in its own
   places — and `--seed N` still reproduces one exactly.
 
 ### Still open
 
-Companions who are somebody, a character sheet, music that is not placeholder,
-an editor with undo and fill, bridges, and the region byte.
+A character sheet, music that is not placeholder, an editor with undo and fill,
+bridges, and the region byte.
 
 ### Note
 
-The save format has moved (version 12) and there is no migration, so a journey
+The save format has moved (version 13) and there is no migration, so a journey
 saved by 0.1.0-beta.1 will not resume on a build from `main`.
 
 ## 0.1.0-beta.1

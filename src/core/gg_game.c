@@ -29,6 +29,29 @@ int gg_party_at(const gg_game *g, int slot) {
     return -1;
 }
 
+// What a person is when the world puts them in it. The ordinary townsperson is
+// somebody the world can hurt and nothing more; a person the book gives numbers
+// to is those numbers instead.
+//
+// One function, because a person is placed two ways - out of the book by the
+// generator, and out of an authored map by name - and two places that decide
+// what somebody's health is are two places that disagree.
+void gg_person_stats(gg_actor *a, const gg_speaker *s) {
+    a->hp = a->hp_max = GG_TOWNSPERSON_HEALTH;
+    a->level = 1;
+    a->party = GG_NOT_IN_PARTY;
+    a->stance = GG_STANCE_FOLLOW;
+    a->damage = a->guard = a->reach = 0;
+    a->speed = GG_ENERGY_PER_ACTION;
+    if (!s) return;
+
+    if (s->health > 0) a->hp = a->hp_max = s->health;
+    a->damage = s->damage;
+    a->guard = s->guard;
+    a->reach = s->reach;
+    if (s->speed > 0) a->speed = s->speed;
+}
+
 bool gg_party_join(gg_game *g, int who) {
     if (who < 0 || who >= g->actors || who == g->player) return false;
     if (!g->actor[who].active) return false;
@@ -43,6 +66,9 @@ bool gg_party_join(gg_game *g, int who) {
         // A companion has given up their day. Keeping the schedule would have
         // them wander off to bed in the middle of a journey.
         g->actor[who].schedn = 0;
+        // And they arrive ready to walk, whatever they were last told. An
+        // order is for this journey, not for ever.
+        g->actor[who].stance = GG_STANCE_FOLLOW;
 
         // And they arrive able to keep up. Somebody recruited late would
         // otherwise be permanently behind the party they joined - which makes
@@ -274,6 +300,20 @@ void gg_conversation_ask(gg_game *g) {
     // And what it settles. A flag is how the story hears about a conversation:
     // the quests watch for it, and nothing here knows which quest cares.
     if (t->raises[0] && gg_raise_flag(g, t->raises)) gg_quests_tick(g);
+
+    // An order, for somebody walking with you. A companion is a person, so
+    // telling them what to do is a thing you say to them - and each of them
+    // answers it in their own words, in the book, rather than in one line of C
+    // that every companion would have to share.
+    if (t->orders && g->talking_to >= 0) {
+        gg_actor *a = &g->actor[g->talking_to];
+        if (a->party == GG_NOT_IN_PARTY) {
+            gg_log(g, "%s does not walk with thee.", a->name);
+        } else {
+            a->stance = (uint8_t)(t->orders - 1);
+            if (a->stance >= GG_STANCE_COUNT) a->stance = GG_STANCE_FOLLOW;
+        }
+    }
 
     // Recruiting is the one thing a conversation does beyond handing over a
     // word, and it is declared in the book rather than here.
@@ -828,6 +868,97 @@ static bool path_passable(void *vctx, int x, int y) {
     if (!gg_map_walkable(&c->g->map, x, y)) return false;
     return !gg_actor_occupied(c->g->actor, c->g->actors, x, y, c->self);
 }
+// One action from somebody walking with you, which is where an order means
+// anything at all.
+//
+// A companion who has something at arm's length deals with it before thinking
+// about the line: following into a fight and standing there is the behaviour
+// that makes a party feel like luggage. One with something *near* goes to meet
+// it rather than queueing behind the Avatar on the footprint it is meant to be
+// standing on - which is what makes bringing somebody worth more than a second
+// sword, because a creature turns on whoever is hurting it and while it deals
+// with a companion its back is to whoever else walks up.
+//
+// What an order changes is exactly that much:
+//
+//   follow   all of the above, and walk the line
+//   stand    fight what comes to it, and go nowhere
+//   back     start nothing, step out of arm's reach, and walk the line
+static void companion_action(gg_game *g, int who, int slot) {
+    gg_actor *a = &g->actor[who];
+
+    int foe = -1, near = 0;
+    for (int k = 0; k < g->actors; k++) {
+        if (!gg_at_odds(g, who, k)) continue;
+        const int d = gg_dist_cheb(a->x, a->y, g->actor[k].x, g->actor[k].y);
+        if (foe < 0 || d < near) { foe = k; near = d; }
+    }
+
+    if (a->stance == GG_STANCE_BACK) {
+        // Keeping out of it is not standing there and being killed. Away if
+        // there is an away; and if there is not, it fights, which is the other
+        // half of keeping out of it.
+        if (foe >= 0 && near <= 1) {
+            const gg_actor *f = &g->actor[foe];
+            const int ax = a->x + gg_signi(a->x - f->x);
+            const int ay = a->y + gg_signi(a->y - f->y);
+            if (gg_map_walkable(&g->map, ax, ay) &&
+                !gg_actor_occupied(g->actor, g->actors, ax, ay, who)) {
+                gg_actor_move_to(a, ax, ay);
+                return;
+            }
+            gg_strike(g, who, foe);
+            return;
+        }
+    } else {
+        if (foe >= 0 && near <= 1) { gg_strike(g, who, foe); return; }
+
+        // Anything that reaches further than an arm throws instead, at exactly
+        // the range the bestiary and the book both mean by `reach`.
+        if (foe >= 0 && near <= gg_reach(g, who) &&
+            gg_throw_at(g, who, g->actor[foe].x, g->actor[foe].y))
+            return;
+
+        // Close enough to be this fight rather than a different one. Four
+        // tiles: a companion should not wander off across a field, and the
+        // Avatar's own trail is never more than a few tiles long. Somebody
+        // told to hold this ground does not go: that is the order.
+        if (a->stance == GG_STANCE_FOLLOW && foe >= 0 &&
+            near <= GG_COMPANION_REACH) {
+            gg_walk_ctx ctx = { .g = g, .self = who };
+            int nx, ny;
+            if (gg_path_next_step(&g->path, path_passable, &ctx, a->x, a->y,
+                                  g->actor[foe].x, g->actor[foe].y,
+                                  GG_PATH_BUDGET, &nx, &ny) &&
+                gg_map_walkable(&g->map, nx, ny) &&
+                !gg_actor_occupied(g->actor, g->actors, nx, ny, who)) {
+                gg_actor_move_to(a, nx, ny);
+                return;
+            }
+        }
+    }
+
+    if (a->stance == GG_STANCE_STAND) return;
+
+    // The Nth footprint back. Before there are enough footprints - just
+    // recruited, or just loaded - the oldest one is the best there is.
+    const int want = slot - 1 < g->trailn ? slot - 1 : g->trailn - 1;
+    if (want < 0) return;
+    const int tx = g->trail_x[want], ty = g->trail_y[want];
+    if (a->x == tx && a->y == ty) return;
+
+    gg_walk_ctx ctx = { .g = g, .self = who };
+    int nx, ny;
+    if (gg_path_next_step(&g->path, path_passable, &ctx,
+                          a->x, a->y, tx, ty, GG_PATH_BUDGET, &nx, &ny) &&
+        gg_map_walkable(&g->map, nx, ny) &&
+        !gg_actor_occupied(g->actor, g->actors, nx, ny, who)) {
+        gg_actor_move_to(a, nx, ny);
+    } else {
+        gg_actor_step_toward(a, &g->map, g->actor, g->actors, tx, ty, &g->rng);
+    }
+}
+
 static void world_turn(gg_game *g, int minutes) {
     g->turn++;
 
@@ -850,62 +981,29 @@ static void world_turn(gg_game *g, int minutes) {
     // The party moves first, and in slot order, so slot 2 steps into the tile
     // slot 1 has just left rather than finding it occupied. Doing this after
     // the townsfolk would have the line shuffle one step per turn behind.
+    //
+    // Each of them gathers initiative and spends it exactly the way anything
+    // hostile does - same constant, same bound - so `speed` in the book means
+    // the same thing on both sides of a fight. A companion who is quick is
+    // quick everywhere.
     for (int slot = 1; slot <= GG_PARTY_MAX; slot++) {
         const int i = gg_party_at(g, slot);
         if (i < 0) continue;
         gg_actor *a = &g->actor[i];
 
-        // A companion who has something at arm's length deals with it before
-        // thinking about the line. Following into a fight and standing there
-        // is the behaviour that makes a party feel like luggage.
-        //
-        // And one with something *near* goes to meet it, rather than queueing
-        // behind the Avatar on the footprint it is meant to be standing on.
-        // That is what makes bringing somebody worth more than a second sword:
-        // a creature turns on whoever is hurting it, so while it deals with a
-        // companion its back is to whoever else walks up.
-        {
-            int foe = -1, near = 0;
-            for (int k = 0; k < g->actors; k++) {
-                if (!gg_at_odds(g, i, k)) continue;
-                const int d = gg_dist_cheb(a->x, a->y, g->actor[k].x, g->actor[k].y);
-                if (foe < 0 || d < near) { foe = k; near = d; }
-            }
-            if (foe >= 0 && near <= 1) { gg_strike(g, i, foe); continue; }
-
-            // Close enough to be this fight rather than a different one. Four
-            // tiles: a companion should not wander off across a field, and the
-            // Avatar's own trail is never more than a few tiles long.
-            if (foe >= 0 && near <= GG_COMPANION_REACH) {
-                gg_walk_ctx ctx = { .g = g, .self = i };
-                int nx, ny;
-                if (gg_path_next_step(&g->path, path_passable, &ctx, a->x, a->y,
-                                      g->actor[foe].x, g->actor[foe].y,
-                                      GG_PATH_BUDGET, &nx, &ny) &&
-                    gg_map_walkable(&g->map, nx, ny) &&
-                    !gg_actor_occupied(g->actor, g->actors, nx, ny, i)) {
-                    gg_actor_move_to(a, nx, ny);
-                    continue;
-                }
-            }
+        if (a->asleep > 0) {
+            a->asleep--;
+            a->energy = 0;
+            continue;
         }
 
-        // The Nth footprint back. Before there are enough footprints - just
-        // recruited, or just loaded - the oldest one is the best there is.
-        const int want = slot - 1 < g->trailn ? slot - 1 : g->trailn - 1;
-        if (want < 0) continue;
-        const int tx = g->trail_x[want], ty = g->trail_y[want];
-        if (a->x == tx && a->y == ty) continue;
-
-        gg_walk_ctx ctx = { .g = g, .self = i };
-        int nx, ny;
-        if (gg_path_next_step(&g->path, path_passable, &ctx,
-                              a->x, a->y, tx, ty, GG_PATH_BUDGET, &nx, &ny) &&
-            gg_map_walkable(&g->map, nx, ny) &&
-            !gg_actor_occupied(g->actor, g->actors, nx, ny, i)) {
-            gg_actor_move_to(a, nx, ny);
-        } else {
-            gg_actor_step_toward(a, &g->map, g->actor, g->actors, tx, ty, &g->rng);
+        a->energy = (int16_t)(a->energy +
+                              (a->speed ? a->speed : GG_ENERGY_PER_ACTION));
+        for (int acts = 0; acts < 4; acts++) {
+            if (a->party == GG_NOT_IN_PARTY || !a->active) break;
+            if (a->energy < GG_ENERGY_PER_ACTION) break;
+            a->energy = (int16_t)(a->energy - GG_ENERGY_PER_ACTION);
+            companion_action(g, i, slot);
         }
     }
 
@@ -1483,11 +1581,9 @@ static void place_townsfolk(gg_game *g) {
         a->schedn = (uint8_t)d->schedn;
 
         // Stats of their own, so a companion is somebody the world can hurt
-        // rather than a sprite that follows. Modest and uniform for now:
-        // what makes them differ is a later item than what makes them exist.
-        a->hp = a->hp_max = 18;
-        a->level = 1;
-        a->party = GG_NOT_IN_PARTY;
+        // rather than a sprite that follows - and out of the book, so that two
+        // people who will both come with you are not the same person twice.
+        gg_person_stats(a, d);
 
         // Start each of them where their day says they should be, so the
         // opening frame is a town mid-morning rather than a crowd at spawn.
@@ -1526,10 +1622,11 @@ static void populate_from_map(gg_game *g) {
             a->y = m->y;
             a->from_x = a->x;
             a->from_y = a->y;
-            a->hp = a->hp_max = 18;
-            a->level = 1;
-            a->party = GG_NOT_IN_PARTY;
             SDL_strlcpy(a->name, m->name, sizeof a->name);
+            // By name, because a map records where somebody's house is and the
+            // book records who they are. A person the book has never heard of
+            // is an ordinary townsperson.
+            gg_person_stats(a, gg_dialogue_find(a->name));
             a->schedn = m->schedn;
             for (int k = 0; k < m->schedn && k < GG_SCHEDULE_MAX; k++)
                 a->sched[k] = m->sched[k];

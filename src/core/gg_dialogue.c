@@ -20,6 +20,7 @@
 // Indentation is decoration; it is stripped. What binds a `say` to a topic is
 // that it follows one.
 #include "core/gg_dialogue.h"
+#include "core/gg_actor.h"
 
 static gg_speaker g_speaker[GG_SPEAKERS_MAX];
 static int        g_speakers;
@@ -233,6 +234,49 @@ bool gg_dialogue_load(const char *path) {
             who->sched[who->schedn].y = (int16_t)v[2];
             who->schedn++;
             topic = nullptr;
+        } else if (word_eq(key, "fights")) {
+            // `fights health 40 damage 5 guard 1 speed 100 reach 3`, in any
+            // order and any subset. Named fields rather than five numbers in a
+            // row, because a row of numbers is unreadable in a file people are
+            // meant to edit, and a missing one silently shifts the rest.
+            char *p = skip_spaces(rest);
+            while (*p && ok) {
+                char *word = p;
+                while (*p && *p != ' ' && *p != '\t') p++;
+                if (*p) *p++ = '\0';
+                p = skip_spaces(p);
+                char *num = p;
+                while (*p && *p != ' ' && *p != '\t') p++;
+                if (*p) *p++ = '\0';
+                p = skip_spaces(p);
+
+                int n = 0;
+                bool digits = *num != '\0';
+                for (const char *d = num; *d; d++) {
+                    if (*d < '0' || *d > '9') digits = false;
+                    else n = n * 10 + (*d - '0');
+                }
+                if (!digits) {
+                    complain(path, lineno, "`fights` wants a name and a number");
+                    ok = false;
+                    break;
+                }
+                if (word_eq(word, "health"))      who->health = (int16_t)n;
+                else if (word_eq(word, "damage")) who->damage = (uint8_t)n;
+                else if (word_eq(word, "guard"))  who->guard  = (uint8_t)n;
+                else if (word_eq(word, "speed"))  who->speed  = (uint8_t)n;
+                else if (word_eq(word, "reach"))  who->reach  = (uint8_t)n;
+                else {
+                    SDL_Log("gigantima: %s:%d: nobody fights with a '%s'",
+                            path, lineno, word);
+                    ok = false;
+                }
+                if (n > 255) {
+                    complain(path, lineno, "a fighting number that will not fit");
+                    ok = false;
+                }
+            }
+            topic = nullptr;
         } else if (word_eq(key, "greet")) {
             SDL_strlcpy(who->greet, rest, sizeof who->greet);
             topic = nullptr;
@@ -322,6 +366,22 @@ bool gg_dialogue_load(const char *path) {
                 topic->wants = (uint8_t)kind;
                 topic->wants_count = (uint8_t)(count > 255 ? 255 : count);
             }
+        } else if (word_eq(key, "orders")) {
+            if (!topic) {
+                complain(path, lineno, "an order outside a topic");
+                ok = false;
+                break;
+            }
+            int st = -1;
+            for (int i = 0; i < GG_STANCE_COUNT; i++)
+                if (word_eq(GG_STANCE_NAME[i], rest)) st = i;
+            if (st < 0) {
+                SDL_Log("gigantima: %s:%d: nobody can be ordered to '%s'",
+                        path, lineno, rest);
+                ok = false;
+                break;
+            }
+            topic->orders = (uint8_t)(st + 1);
         } else if (word_eq(key, "trade")) {
             if (!topic) {
                 complain(path, lineno, "`trade` outside any topic");

@@ -146,6 +146,7 @@ static bool actor_write(SDL_IOStream *io, const gg_actor *a) {
     ok = ok && gg_io_w32(io, a->beast);
     ok = ok && gg_io_w32(io, a->angered_by);
     ok = ok && gg_io_w32(io, a->asleep);
+    ok = ok && gg_io_w32(io, a->stance);
     ok = ok && gg_io_w32(io, a->reach) && gg_io_w32(io, a->notice) &&
                gg_io_w32(io, (uint32_t)(uint16_t)a->flees);
     ok = ok && gg_io_w32(io, a->schedn);
@@ -163,6 +164,7 @@ static bool actor_read(SDL_IOStream *io, gg_actor *a) {
     uint32_t hp = 0, hpmax = 0, level = 0, party = 0;
     uint32_t hostile = 0, speed = 0, energy = 0, damage = 0, guard = 0;
     uint32_t beast = 0, reach = 0, notice = 0, flees = 0, angered = 0, asleep = 0;
+    uint32_t stance = 0;
     bool ok = gg_io_r32(io, &active) && gg_io_r32(io, &art) &&
               gg_io_r32(io, &facing);
     ok = ok && SDL_ReadIO(io, a->name, GG_ACTOR_NAME_MAX) == GG_ACTOR_NAME_MAX;
@@ -174,6 +176,7 @@ static bool actor_read(SDL_IOStream *io, gg_actor *a) {
                gg_io_r32(io, &energy) && gg_io_r32(io, &damage) &&
                gg_io_r32(io, &guard) && gg_io_r32(io, &beast) &&
                gg_io_r32(io, &angered) && gg_io_r32(io, &asleep) &&
+               gg_io_r32(io, &stance) &&
                gg_io_r32(io, &reach) && gg_io_r32(io, &notice) &&
                gg_io_r32(io, &flees);
     ok = ok && gg_io_r32(io, &n) && n <= GG_SCHEDULE_MAX;
@@ -207,6 +210,9 @@ static bool actor_read(SDL_IOStream *io, gg_actor *a) {
     // plus one, and this file may not be ours.
     a->angered_by = (uint8_t)(angered <= GG_ACTORS_MAX ? angered : 0);
     a->asleep = (uint8_t)(asleep <= 255 ? asleep : 0);
+    // Clamped: an order out of a file that is not ours would otherwise index
+    // past the end of the stances the game knows about.
+    a->stance = (uint8_t)(stance < GG_STANCE_COUNT ? stance : GG_STANCE_FOLLOW);
     // Not coerced to a minimum here: a townsperson has no reach at all, and
     // turning that into 1 on the way in made a saved game differ from the one
     // it was saved from. gg_reach applies the default where it is needed.

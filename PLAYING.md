@@ -97,10 +97,18 @@ it beatable. Bring what he took back to Iolo and the story ends.
 a merchant about his JOB and he will name what he has. They buy as well as sell,
 at half what they charge.
 
-**Take somebody with you.** Rugar beats a party that walked up alone every time
-out of twenty, and loses to one that came prepared fifteen times in twenty. A
-creature turns on whoever is hurting it, so while a companion holds its
-attention its back is to you — and a back that is turned is the difference.
+**Take somebody with you, and pick which.** **Dupre** stands in front of things:
+at arm's length with the man at the end of the road he wins 13 fights of 20
+where Gwenno wins 4. **Gwenno** throws from three paces and dies if anything
+reaches her: against something that shoots back she wins 20 of 20 where Dupre
+wins 7. A creature turns on whoever is hurting it, so while a companion holds
+its attention its back is to you — and a back that is turned is the difference.
+
+**Tell them what to do.** Talk to somebody walking with you (`T`, facing them)
+and ask them to FOLLOW, to STAND — hold this ground and fight what comes to it —
+or to keep BACK, which is what you say to the one who cannot take another blow.
+They teach you those words when they join. The status band says what they were
+told.
 
 **Magic is a language, not a list.** Ask **Nystul** about his JOB and then about
 the RUNES, and keep asking about the last word he gave you: ten runes, one at a
@@ -262,7 +270,7 @@ with a text editor:
 
 | | |
 | --- | --- |
-| `dialogue.txt` | who lives in the world, what they say, what they teach, what they hand over |
+| `dialogue.txt` | who lives in the world, what they say, what they teach, what they hand over, and what they are in a fight |
 | `bestiary.txt` | what lives in the hills: stats, behaviour, loot, and where it is found |
 | `quests.txt` | the story, as a list of stages and the conditions that enter them |
 | `spells.txt` | the runes, and the phrases they make |

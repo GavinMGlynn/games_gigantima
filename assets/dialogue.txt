@@ -7,11 +7,18 @@
 #   art    ID          which sprite they wear - and that the world places them
 #   home   PLACE       the region they live in; a map with one gets them
 #   at     HH DX DY    at this hour, be this far from that place's centre
+#   fights health N damage N guard N speed N reach N
+#                      what they are in a fight, for somebody who will come with
+#                      thee. Any subset, in any order; what is left out is what
+#                      an ordinary townsperson has. `speed` is initiative -
+#                      100 is one action a turn - and `reach` above one throws.
 #   greet  TEXT        what they say when you walk up to them
 #   topic  WORD [WORD] a thing they will talk about, and its synonyms
 #     say  TEXT        a line of the answer; up to three
 #     teach WORD       asking this hands over a word you did not have
 #     joins            asking this takes them with thee
+#     orders WORD      asking this tells a companion what to do:
+#                      follow, stand, or keep back
 #     wants ITEM N     only askable while thou hast N of it, and asking gives
 #                      them away - which is how a thing is handed to somebody
 #     gives ITEM N     asking hands N of it over, but only if thou hast none
@@ -133,6 +140,7 @@ bye Mind thy step in the dark, child.
 person Dupre
 art GUARD
 home Britain
+fights health 42 damage 5 guard 2 speed 90
 at 07 8 2
 at 13 -8 2
 at 19 2 8
@@ -148,7 +156,20 @@ topic stones
   teach come
 topic come join
   say Aye. Somebody has to keep thee alive out there.
+  say I will FOLLOW unless thou sayest otherwise: STAND, or keep BACK.
   joins
+  teach follow
+  teach stand
+  teach back
+topic follow
+  say At thy back, then. Whatever walks at thee walks at me first.
+  orders follow
+topic stand
+  say Here. Nothing comes past this without going through me.
+  orders stand
+topic back
+  say If thou sayest so. I do not like it, but I will start nothing.
+  orders back
 bye Mind how thou goest.
 
 person Katrina
@@ -238,6 +259,7 @@ bye Look up more often, Avatar.
 person Gwenno
 art HEALER
 home Britain
+fights health 26 damage 4 guard 1 speed 180 reach 3
 at 07 6 6
 at 12 -4 6
 at 18 6 -2
@@ -254,7 +276,21 @@ topic north
   teach come
 topic come join
   say Then I am with thee. I can carry my own pack and my own trouble.
+  say I throw better than I swing, so I keep my distance and thou keepest thine.
+  say FOLLOW is what I do unless thou sayest STAND, or to keep BACK.
   joins
+  teach follow
+  teach stand
+  teach back
+topic follow
+  say With thee. I will keep three paces off and let fly over thy shoulder.
+  orders follow
+topic stand
+  say Here it is, then. I have a clear sight of the road from this spot.
+  orders stand
+topic back
+  say Gladly. I am no use to thee dead and neither is my husband.
+  orders back
 topic caravan
   say My husband walked with it. That is all I know and all I care to know.
 bye Fare thee well. Go north, if thou hast courage.
