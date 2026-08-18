@@ -119,10 +119,14 @@ jobs:
           case "$GITHUB_REF" in refs/tags/*) ;; *) name="" ;; esac
           echo "name=$name" >> "$GITHUB_OUTPUT"
 
+      # The -D is quoted because PowerShell will otherwise take
+      # `-DGIGANTIMA_RELEASE=0.1.0-beta.1` apart at the dash and hand CMake a
+      # bare `0` - which is how the first tagged build shipped Windows packages
+      # called `gigantima-0-windows-x86_64.zip`.
       - name: Build
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=Release -DGIGANTIMA_TESTS=OFF `
-                ${{ steps.release.outputs.name && format('-DGIGANTIMA_RELEASE={0}', steps.release.outputs.name) || '' }}
+                "${{ steps.release.outputs.name && format('-DGIGANTIMA_RELEASE={0}', steps.release.outputs.name) || '-DGIGANTIMA_TESTS=OFF' }}"
           cmake --build build --config Release --parallel
 
       - name: Package
@@ -259,6 +263,27 @@ jobs:
 
       - name: What there is
         run: ls -la packages
+
+      # Every file has to be named for the release it is in. The first tagged
+      # build produced Windows packages called `gigantima-0-windows-x86_64.*`
+      # and published them, because nothing was looking - a release is the one
+      # place where "it built" is not the same as "it is right".
+      - name: Every package is named for this release
+        run: |
+          want="${GITHUB_REF_NAME#v}"
+          bad=0
+          for f in packages/gigantima-*; do
+            case "$(basename "$f")" in
+              gigantima-"$want"-*) ;;
+              *) echo "misnamed for $want: $(basename "$f")"; bad=1 ;;
+            esac
+          done
+          test "$bad" = 0 || { echo "refusing to publish a misnamed release"; exit 1; }
+          for want_one in linux windows macos; do
+            ls packages | grep -q -- "-$want_one" || {
+              echo "nothing for $want_one in this release"; exit 1; }
+          done
+          echo "all packages named gigantima-$want-*, and all three platforms are here"
 
       # A beta is marked as a pre-release, so nobody downloads it thinking it
       # is finished. The notes come from CHANGELOG.md rather than being written
