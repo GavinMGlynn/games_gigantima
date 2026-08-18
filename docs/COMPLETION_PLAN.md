@@ -299,11 +299,15 @@ here. Nothing is on this list that is not already admitted to somewhere.
       risen with it, and the numbers survive a save. The climax was re-measured
       against the stronger party it now faces — it had become a fight nobody
       could lose, which the balance test now refuses in both directions.*
-- [ ] **A world that is not the same twice.** An authored map ships with seed 0,
-      so every playthrough of the vale rolls identical dice: the same creatures
-      in the same places, the same loot. A new journey should be its own world.
-      *Verification: two journeys from different seeds differ in where trouble
-      is, and the same seed reproduces exactly — including through a replay.*
+- [x] **A world that is not the same twice.** A map is drawn by hand; what is
+      *in* it is rolled. The seed now comes from the frontend rather than from
+      the map file — which carried the seed its terrain was generated from, zero
+      for a map drawn by hand — so every journey through the vale has its own
+      trouble in its own places, and `--seed N` reproduces one exactly.
+      *Verification: two seeds put the brigands, outlaws and slingers in
+      different places and the same seed puts them back, in the test and in two
+      debug frames side by side. The world remembers its seed through a save,
+      and a replay of a map game carries it and still ends bit-identical.*
 - [ ] **A map is a file you can read.** The editor is the only thing that can
       write a map and it needs a mouse, so the two shipped maps cannot be
       regenerated and a format change would strand them. A map needs a text

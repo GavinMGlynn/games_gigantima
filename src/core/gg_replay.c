@@ -221,20 +221,18 @@ bool gg_record_begin(gg_recorder *r, const char *path, const gg_game *g,
     say(r, "# Play it back with --replay. The hash at the bottom is what this\n"
            "# session ended on; a replay that ends on another number has found\n"
            "# a divergence, and the turn it happened on is the bug.\n");
-    // A world made by the generator is named by its seed; one read from a file
-    // is named by the file, and seeds its RNG from the seed the map carries. So
-    // only one of these two lines is ever written, and a `seed` line beside a
-    // `map` line would be a number that decides nothing.
+    // **Both**, always. The seed decides the world whether the terrain came out
+    // of the generator or off the disk: a map is drawn by hand but what is
+    // *stocked* in it, and every roll after that, comes from the seed. A replay
+    // of a map game that did not carry one built a different world and reported
+    // a divergence that was its own fault.
     //
-    // The seed the *world* was built from, not the RNG state now: by the time a
-    // recording starts the generator has already spent some of the stream, and
-    // replaying from where it got to would build a different world.
-    if (map_leaf && *map_leaf) {
-        say(r, "map %s\n", map_leaf);
-    } else {
-        say(r, "seed %u\n", g->map.seed);
-        say(r, "generated %d %d\n", g->map.w, g->map.h);
-    }
+    // The seed the world was built from, not the RNG state now: by the time a
+    // recording starts the world has already spent some of the stream, and
+    // replaying from where it got to would build a different world again.
+    say(r, "seed %u\n", g->map.seed);
+    if (map_leaf && *map_leaf) say(r, "map %s\n", map_leaf);
+    else                       say(r, "generated %d %d\n", g->map.w, g->map.h);
     say(r, "profile %s\n", g->profile);
     say(r, "start %016llX\n", (unsigned long long)gg_state_hash(g));
     return r->open;

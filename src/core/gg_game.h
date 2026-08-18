@@ -311,7 +311,14 @@ bool gg_game_new(gg_game *g, uint32_t seed, const char *profile);
 // path the level editor's output takes, and the one that makes an authored
 // test scene playable - which is how the shoreline corners were checked
 // against a coastline the generator would never produce.
-bool gg_game_new_from_map(gg_game *g, const char *path, const char *profile);
+// The same, from a map on disk. **The seed is passed in rather than taken from
+// the map**: a map file carries the seed it was *generated* from, which is zero
+// for one drawn by hand, and seeding a world from that made every journey
+// through the vale roll identical dice - the same brigands in the same places
+// and the same loot, every time anybody played it. Where the seed comes from is
+// the frontend's business, because the simulation may not read a clock.
+bool gg_game_new_from_map(gg_game *g, const char *path, const char *profile,
+                          uint32_t seed);
 
 void gg_game_free(gg_game *g);
 

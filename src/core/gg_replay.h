@@ -17,10 +17,9 @@
 // pasted into an issue. A binary stream would have been smaller and useless.
 //
 //     # gigantima replay
-//     map vale.ggmap        (or `seed 4242` and `generated 80 64` for a world
-//     profile Avatar         with no file - a map seeds its own RNG from the
-//                            seed it carries, so a seed line beside a map line
-//                            would be a number that decides nothing)
+//     seed 4242
+//     map vale.ggmap        (or `generated 80 64` for a world with no file -
+//     profile Avatar         either way the seed decides what is *in* it)
 //     act N
 //     act TALK
 //     travel stones.ggmap 24 44

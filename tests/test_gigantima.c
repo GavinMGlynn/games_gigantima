@@ -5093,7 +5093,7 @@ static void a_map_authored_in_the_editor_can_be_played(void) {
 
     // Now play it, with no code change - which is the whole claim.
     gg_game g;
-    CHECK(gg_game_new_from_map(&g, path, "Author"), "the game would not open it");
+    CHECK(gg_game_new_from_map(&g, path, "Author", 4242), "the game would not open it");
 
     CHECK(SDL_strcmp(g.map.name, "The Test Vale") == 0,
           "the map came back called '%s'", g.map.name);
@@ -5630,7 +5630,7 @@ static void the_vale_is_peopled_by_the_book(void) {
     CHECK(gg_dialogue_load(gg_asset_path("dialogue.txt")), "no book");
 
     gg_game g;
-    CHECK(gg_game_new_from_map(&g, gg_asset_path("maps/vale.ggmap"), "Villager"),
+    CHECK(gg_game_new_from_map(&g, gg_asset_path("maps/vale.ggmap"), "Villager", 4242),
           "the vale would not open");
 
     // Everybody the book says lives in Britain is here, once.
@@ -5668,7 +5668,7 @@ static void the_vale_is_peopled_by_the_book(void) {
     // The standing stones have no Britain in them and so have none of Britain's
     // people - the rule that keeps a town from following you over a hill.
     gg_game s;
-    CHECK(gg_game_new_from_map(&s, gg_asset_path("maps/stones.ggmap"), "Walker"),
+    CHECK(gg_game_new_from_map(&s, gg_asset_path("maps/stones.ggmap"), "Walker", 4242),
           "the stones would not open");
     for (int i = 0; i < s.actors; i++)
         if (i != s.player && s.actor[i].active)
@@ -5830,7 +5830,7 @@ static void walking_between_two_maps_takes_everything_with_you(void) {
     SDL_strlcpy(west_path, west, sizeof west_path);
 
     gg_game g;
-    CHECK(gg_game_new_from_map(&g, east_path, "Traveller"), "the east would not open");
+    CHECK(gg_game_new_from_map(&g, east_path, "Traveller", 4242), "the east would not open");
     CHECK(SDL_strcmp(g.map.name, "The East Field") == 0,
           "started in '%s'", g.map.name);
 
@@ -6017,7 +6017,7 @@ static int fights_won_against_rugar(bool prepared) {
     for (uint32_t seed = 1; seed <= 20; seed++) {
         gg_game g;
         CHECK(gg_game_new_from_map(&g, gg_asset_path("maps/vale.ggmap"),
-                                   "Fighter"), "the vale would not open");
+                                   "Fighter", 4242), "the vale would not open");
 
         if (prepared) {
             // Recruited the way a player recruits: by asking everybody in the
@@ -6182,7 +6182,7 @@ static void a_companion_rises_with_the_avatar(void) {
     CHECK(gg_dialogue_load(gg_asset_path("dialogue.txt")), "no book");
 
     gg_game g;
-    CHECK(gg_game_new_from_map(&g, gg_asset_path("maps/vale.ggmap"), "Party"),
+    CHECK(gg_game_new_from_map(&g, gg_asset_path("maps/vale.ggmap"), "Party", 4242),
           "the vale would not open");
     ask_the_town(&g);
     CHECK(gg_party_size(&g) == 2, "the vale sent %d along", gg_party_size(&g));
@@ -6245,7 +6245,7 @@ static void a_journey_that_fights_its_way_north_arrives_stronger(void) {
     }
 
     gg_game g;
-    CHECK(gg_game_new_from_map(&g, gg_asset_path("maps/vale.ggmap"), "Fighter"),
+    CHECK(gg_game_new_from_map(&g, gg_asset_path("maps/vale.ggmap"), "Fighter", 4242),
           "the vale would not open");
 
     const int start_level = gg_player_const(&g)->level;
@@ -6338,6 +6338,63 @@ static void a_journey_that_fights_its_way_north_arrives_stronger(void) {
     restore_quests();
 }
 
+// A map is drawn by hand; what is *in* it is rolled. Two journeys through the
+// same vale should not be the same journey - and the same seed should still
+// give back the same one, or a bug report that names a seed is worthless.
+static void two_journeys_through_one_map_are_not_the_same_journey(void) {
+    CHECK(gg_bestiary_load(gg_asset_path("bestiary.txt")), "no bestiary");
+    CHECK(gg_dialogue_load(gg_asset_path("dialogue.txt")), "no book");
+
+    // Where trouble is, in a world built from `seed`.
+    #define TROUBLE(seed, into) do {                                          \
+        gg_game w;                                                            \
+        CHECK(gg_game_new_from_map(&w, gg_asset_path("maps/vale.ggmap"),      \
+                                   "Rolls", (seed)), "the vale would not open"); \
+        (into) = 0;                                                           \
+        for (int i = 0; i < w.actors; i++) {                                  \
+            if (!w.actor[i].active || !w.actor[i].hostile) continue;          \
+            (into) = (into) * 31 + w.actor[i].x * 1000 + w.actor[i].y;        \
+        }                                                                     \
+        CHECK((into) != 0, "seed %u put nothing hostile in the vale", (seed)); \
+        gg_game_free(&w);                                                     \
+    } while (0)
+
+    long a = 0, b = 0, again = 0;
+    TROUBLE(11u, a);
+    TROUBLE(12u, b);
+    TROUBLE(11u, again);
+
+    CHECK(a != b, "two seeds put the trouble in exactly the same places - "
+                  "every journey through this map is the same journey");
+    CHECK(a == again, "the same seed gave a different world the second time");
+
+    #undef TROUBLE
+
+    // And the world remembers which seed it was, so a bug report can name it
+    // and a replay can rebuild it.
+    gg_game g;
+    CHECK(gg_game_new_from_map(&g, gg_asset_path("maps/vale.ggmap"), "Rolls", 909u),
+          "the vale would not open");
+    CHECK(g.map.seed == 909u, "the world says it was seeded %u", g.map.seed);
+
+    // Through a save, too - resuming must not reroll anything.
+    const char *who = "Rolls";
+    wipe_saves(who);
+    CHECK(gg_save_write(&g, save_base(), who), "the save failed");
+    gg_game back;
+    SDL_zero(back);
+    CHECK(gg_save_read(&back, save_base(), who), "the load failed");
+    CHECK(back.map.seed == 909u, "a resumed world says it was seeded %u",
+          back.map.seed);
+    CHECK(back.rng.s == g.rng.s, "a resumed world's dice are somewhere else");
+    gg_game_free(&back);
+    wipe_saves(who);
+
+    gg_game_free(&g);
+    restore_bestiary();
+    restore_dialogue();
+}
+
 // The plan's own verification for the storyline: playable start to finish.
 //
 // Every step is the game's own - words are learned by asking, the crossing is
@@ -6351,7 +6408,7 @@ static void the_whole_story_can_be_played_from_start_to_finish(void) {
     CHECK(gg_bestiary_load(gg_asset_path("bestiary.txt")), "no bestiary");
 
     gg_game g;
-    CHECK(gg_game_new_from_map(&g, gg_asset_path("maps/vale.ggmap"), "Hero"),
+    CHECK(gg_game_new_from_map(&g, gg_asset_path("maps/vale.ggmap"), "Hero", 4242),
           "the vale would not open");
 
     const int caravan = gg_quest_find("CARAVAN");
@@ -6643,7 +6700,7 @@ static void a_map_you_leave_is_as_you_left_it(void) {
     SDL_strlcpy(far_path, far, sizeof far_path);
 
     gg_game g;
-    CHECK(gg_game_new_from_map(&g, near_path, "Rememberer"),
+    CHECK(gg_game_new_from_map(&g, near_path, "Rememberer", 4242),
           "the near field would not open");
 
     // Three things done in the near field, one of each kind the promise
@@ -6825,7 +6882,7 @@ static void a_way_out_that_leads_nowhere_is_refused(void) {
     SDL_strlcpy(map_path, path, sizeof map_path);
 
     gg_game g;
-    CHECK(gg_game_new_from_map(&g, map_path, "Lost"), "the map would not open");
+    CHECK(gg_game_new_from_map(&g, map_path, "Lost", 4242), "the map would not open");
 
     const char *was = g.map.name;
     (void)was;
@@ -7121,6 +7178,7 @@ int main(void) {
 
     RUN(walking_between_two_maps_takes_everything_with_you);
     RUN(a_party_that_walked_the_road_can_beat_the_man_at_the_end_of_it);
+    RUN(two_journeys_through_one_map_are_not_the_same_journey);
     RUN(what_the_party_learns_makes_it_stronger);
     RUN(a_companion_rises_with_the_avatar);
     RUN(a_journey_that_fights_its_way_north_arrives_stronger);

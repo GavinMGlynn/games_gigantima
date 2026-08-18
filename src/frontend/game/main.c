@@ -810,7 +810,7 @@ static SDL_AppResult run_replay(gg_app *app) {
 
     const bool built = r.map[0]
         ? gg_game_new_from_map(&app->game, gg_asset_path_for_map(r.map),
-                               r.profile)
+                               r.profile, r.seed)
         : gg_game_new(&app->game, r.seed, r.profile);
     if (!built) {
         SDL_Log("gigantima: the replay's world could not be built");
@@ -1013,7 +1013,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[]) {
     }
     if (!built) {
         built = app->map_path
-            ? gg_game_new_from_map(&app->game, app->map_path, app->profile)
+            ? gg_game_new_from_map(&app->game, app->map_path, app->profile, seed)
             : gg_game_new(&app->game, seed, app->profile);
     }
     if (!built) {

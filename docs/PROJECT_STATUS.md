@@ -905,6 +905,34 @@ breaking the rule they pin — making every speed equal, clearing line of sight,
 dropping no loot, and putting townsfolk on the other side. Plus a `--shot` frame
 of an exchange of blows, now taken in CI.*
 
+### One map, many journeys
+
+A map file carries the seed its *terrain* was generated from, which is zero for
+a map drawn by hand — and the world used to seed its RNG from that. Every
+journey through the shipped vale therefore rolled identical dice: the same
+brigands in the same places, the same loot, for everybody who ever played it.
+
+**The seed comes from the frontend now**, for an authored map exactly as for a
+generated one, because the simulation may not read a clock and where a seed
+comes from is not its business. The world keeps it — `map.seed` is the seed of
+the *world*, not of the terrain — so a save carries it, the debug window shows
+it, and a bug report can name it.
+
+Two consequences worth stating. `--seed N --map vale.ggmap` now reproduces a
+journey through the vale exactly, which it never did. And a **replay of a map
+game must carry the seed**: the terrain comes off the disk but everything
+stocked in it and every roll after that comes from the seed, so a recording
+that named only the map rebuilt a different world and reported a divergence
+that was its own fault.
+
+*Verification: `two_journeys_through_one_map_are_not_the_same_journey` — two
+seeds put the hostiles in different places, the same seed puts them back, the
+world remembers which seed it was, and a save resumes with the same dice. Plus
+two debug frames of the vale at seeds 11 and 12 side by side: the same eight
+townsfolk at the same doors, the eight wandering creatures nowhere near each
+other. And the shipped storyline recorded on a map game and replayed
+bit-identically.*
+
 ### Levelling
 
 Experience was counted, saved, and spent on nothing: the Avatar ended the story

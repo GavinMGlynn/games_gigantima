@@ -1606,7 +1606,8 @@ bool gg_game_new(gg_game *g, uint32_t seed, const char *profile) {
     return finish_new_game(g, profile);
 }
 
-bool gg_game_new_from_map(gg_game *g, const char *path, const char *profile) {
+bool gg_game_new_from_map(gg_game *g, const char *path, const char *profile,
+                          uint32_t seed) {
     SDL_zerop(g);
     g->talking_to = -1;
 
@@ -1614,9 +1615,14 @@ bool gg_game_new_from_map(gg_game *g, const char *path, const char *profile) {
     // The name a way out would call this map by, so leaving and coming back
     // knows which one it was.
     SDL_strlcpy(g->here, leaf_of(path), sizeof g->here);
-    // The map carries the seed it was generated from, so a loaded world still
-    // has a reproducible RNG for whatever the simulation decides afterwards.
-    gg_rng_seed(&g->rng, g->map.seed);
+    // Seeded from what the caller was given, not from the map. The map's own
+    // seed is what its *terrain* was generated from - zero for a map drawn by
+    // hand - and using it made every journey through the vale identical.
+    //
+    // The map keeps the seed of the world built on it, so a save carries it and
+    // a bug report can name it.
+    gg_rng_seed(&g->rng, seed);
+    g->map.seed = seed;
     return finish_new_game(g, profile);
 }
 
