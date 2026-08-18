@@ -4,11 +4,15 @@ Notable changes, newest first. Versions follow [semantic
 versioning](https://semver.org); anything below 1.0 may still move under you,
 and the save and map formats are versioned but not yet frozen.
 
-## Unreleased
+## 0.1.0-beta.2 — 2026-08-18
 
-Work since the beta, on the list in `docs/COMPLETION_PLAN.md` under *Phase 5 —
-More of it*: ten items of sixteen. The gaps named under 0.1.0-beta.1 below are
-what that release had; this is what has closed since.
+Everything on the completion plan is now done: **58 items of 58**, Phase 0 to
+Phase 5. The sixteen of them in *Phase 5 — More of it* are what has landed since
+the first beta, and the gaps named under 0.1.0-beta.1 below are what that
+release had.
+
+Still a beta, and for the same reason as before: what is thin is *quantity* —
+two storylines, five maps, nine kinds of creature — not a part that half works.
 
 ### More of it
 
