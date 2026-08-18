@@ -188,10 +188,12 @@ run is a CI smoke test.*
 
 ### The editor
 
-A second binary on the same core, `gigantima_editor`. Seven tools — ground,
-things, litter, people, their day, regions, start — with the left button
-painting and the right button rubbing out whatever the current tool places, so
-one tool is both brush and rubber and there is no erase mode to be stuck in.
+A second binary on the same core, `gigantima_editor`. Eight tools — ground,
+things, litter, people, their day, regions, start, ways out — with the left
+button painting and the right button rubbing out whatever the current tool
+places, so one tool is both brush and rubber and there is no erase mode to be
+stuck in. (Only seven of them had a key; `8` selected nothing, so the ways-out
+tool could be reached with a mouse and not with the keyboard.)
 
 **The document is separate from the window.** `src/editor/gg_edit.c` holds the
 map and every operation on it, with no renderer and no event in it;
@@ -199,6 +201,36 @@ map and every operation on it, with no renderer and no event in it;
 what makes the item's own verification possible: a test authors a whole map by
 making the same calls a person makes with a mouse, saves it, and plays it — which
 is not a thing that can be checked by taking a picture of a window.
+
+**Undo, thirty deep, as whole snapshots of the map.** A map is about a hundred
+kilobytes; an undo record per tool would be eight kinds of record, each with its
+own way of being wrong, and the first one anybody got wrong would corrupt
+somebody's work. One shape, obviously correct, and thirty of them is a few
+megabytes. The snapshots live on the heap so a `gg_editor` still fits on a
+stack, and closing a map drops them — which the sanitizer had to say once before
+it was true.
+
+**A drag is one thing to take back, not one per tile it crossed.** The frontend
+says where a stroke begins and ends and everything inside it is one step;
+otherwise undoing a painted field is forty presses. Doing something new forgets
+what was ahead, or "put it back" restores a change belonging to a map that no
+longer exists.
+
+**Fill**, four-connected, matching on the terrain alone so a lake and the beach
+around it are different ground. An explicit stack rather than recursion: a map is
+a hundred thousand cells and a recursive flood is a stack overflow waiting for
+the first person who fills an ocean. Only the ground fills — a flood of houses
+is not a thing anybody wants by accident.
+
+**And somewhere to type.** The editor had no text entry at all, which is why it
+could open exactly one map — the one its command line named — why `--link` was a
+command-line argument, and why every region in an authored map was called
+"town 1". There is now one modal prompt: `O` opens a map, `Shift+S` saves it
+under another name, `E` names whatever the current tool is about (the map, the
+region under the cursor, the person under the cursor) and `L` says where the
+next way out leads. **`O` lists every map on the machine** — the shipped ones
+and anything saved beside the profiles — and the arrows walk them, because "open
+by name" is only useful to somebody who already knows the name.
 
 Two things it does that a naive editor would not:
 
@@ -226,6 +258,21 @@ will hold them is here.
 `a_failed_load_leaves_what_was_open_alone`. Plus `--shot` frames of the editor
 with a map open and of the game playing that same map, the editor's now taken in
 CI.*
+
+*Verification of the three conveniences: `a_mistake_can_be_taken_back` — a tile,
+a sixteen-tile drag as one step, a person, a region, that a new change forgets
+what was ahead, and that past the bound it forgets the oldest rather than
+refusing the newest; `an_area_can_be_filled` — a fill that stops at a wall and
+not at the map edge, with the water flag following the ground, undone in one
+step, and refused for a brush that is already there or a tool that is not the
+ground; `a_second_map_can_be_opened` — the other map opened over the first in
+both file forms, nothing of the first's history surviving into it, and a name
+that is not a map leaving what is open alone; and
+`everything_with_a_name_can_be_named`. Mutation-tested: a stroke that remembers
+nothing, a change that leaves the redo stack, a fill that will not spread
+downward, and a close that keeps the history — the last of which the tests pass
+and **LeakSanitizer** catches, at 1.9 MB in 230 allocations. Plus `--ask` and a
+`--shot` of each of the four prompts, taken in CI.*
 
 ### Map file format
 
@@ -1940,7 +1987,7 @@ Named plainly, because a reader should not have to infer absence:
 | Magic beyond six effects | light, heal, harm, sleep, ward and travel. No summoning, no enchantment, and no mana — reagents and the circle are the whole cost |
 | Haggling | a merchant buys and sells at the item table's own prices, and a topic can give, take and raise a flag. Nobody haggles, and no price ever moves |
 | Recorded audio | every sound is arithmetic. The effects are tones and noise; the tunes are written down and played on synthesised voices, but nothing here is a recording of anything |
-| Editor conveniences | no undo, no fill, no copy, no file dialog - it saves beside the profiles under one name |
+| Editor conveniences | no copy and paste, no selection, and no way to move what has been placed - it is put down and rubbed out |
 | Party depth | four companions with their own health, damage, guard, speed and reach, and three orders to give. No classes and no skills, and nobody carries their own kit |
 | A map page | the character sheet exists; there is no page that shows the world, only the debug window |
 

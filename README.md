@@ -191,14 +191,21 @@ records the lot if you would rather hear it than play to it.
 
 ### The editor
 
-`gigantima_editor` is a second binary on the same core. Seven tools down the
-left — ground, things, litter, people, their day, regions, start — picked with
-`1`..`7`, the brush changed with `[` and `]` or the wheel, left button to paint
-and right to rub out. `C` lists what is wrong with the map: a start inside a
+`gigantima_editor` is a second binary on the same core. Eight tools down the
+left — ground, things, litter, people, their day, regions, start, ways out —
+picked with `1`..`8`, the brush changed with `[` and `]` or the wheel, left
+button to paint and right to rub out. `Z` and `Y` take a mistake back and put it
+again, thirty deep, with a drag counting as one step; `F` fills the run of
+ground under the cursor. `C` lists what is wrong with the map: a start inside a
 lake, somebody standing in a wall, a schedule point in a mountain.
+
+`O` opens any map on the machine — it lists them, so nothing has to be typed
+that is not already known — `Shift+S` saves under another name, `E` names
+whatever the current tool is about, and `L` says where the next way out leads.
 
 ```
 gigantima_editor [--open FILE.ggmap] [--size W H] [--tool N] [--shot FILE.bmp]
+                 [--ask open|save|name|link] [--export FILE.map.txt]
 ```
 
 A map it writes is played with `gigantima --map FILE.ggmap`, and nothing about

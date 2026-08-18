@@ -242,10 +242,20 @@ content is never a code change.
 | Left button | put down what the tool places |
 | Right button | rub out what the tool places — the same tool is the brush and the rubber |
 | `[` `]` | change what the brush is |
+| `Z` / `Y` | take it back · put it back — thirty deep, and a drag is one step |
+| `F` | fill the run of ground under the cursor with the brush |
+| `E` | name whatever the tool is about: the map, the region under the cursor, the person under the cursor |
+| `L` | where the next way out leads — type `vale.ggmap 40 8` |
 | Arrows | scroll · `+` `-` zoom · `G` grid |
 | `C` | check the map, and list everything wrong with it that would matter to the game |
-| `S` / `O` / `N` | save · open · new |
+| `S` / `Shift+S` | save · save as |
+| `O` / `N` | open · new |
 | `Esc` | leave |
+
+**`O` lists every map on the machine** — the five that ship and anything saved
+beside your journeys — and the arrows walk them, so you never have to type a
+path you do not already know. The same box types a name for `Shift+S`, `E` and
+`L`; Enter does it and Escape leaves it alone.
 
 A map with no start tile, or a way out that leads nowhere, is refused with a
 reason — the editor is where a map should be found to be broken, not the game.
@@ -261,7 +271,8 @@ ends in `.map.txt`. To convert one:
 ```
 
 Saved maps go beside your journeys (see below) as `authored.ggmap` unless you
-opened a file, in which case `S` writes back to that file. To play one:
+opened a file, in which case `S` writes back to that file and `Shift+S` asks
+what else to call it. To play one:
 
 ```sh
 ./gigantima --map authored.ggmap --new --play

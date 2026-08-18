@@ -225,6 +225,13 @@ jobs:
         run: |
           ./build/gigantima_editor --size 64 64 --shot editor.bmp
           test -s editor.bmp || { echo "the editor drew nothing"; exit 1; }
+          # And its one modal thing, which is what makes it possible to open a
+          # map, name a place and say where a way out goes without the command
+          # line. Every prompt, because each lays itself out differently.
+          for q in open save name link; do
+            ./build/gigantima_editor --size 64 64 --ask "$q" --shot "editor-$q.bmp"
+            test -s "editor-$q.bmp" || { echo "$q drew nothing"; exit 1; }
+          done
 
       # The world has to make a noise, and the volume rows have to change what
       # it is. Captured through SDL's disk audio driver rather than a device:
@@ -278,6 +285,7 @@ jobs:
             smoke.bmp
             screen-*.bmp
             editor.bmp
+            editor-*.bmp
             travel.bmp
 
   rocky:

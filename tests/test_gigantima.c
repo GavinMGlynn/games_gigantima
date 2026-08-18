@@ -5959,6 +5959,241 @@ static void the_editor_rubs_out_what_it_draws(void) {
     gg_edit_close(&e);
 }
 
+// An editor with no undo is an editor people are afraid to try things in, which
+// is the whole difference between one somebody wrote for themselves and one
+// anybody else can use.
+static void a_mistake_can_be_taken_back(void) {
+    gg_editor e;
+    SDL_zero(e);
+    CHECK(gg_edit_new(&e, 32, 32), "could not make a map");
+
+    CHECK(gg_edit_undos(&e) == 0, "a new map already has something to undo");
+    CHECK(!gg_edit_undo(&e), "a new map undid something");
+
+    // One tile, painted and taken back.
+    gg_edit_tool(&e, GG_TOOL_TERRAIN);
+    while (e.terrain != GG_TILE_WATER) gg_edit_brush(&e, 1);
+    const uint8_t was = gg_map_at_const(&e.map, 4, 4)->terrain;
+    gg_edit_apply(&e, 4, 4);
+    CHECK(gg_map_at_const(&e.map, 4, 4)->terrain == GG_TILE_WATER,
+          "the paint did not take");
+    CHECK(gg_edit_undos(&e) == 1, "painting left %d to undo, expected one",
+          gg_edit_undos(&e));
+
+    CHECK(gg_edit_undo(&e), "the paint would not be taken back");
+    CHECK(gg_map_at_const(&e.map, 4, 4)->terrain == was,
+          "the tile is still painted after undoing");
+    CHECK(gg_edit_redos(&e) == 1, "there is nothing to put back");
+
+    CHECK(gg_edit_redo(&e), "the paint would not be put back");
+    CHECK(gg_map_at_const(&e.map, 4, 4)->terrain == GG_TILE_WATER,
+          "putting it back did not");
+
+    // A drag is one thing to take back, not one per tile it crossed. Without
+    // that, undoing a field of grass is forty presses.
+    const int before = gg_edit_undos(&e);
+    gg_edit_stroke(&e, true);
+    for (int x = 10; x < 26; x++) gg_edit_apply(&e, x, 10);
+    gg_edit_stroke(&e, false);
+    CHECK(gg_edit_undos(&e) == before + 1,
+          "a drag across sixteen tiles left %d things to undo",
+          gg_edit_undos(&e) - before);
+    CHECK(gg_edit_undo(&e), "the drag would not be taken back");
+    int painted = 0;
+    for (int x = 10; x < 26; x++)
+        if (gg_map_at_const(&e.map, x, 10)->terrain == GG_TILE_WATER) painted++;
+    CHECK(painted == 0, "%d tiles of the drag are still painted", painted);
+
+    // Everything that changes the map, not only the paintbrush.
+    gg_edit_tool(&e, GG_TOOL_ACTOR);
+    gg_edit_apply(&e, 6, 6);
+    CHECK(e.map.actors == 1, "nobody was placed");
+    gg_edit_undo(&e);
+    CHECK(e.map.actors == 0, "the person is still there after undoing");
+
+    gg_edit_tool(&e, GG_TOOL_REGION);
+    gg_edit_drag_start(&e, 2, 2);
+    gg_edit_drag_end(&e, 6, 6);
+    CHECK(e.map.regions == 1, "no region was drawn");
+    gg_edit_undo(&e);
+    CHECK(e.map.regions == 0, "the region is still there after undoing");
+
+    // Doing something new forgets what was ahead - otherwise "redo" puts back
+    // a change that belongs to a map that no longer exists.
+    gg_edit_tool(&e, GG_TOOL_TERRAIN);
+    gg_edit_apply(&e, 8, 8);
+    CHECK(gg_edit_redos(&e) == 0,
+          "%d things can still be put back after taking a different turn",
+          gg_edit_redos(&e));
+
+    // And it is bounded. Past the bound the oldest is forgotten rather than
+    // the newest refused, because an editor that quietly stops undoing is
+    // worse than one that forgets an hour ago.
+    for (int i = 0; i < GG_EDIT_UNDO_MAX + 12; i++) gg_edit_apply(&e, 1, i % 30);
+    CHECK(gg_edit_undos(&e) == GG_EDIT_UNDO_MAX,
+          "the editor remembers %d steps, and the bound is %d",
+          gg_edit_undos(&e), GG_EDIT_UNDO_MAX);
+    for (int i = 0; i < GG_EDIT_UNDO_MAX; i++) gg_edit_undo(&e);
+    CHECK(!gg_edit_undo(&e), "it undid more than it remembered");
+
+    gg_edit_close(&e);
+}
+
+// Painting a lake one tile at a time is what makes an editor a toy.
+static void an_area_can_be_filled(void) {
+    gg_editor e;
+    SDL_zero(e);
+    CHECK(gg_edit_new(&e, 32, 32), "could not make a map");
+    gg_edit_tool(&e, GG_TOOL_TERRAIN);
+
+    // A wall of stone straight down the middle, so the fill has something to
+    // stop at that is not the edge of the map.
+    while (e.terrain != GG_TILE_MOUNTAIN) gg_edit_brush(&e, 1);
+    gg_edit_stroke(&e, true);
+    for (int y = 0; y < 32; y++) gg_edit_apply(&e, 16, y);
+    gg_edit_stroke(&e, false);
+
+    while (e.terrain != GG_TILE_WATER) gg_edit_brush(&e, 1);
+    const int painted = gg_edit_fill(&e, 4, 4);
+    CHECK(painted == 16 * 32, "the fill covered %d tiles, expected %d",
+          painted, 16 * 32);
+
+    int water = 0, dry = 0;
+    for (int y = 0; y < 32; y++)
+        for (int x = 0; x < 32; x++) {
+            const gg_cell *c = gg_map_at_const(&e.map, x, y);
+            if (x < 16) {
+                if (c->terrain == GG_TILE_WATER) water++;
+                // The flag follows the ground: a filled lake that is not water
+                // is a lake you can walk across.
+                CHECK((c->flags & GG_CELL_WATER) != 0,
+                      "the tile at %d,%d is water and is not flagged as any", x, y);
+            } else if (x > 16 && c->terrain != GG_TILE_WATER) {
+                dry++;
+            }
+        }
+    CHECK(water == 16 * 32, "%d tiles are water, expected %d", water, 16 * 32);
+    CHECK(dry == 15 * 32, "the fill went through the wall: %d tiles are dry on "
+          "the other side, expected %d", dry, 15 * 32);
+
+    // One thing to take back, however many tiles it covered.
+    CHECK(gg_edit_undo(&e), "the fill would not be taken back");
+    int left = 0;
+    for (int y = 0; y < 32; y++)
+        for (int x = 0; x < 16; x++)
+            if (gg_map_at_const(&e.map, x, y)->terrain == GG_TILE_WATER) left++;
+    CHECK(left == 0, "%d tiles are still water after undoing the fill", left);
+
+    // Filling with what is already there does nothing, and says so rather than
+    // walking the whole map to find that out.
+    while (e.terrain != GG_TILE_GRASS) gg_edit_brush(&e, 1);
+    CHECK(gg_edit_fill(&e, 4, 4) == 0, "filling grass with grass painted");
+
+    // And only the ground fills. A flood of houses is not a thing anybody
+    // wants by accident.
+    gg_edit_tool(&e, GG_TOOL_PROP);
+    CHECK(gg_edit_fill(&e, 4, 4) == 0, "the prop tool flooded the map");
+
+    gg_edit_close(&e);
+}
+
+// The editor could open exactly one map: the one it was started with. Opening
+// another is the difference between a tool and a command line.
+static void a_second_map_can_be_opened(void) {
+    gg_editor e;
+    SDL_zero(e);
+    CHECK(gg_edit_new(&e, 24, 24), "could not make a map");
+
+    // Two maps on disk, told apart by their size and their name. Copied,
+    // because gg_pref_file hands back the same buffer every time and two
+    // paths that are the same pointer are one path.
+    char one[GG_EDIT_PATH_MAX], two[GG_EDIT_PATH_MAX], missing[GG_EDIT_PATH_MAX];
+    SDL_strlcpy(one, gg_pref_file("test_edit_one.ggmap"), sizeof one);
+    SDL_strlcpy(two, gg_pref_file("test_edit_two.map.txt"), sizeof two);
+    SDL_strlcpy(missing, gg_pref_file("test_edit_no_such.ggmap"), sizeof missing);
+    gg_edit_name_map(&e, "The First");
+    CHECK(gg_edit_save(&e, one), "could not write the first map");
+    CHECK(gg_edit_new(&e, 40, 40), "could not make a second map");
+    gg_edit_name_map(&e, "The Second");
+    CHECK(gg_edit_save(&e, two), "could not write the second map");
+
+    // Open the first over the second, which is what a person does when they
+    // realise they were editing the wrong one.
+    CHECK(gg_edit_load(&e, one), "the first map would not open");
+    CHECK(e.map.w == 24, "the map is %d wide, expected the first at 24", e.map.w);
+    CHECK(SDL_strcmp(e.map.name, "The First") == 0,
+          "the map is called '%s'", e.map.name);
+    CHECK(SDL_strcmp(e.path, one) == 0, "it does not remember where it came from");
+
+    // And the other form, by the same call - the editor reads what it is
+    // given rather than what its name suggests.
+    CHECK(gg_edit_load(&e, two), "the second map would not open");
+    CHECK(e.map.w == 40, "the map is %d wide, expected the second at 40", e.map.w);
+    CHECK(SDL_strcmp(e.map.name, "The Second") == 0,
+          "the map is called '%s'", e.map.name);
+
+    // Nothing from the first map's history survives into the second: undoing
+    // into a map that is no longer open is how an editor eats somebody's work.
+    CHECK(gg_edit_undos(&e) == 0, "%d steps came across from the other map",
+          gg_edit_undos(&e));
+
+    // A name that is not a map leaves what is open exactly as it was.
+    CHECK(!gg_edit_load(&e, missing), "a map that does not exist opened");
+    CHECK(e.map.w == 40 && SDL_strcmp(e.map.name, "The Second") == 0,
+          "a failed open disturbed the map that was already there");
+
+    gg_edit_close(&e);
+    SDL_RemovePath(one);
+    SDL_RemovePath(two);
+}
+
+// Everything in a map that has a name can be given one, from inside the editor
+// rather than from the command line.
+static void everything_with_a_name_can_be_named(void) {
+    gg_editor e;
+    SDL_zero(e);
+    CHECK(gg_edit_new(&e, 32, 32), "could not make a map");
+
+    gg_edit_name_map(&e, "The Vale of Somewhere");
+    CHECK(SDL_strcmp(e.map.name, "The Vale of Somewhere") == 0,
+          "the map is called '%s'", e.map.name);
+
+    gg_edit_tool(&e, GG_TOOL_REGION);
+    gg_edit_drag_start(&e, 4, 4);
+    gg_edit_drag_end(&e, 12, 12);
+    CHECK(e.map.regions == 1, "no region was drawn");
+    CHECK(gg_edit_name_region(&e, 8, 8, "Britain"), "the region would not be named");
+    CHECK(SDL_strcmp(e.map.region[0].name, "Britain") == 0,
+          "the region is called '%s'", e.map.region[0].name);
+    // With the cursor off every region it names the last one drawn, which is
+    // what somebody who has just dragged one out and reached for the keyboard
+    // means - the cursor is wherever they let go, not inside the box.
+    gg_edit_drag_start(&e, 20, 20);
+    gg_edit_drag_end(&e, 28, 28);
+    CHECK(e.map.regions == 2, "the second region was not drawn");
+    CHECK(gg_edit_name_region(&e, 31, 31, "Wyndle"), "the last region would not "
+          "be named from outside it");
+    CHECK(SDL_strcmp(e.map.region[1].name, "Wyndle") == 0,
+          "the second region is called '%s'", e.map.region[1].name);
+    CHECK(SDL_strcmp(e.map.region[0].name, "Britain") == 0,
+          "naming the last region renamed the first as well");
+
+    gg_edit_tool(&e, GG_TOOL_ACTOR);
+    gg_edit_apply(&e, 6, 6);
+    e.actor = gg_edit_actor_at(&e, 6, 6);
+    CHECK(e.actor >= 0, "nobody was placed");
+    gg_edit_name_actor(&e, "Iolo");
+    CHECK(SDL_strcmp(e.map.actor[0].name, "Iolo") == 0,
+          "the person is called '%s'", e.map.actor[0].name);
+
+    // Each of those is a thing to take back, too.
+    CHECK(gg_edit_undo(&e), "naming somebody cannot be taken back");
+    CHECK(SDL_strcmp(e.map.actor[0].name, "Iolo") != 0,
+          "the name is still there after undoing");
+
+    gg_edit_close(&e);
+}
+
 // The editor is where a map should be found to be broken.
 static void the_editor_says_what_is_wrong_with_a_map(void) {
     gg_editor e;
@@ -9037,6 +9272,10 @@ int main(void) {
 
     RUN(a_map_authored_in_the_editor_can_be_played);
     RUN(the_editor_rubs_out_what_it_draws);
+    RUN(a_mistake_can_be_taken_back);
+    RUN(an_area_can_be_filled);
+    RUN(a_second_map_can_be_opened);
+    RUN(everything_with_a_name_can_be_named);
     RUN(the_editor_says_what_is_wrong_with_a_map);
     RUN(a_failed_load_leaves_what_was_open_alone);
 

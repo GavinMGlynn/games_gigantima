@@ -13,6 +13,106 @@ static void say(gg_editor *e, const char *fmt, ...) {
 }
 
 // ---------------------------------------------------------------------------
+// Taking it back
+// ---------------------------------------------------------------------------
+// A snapshot is a whole map, cells and all. `gg_map` holds one heap pointer, so
+// copying it is a memcpy of the struct and a second one of the cells - and
+// freeing a snapshot is gg_map_free, exactly as for a map that was loaded.
+static gg_map *map_copy(const gg_map *src) {
+    gg_map *out = SDL_malloc(sizeof *out);
+    if (!out) return nullptr;
+    *out = *src;
+    const size_t cells = (size_t)src->w * (size_t)src->h;
+    out->cell = SDL_malloc(cells * sizeof *out->cell);
+    if (!out->cell) {
+        SDL_free(out);
+        return nullptr;
+    }
+    SDL_memcpy(out->cell, src->cell, cells * sizeof *out->cell);
+    return out;
+}
+
+static void map_drop(gg_map **m) {
+    if (!*m) return;
+    gg_map_free(*m);
+    SDL_free(*m);
+    *m = nullptr;
+}
+
+static void stack_clear(gg_map **stack, int *n) {
+    for (int i = 0; i < *n; i++) map_drop(&stack[i]);
+    *n = 0;
+}
+
+// Pushes onto one of the two stacks, dropping the oldest when it is full. The
+// oldest rather than refusing: an editor that stops remembering after thirty
+// changes is one that quietly stops undoing, which is worse than one that
+// forgets what somebody did an hour ago.
+static void stack_push(gg_map **stack, int *n, gg_map *m) {
+    if (!m) return;
+    if (*n >= GG_EDIT_UNDO_MAX) {
+        map_drop(&stack[0]);
+        for (int i = 1; i < *n; i++) stack[i - 1] = stack[i];
+        (*n)--;
+    }
+    stack[(*n)++] = m;
+}
+
+// Called by everything that is about to change the map. Inside a stroke it
+// fires once, at the start, so a drag across forty tiles is one thing to undo.
+static void mark(gg_editor *e) {
+    if (!e->open) return;
+    if (e->stroke && e->stroke_marked) return;
+    stack_push(e->undo, &e->undos, map_copy(&e->map));
+    stack_clear(e->redo, &e->redos);
+    if (e->stroke) e->stroke_marked = true;
+}
+
+void gg_edit_stroke(gg_editor *e, bool begin) {
+    e->stroke = begin;
+    if (begin) e->stroke_marked = false;
+}
+
+static bool step(gg_editor *e, gg_map **from, int *fromn, gg_map **to, int *ton) {
+    if (*fromn <= 0) return false;
+    gg_map *keep = map_copy(&e->map);
+    if (!keep) return false;
+    stack_push(to, ton, keep);
+
+    gg_map *back = from[--(*fromn)];
+    from[*fromn] = nullptr;
+    gg_map_free(&e->map);
+    e->map = *back;
+    SDL_free(back);          // the cells moved into e->map; only the box goes
+
+    e->dirty = true;
+    e->actor = -1;           // whoever was selected may not be there any more
+    e->drag = false;
+    return true;
+}
+
+bool gg_edit_undo(gg_editor *e) {
+    if (!e->open || !step(e, e->undo, &e->undos, e->redo, &e->redos)) {
+        say(e, "there is nothing to take back");
+        return false;
+    }
+    say(e, "undone; %d more to take back", e->undos);
+    return true;
+}
+
+bool gg_edit_redo(gg_editor *e) {
+    if (!e->open || !step(e, e->redo, &e->redos, e->undo, &e->undos)) {
+        say(e, "there is nothing to put back");
+        return false;
+    }
+    say(e, "put back; %d more", e->redos);
+    return true;
+}
+
+int gg_edit_undos(const gg_editor *e) { return e->undos; }
+int gg_edit_redos(const gg_editor *e) { return e->redos; }
+
+// ---------------------------------------------------------------------------
 // The document
 // ---------------------------------------------------------------------------
 static void set_defaults(gg_editor *e) {
@@ -95,6 +195,12 @@ bool gg_edit_save(gg_editor *e, const char *path) {
 void gg_edit_close(gg_editor *e) {
     if (e->open) gg_map_free(&e->map);
     e->open = false;
+    // And everything remembered about it. A new map does not inherit the last
+    // one's mistakes, and a leaving editor does not leave three megabytes of
+    // old maps behind - which is what the sanitizer said the first time this
+    // was left out.
+    stack_clear(e->undo, &e->undos);
+    stack_clear(e->redo, &e->redos);
 }
 
 // ---------------------------------------------------------------------------
@@ -195,7 +301,60 @@ int gg_edit_actor_at(const gg_editor *e, int x, int y) {
     return -1;
 }
 
+// Floods the ground joined to (x, y). An explicit stack rather than recursion:
+// a map is a hundred thousand cells and a recursive flood over one of them is a
+// stack overflow waiting for the first person who fills an ocean.
+int gg_edit_fill(gg_editor *e, int x, int y) {
+    if (!e->open) return 0;
+    if (e->tool != GG_TOOL_TERRAIN) {
+        say(e, "only the ground can be filled");
+        return 0;
+    }
+    const gg_cell *at = gg_map_at_const(&e->map, x, y);
+    if (!at) return 0;
+
+    const uint8_t was = at->terrain;
+    const uint8_t now = (uint8_t)e->terrain;
+    if (was == now) {
+        say(e, "that is already %s", GG_TERRAIN[now].name);
+        return 0;
+    }
+
+    const size_t cells = (size_t)e->map.w * (size_t)e->map.h;
+    int *stack = SDL_malloc(cells * sizeof *stack);
+    if (!stack) return 0;
+
+    mark(e);
+    int top = 0, painted = 0;
+    stack[top++] = y * e->map.w + x;
+    while (top > 0) {
+        const int i = stack[--top];
+        gg_cell *c = &e->map.cell[i];
+        if (c->terrain != was) continue;
+        c->terrain = now;
+        // The water flag follows the terrain, exactly as it does when a tile is
+        // painted one at a time - a filled lake that is not water is a lake you
+        // can walk across.
+        if (GG_TERRAIN[now].water) c->flags |= GG_CELL_WATER;
+        else                       c->flags &= (uint8_t)~GG_CELL_WATER;
+        painted++;
+
+        const int cx = i % e->map.w, cy = i / e->map.w;
+        if (cx > 0)              stack[top++] = i - 1;
+        if (cx < e->map.w - 1)   stack[top++] = i + 1;
+        if (cy > 0)              stack[top++] = i - e->map.w;
+        if (cy < e->map.h - 1)   stack[top++] = i + e->map.w;
+    }
+    SDL_free(stack);
+
+    e->dirty = true;
+    say(e, "filled %d tiles with %s", painted, GG_TERRAIN[now].name);
+    return painted;
+}
+
 void gg_edit_link_to(gg_editor *e, const char *map, int x, int y) {
+    // Not marked: this sets what the *next* way out will lead to, and changes
+    // nothing in the map until one is placed.
     SDL_strlcpy(e->portal_to, map ? map : "", sizeof e->portal_to);
     e->portal_x = x;
     e->portal_y = y;
@@ -205,8 +364,33 @@ void gg_edit_link_to(gg_editor *e, const char *map, int x, int y) {
 
 void gg_edit_name_actor(gg_editor *e, const char *name) {
     if (e->actor < 0 || e->actor >= e->map.actors || !name) return;
+    mark(e);
     SDL_strlcpy(e->map.actor[e->actor].name, name, GG_ACTOR_NAME_MAX);
     e->dirty = true;
+    say(e, "%s", e->map.actor[e->actor].name);
+}
+
+bool gg_edit_name_region(gg_editor *e, int x, int y, const char *name) {
+    if (!e->open || !name || !*name) return false;
+    int which = gg_map_region_at(&e->map, x, y);
+    if (which < 0) which = e->map.regions - 1;    // the last one drawn
+    if (which < 0) {
+        say(e, "there is no region there to name");
+        return false;
+    }
+    mark(e);
+    SDL_strlcpy(e->map.region[which].name, name, GG_MAP_NAME_MAX);
+    e->dirty = true;
+    say(e, "that place is %s", e->map.region[which].name);
+    return true;
+}
+
+void gg_edit_name_map(gg_editor *e, const char *name) {
+    if (!e->open || !name || !*name) return;
+    mark(e);
+    SDL_strlcpy(e->map.name, name, sizeof e->map.name);
+    e->dirty = true;
+    say(e, "this map is %s", e->map.name);
 }
 
 // ---------------------------------------------------------------------------
@@ -216,6 +400,7 @@ void gg_edit_apply(gg_editor *e, int x, int y) {
     if (!e->open || !gg_map_in_bounds(&e->map, x, y)) return;
     gg_cell *c = gg_map_at(&e->map, x, y);
     if (!c) return;
+    mark(e);
 
     switch (e->tool) {
     case GG_TOOL_TERRAIN:
@@ -339,6 +524,7 @@ void gg_edit_erase(gg_editor *e, int x, int y) {
     if (!e->open || !gg_map_in_bounds(&e->map, x, y)) return;
     gg_cell *c = gg_map_at(&e->map, x, y);
     if (!c) return;
+    mark(e);
 
     switch (e->tool) {
     case GG_TOOL_TERRAIN:
@@ -456,6 +642,7 @@ void gg_edit_drag_end(gg_editor *e, int x, int y) {
         say(e, "no room for another region");
         return;
     }
+    mark(e);
     const int x0 = e->drag_x < x ? e->drag_x : x;
     const int y0 = e->drag_y < y ? e->drag_y : y;
     const int x1 = e->drag_x > x ? e->drag_x : x;

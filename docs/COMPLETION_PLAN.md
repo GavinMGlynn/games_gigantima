@@ -410,10 +410,14 @@ here. Nothing is on this list that is not already admitted to somewhere.
       check what a test honestly can: that each loop comes round to its own
       beginning exactly and without a step, and that a change of tune is a
       half-second fade rather than a cut and never leaves a hole.*
-- [ ] **The editor, for people who are not me.** No undo, no fill, no way to
-      open a file by name.
-      *Verification: a mistake undone, an area filled, and a map opened that the
-      editor was not started with.*
+- [x] **The editor, for people who are not me.** Undo and redo thirty deep with
+      a drag counting as one step, fill, and somewhere to type — which is what
+      lets it open any map on the machine, save under another name, and name a
+      place or a person rather than leaving every region called "town 1".
+      *Verification: a tile and a sixteen-tile drag taken back and put back; a
+      fill that stops at a wall, follows the water flag and undoes in one step;
+      and a second map opened over the first in both file forms, with none of
+      the first's history surviving into it.*
 - [ ] **Roads that cross water.** Roads stop at the shore rather than bridging
       it, because paving the water put a causeway across the lake.
       *Verification: a road that reaches the other side over something that

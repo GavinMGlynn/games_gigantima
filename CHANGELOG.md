@@ -36,6 +36,11 @@ what that release had; this is what has closed since.
 - **Magic beyond light, heal and harm**: a word that puts somebody to sleep, a
   ward that turns blows for a while, and one that sets you down on the far side
   of whatever is in the way. Nystul teaches the three new runes.
+- **An editor for people who are not me.** Undo and redo thirty deep, fill, and
+  somewhere to type — so it can open any map on the machine (listed, not typed),
+  save under another name, and give a place or a person a name instead of
+  leaving every region called "town 1". The ways-out tool also has a key now;
+  `8` selected nothing.
 - **Music that is written down.** Five pieces with a chord progression, a bass,
   an inner voice and a melody in phrases, played on a plucked string, a pad and
   a bass in a room, each looping seamlessly rather than fading out. `--music
@@ -56,7 +61,7 @@ what that release had; this is what has closed since.
 
 ### Still open
 
-An editor with undo and fill, bridges, and the region byte.
+Bridges, and the region byte.
 
 ### Note
 
