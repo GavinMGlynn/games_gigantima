@@ -254,9 +254,16 @@ endif()
 # ---------------------------------------------------------------------------
 # CPack
 # ---------------------------------------------------------------------------
+# What a release calls itself. The project version is what the code is; this is
+# what a *download* is, which is not always the same thing - a beta of 0.1.0 is
+# still 0.1.0, and somebody with the file in their downloads folder needs to be
+# able to tell. Set by the release job from the tag; "0.1.0" on a working tree.
+set(GIGANTIMA_RELEASE "${PROJECT_VERSION}" CACHE STRING
+    "Version the packages are named for, e.g. 0.1.0-beta.1")
+
 set(CPACK_PACKAGE_NAME          "gigantima")
 set(CPACK_PACKAGE_VENDOR        "Gavin Glynn")
-set(CPACK_PACKAGE_VERSION       "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_VERSION       "${GIGANTIMA_RELEASE}")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "${PROJECT_DESCRIPTION}")
 set(CPACK_PACKAGE_INSTALL_DIRECTORY   "Gigantima")
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE")
@@ -277,7 +284,7 @@ elseif(APPLE)
 else()
     set(GG_PLATFORM "linux-${CMAKE_SYSTEM_PROCESSOR}")
 endif()
-set(CPACK_PACKAGE_FILE_NAME "gigantima-${PROJECT_VERSION}-${GG_PLATFORM}")
+set(CPACK_PACKAGE_FILE_NAME "gigantima-${GIGANTIMA_RELEASE}-${GG_PLATFORM}")
 
 if(WIN32)
     # ZIP always, so there is an artifact even where NSIS is not installed, and

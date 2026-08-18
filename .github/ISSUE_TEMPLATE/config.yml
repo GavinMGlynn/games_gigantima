@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: How to run it, and how to make maps
+    url: https://github.com/GavinMGlynn/games_gigantima/blob/main/PLAYING.md
+    about: Controls, the maps, the editor, where saves live, and the command line.
+  - name: What works today
+    url: https://github.com/GavinMGlynn/games_gigantima/blob/main/docs/PROJECT_STATUS.md
+    about: The single source of truth, with the known gaps named at the bottom.

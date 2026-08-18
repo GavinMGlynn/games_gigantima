@@ -1,0 +1,65 @@
+name: Bug report
+description: Something the game did that it should not have
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **A bug report here can be a file.** The simulation is integer-only and
+        seeded and the world only moves when you act, so a session is completely
+        described by what it started from and what you did:
+
+        ```sh
+        ./gigantima --profile Bug --new --play --record bug.ggreplay
+        # play until it goes wrong, then quit
+        ./gigantima --replay bug.ggreplay
+        ```
+
+        Attach `bug.ggreplay` below and anyone can build the same world and run
+        the same actions into it. It is a text file — you can read it, and trim
+        it by hand to the shortest sequence that still shows the problem.
+
+        Failing that, the seed and the turn count are usually enough.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: And what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to get there
+      description: A replay file is best. Attach it by dragging it in.
+      placeholder: |
+        1. New journey in the vale
+        2. Asked Iolo about the caravan
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: seed
+    attributes:
+      label: Seed and turn
+      description: The seed is on the title of the debug window (F1); the turn is in the status band.
+      placeholder: "--seed 4242, turn 137"
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Linux
+        - Windows
+        - macOS
+        - Built it myself
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Which build
+      description: The release you downloaded, or the commit you built.
+      placeholder: "0.1.0-beta.1"
+    validations:
+      required: true

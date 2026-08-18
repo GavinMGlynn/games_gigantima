@@ -1,0 +1,27 @@
+name: Content
+description: A person, a creature, a quest, a spell or a map
+labels: ["content"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Content here is **data, not code**: everything a person says lives in
+        `assets/dialogue.txt`, what lives in the hills in `assets/bestiary.txt`,
+        the story in `assets/quests.txt`, the runes in `assets/spells.txt`, and
+        maps are written by `gigantima_editor`. Adding any of it is an edit to a
+        file, so this may well be something you can send as a pull request
+        rather than ask for — see CONTRIBUTING.md.
+  - type: textarea
+    id: what
+    attributes:
+      label: What you have in mind
+    validations:
+      required: true
+  - type: textarea
+    id: fits
+    attributes:
+      label: How it fits what is already there
+      description: |
+        The world is one seamless scale with no load screens, the simulation is
+        turn-based and seeded, and the vale's trouble is people rather than
+        monsters — the art set has no monsters in it at all.

@@ -1,0 +1,43 @@
+# How git is to treat what is in here.
+#
+# The content files are read by hand-written line parsers and are meant to be
+# edited by people, so they are text and they are checked out with LF endings on
+# every platform. That is not a style preference: a checkout that converts them
+# to CRLF used to make every one of them unreadable, on Windows only, because a
+# blank line in a CRLF file is a line holding a carriage return rather than a
+# blank one. The parsers were fixed to cope - see the note in PROJECT_STATUS.md -
+# and this stops the situation arising in the first place.
+#
+# Everything the game *writes* is binary and must never be touched.
+
+# Sensible defaults: let git decide, and normalise to LF in the repository.
+*               text=auto
+
+# Content, and the code that reads it. LF on disk everywhere, so a file that
+# round-trips through a Windows editor is the only way to get a CRLF one - and
+# the game reads that too.
+*.c             text eol=lf
+*.h             text eol=lf
+*.txt           text eol=lf
+*.md            text eol=lf
+*.py            text eol=lf
+*.yml           text eol=lf
+*.cmake         text eol=lf
+*.json          text eol=lf
+CMakeLists.txt  text eol=lf
+LICENSE         text eol=lf
+
+# Anything the game or the baker writes. A byte changed in any of these is a
+# corrupt file, not a line ending.
+*.ggmap         binary
+*.ggsave        binary
+*.ggprof        binary
+*.png           binary
+*.bmp           binary
+*.wav           binary
+*.ttf           binary
+
+# A replay is text on purpose - it is meant to be read, diffed and trimmed by
+# hand before being pasted into a bug report - but it is written by the game, so
+# it is left exactly as it was written.
+*.ggreplay      -text

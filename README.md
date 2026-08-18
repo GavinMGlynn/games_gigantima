@@ -4,17 +4,32 @@ An Ultima VI-style seamless-world RPG in C23 and SDL3.
 
 [![ci](https://github.com/GavinMGlynn/games_gigantima/actions/workflows/ci.yml/badge.svg)](https://github.com/GavinMGlynn/games_gigantima/actions/workflows/ci.yml)
 
-> **Status: early.** The engine works end to end — a title screen and named
-> journeys that save and resume, a generated continent with autotiled shorelines
-> and terrain, a town of houses you can walk into, townsfolk who path around the
-> buildings to keep daily schedules, a world clock with lit rooms at night, and
-> things you can pick up, carry, eat and set down again, companions who walk
-> with you, brigands who do not, a magic you cast by learning the words for it,
-> a world with a voice, and an editor to author more of it. There is no story
-> worth the name yet - the machine for one works, but what runs on it is a
-> demonstration - and the sounds are synthesised rather than composed. `docs/PROJECT_STATUS.md` is the single
-> source of truth for what works; `docs/COMPLETION_PLAN.md` is the road to the
-> rest. Nothing here claims more than it has earned.
+> **Status: beta.** A game, with an engine under it. There is a story you can
+> finish — a caravan out of the north that never arrived, followed up a road
+> with brigands on it to a ring of standing stones and back — and around it a
+> seamless single-scale world, a town of houses whose people keep daily
+> schedules, keyword conversation, a party, combat, magic you cast by learning
+> the words for it, a world with a voice, and an editor to author more of it.
+> Everything works from a gamepad alone; every key can be moved; a session can
+> be recorded and replayed to the same world to the bit.
+>
+> What is missing is *more* of it rather than a part that half works: one
+> storyline, three kinds of creature, two maps, no levelling, and sounds that
+> are synthesised rather than composed. `docs/PROJECT_STATUS.md` is the single
+> source of truth for what works, with the gaps named at the bottom. Nothing
+> here claims more than it has earned.
+
+## Getting it
+
+**[Download a build](https://github.com/GavinMGlynn/games_gigantima/releases)** —
+a tarball for Linux, a zip and an installer for Windows, a disk image for macOS.
+Unpack it anywhere and run `gigantima`; there is nothing to install and nothing
+to set up. The builds are unsigned, so Windows and macOS will both want telling
+that you meant it — [PLAYING.md](PLAYING.md#getting-it) says how.
+
+**[PLAYING.md](PLAYING.md)** is the player's guide: the first ten minutes, every
+control on keyboard and pad, the maps, the editor, where your journeys are kept,
+the command line, and how to report a bug as a file somebody else can run.
 
 ## What "Ultima VI-style" means here
 
@@ -104,17 +119,22 @@ and nothing set in the environment.
 | `F5` | save |
 | `F1` | debug window |
 | `F11` / `Alt+Enter` | fullscreen |
-| `Esc` | pause |
+| `Esc` | back out of whatever is open, then pause |
+
+**Every one of these can be moved** — Options → Keys — and the text can be drawn
+at twice the size.
 
 A gamepad works for all of it, hot-plugged, with the sticks and the d-pad both
 driving movement: **A** talks, **B** waits, **X** looks, **Y** opens, **Back**
-opens the pack, **LB** the spell book, **RB** strikes, and **Start** pauses. Inside the pack those same four face
-buttons carry the pack's verbs instead — **A** uses, **Y** readies, **X** sets
-down, **B** closes.
+opens the pack, **LB** the spell book, **RB** strikes, the **left trigger**
+takes what is underfoot, the **right trigger** opens the journal, and **Start**
+pauses. Inside the pack those same four face buttons carry the pack's verbs
+instead — **A** uses, **Y** readies, **X** sets down, **B** closes.
 
 The game opens on a title screen. Continue picks up the most recent journey,
 New journey asks for a name, and Journeys lists everything saved with its day,
-hour and place. Options sets the window scale, fullscreen and rumble.
+hour and place. Options sets the window scale, fullscreen, rumble, the two volumes, the text
+size, the map palette, and what every key does.
 
 **A pad alone is enough for all of it**, naming included — the naming page
 carries its own alphabet, so nothing here needs a keyboard.
