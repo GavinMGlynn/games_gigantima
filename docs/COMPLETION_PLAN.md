@@ -277,6 +277,90 @@ that is reachable while content is C, so the editor comes before the content.
       the bottom of its own panel is a setting that makes the game less
       playable, not more.*
 
+## Phase 5 — More of it
+
+Phases 0 to 4 built a game and finished every part of it. What is thin now is
+**quantity**, not quality: one storyline, three kinds of creature, two maps, and
+a handful of systems that exist but have nothing to spend themselves on. This
+phase is the list of those, in the order they unblock each other — the items
+near the top make the ones below them possible or worth having.
+
+Every gap named in `PROJECT_STATUS.md` under *What does not exist* is an item
+here. Nothing is on this list that is not already admitted to somewhere.
+
+- [x] **Levelling.** Killing things and working the story out both teach the
+      party, and enough of it makes everybody walking with you harder to kill
+      and better at landing a blow — which also opens the higher circles of the
+      spell book, that being a level check that nothing could ever pass before.
+      What a creature is worth is a line in the bestiary; what a stage of a
+      quest is worth is a line in the quest file.
+      *Verification: a journey through the shipped vale arrives at the stones at
+      level 4 with 48 health where it began at level 1 with 30, its companions
+      risen with it, and the numbers survive a save. The climax was re-measured
+      against the stronger party it now faces — it had become a fight nobody
+      could lose, which the balance test now refuses in both directions.*
+- [ ] **A world that is not the same twice.** An authored map ships with seed 0,
+      so every playthrough of the vale rolls identical dice: the same creatures
+      in the same places, the same loot. A new journey should be its own world.
+      *Verification: two journeys from different seeds differ in where trouble
+      is, and the same seed reproduces exactly — including through a replay.*
+- [ ] **A map is a file you can read.** The editor is the only thing that can
+      write a map and it needs a mouse, so the two shipped maps cannot be
+      regenerated and a format change would strand them. A map needs a text
+      source the editor reads and writes.
+      *Verification: both shipped maps round-trip through the text form and come
+      back byte for byte, and a map authored as text alone is playable.*
+- [ ] **More world.** More than two maps: the fells the road runs into, a place
+      under the ground, and a second town that is not Britain.
+      *Verification: each is walkable, linked, stocked and named, and the
+      journey between them is one seamless scale with no load screen.*
+- [ ] **A second storyline**, on that world, interlocking with the first through
+      flags rather than sitting beside it.
+      *Verification: playable start to finish, and finishing one changes what
+      the other says.*
+- [ ] **More that lives in it.** Three kinds of creature and a chief. The art
+      set is people, so more of it is more kinds of people, told apart by
+      behaviour rather than by sprite.
+      *Verification: each new kind is a block in `bestiary.txt` and nothing
+      else, and each fights differently enough to need a different answer.*
+- [ ] **Trade.** Items carry a value in copper and nobody buys or sells. The
+      gold in the pack should be worth carrying.
+      *Verification: a thing bought, a thing sold, a purse that empties, and a
+      merchant who will not buy what he has no use for.*
+- [ ] **Arms worth choosing.** A hammer, a stone and a shield. The LPC set has
+      an arming sword and a heater shield that were never baked.
+      *Verification: a weapon with reach, a weapon with weight, and a choice
+      between them that shows in a fight.*
+- [ ] **Combat with more than one answer.** Blows, initiative, reach, fleeing
+      and loot exist; there are no criticals and no skill in it.
+      *Verification: the same fight won two different ways.*
+- [ ] **Magic beyond three effects.** Light, heal and harm. The rune vocabulary
+      can say far more than that.
+      *Verification: a spell that is not any of the three, cast from words the
+      player collected.*
+- [ ] **Companions who are somebody.** Up to four follow and they are
+      interchangeable: same health, same damage, no orders.
+      *Verification: two companions who are worth choosing between.*
+- [ ] **A character sheet**, now that there is something to put on it — level,
+      experience, what is held, what is known.
+      *Verification: reachable and readable by keyboard and pad, at both text
+      sizes.*
+- [ ] **Music worth listening to.** The tunes are a drone and an arpeggio. The
+      mechanism is finished; what runs on it is placeholder.
+      *Verification: a captured recording of each, and a tune that changes with
+      the region and the hour without a seam.*
+- [ ] **The editor, for people who are not me.** No undo, no fill, no way to
+      open a file by name.
+      *Verification: a mistake undone, an area filled, and a map opened that the
+      editor was not started with.*
+- [ ] **Roads that cross water.** Roads stop at the shore rather than bridging
+      it, because paving the water put a causeway across the lake.
+      *Verification: a road that reaches the other side over something that
+      looks like a bridge.*
+- [ ] **The region byte, used or removed.** It is written into every map cell
+      and read by nothing.
+      *Verification: either something reads it, or it is gone from the format.*
+
 ---
 
 ## Tails found while building

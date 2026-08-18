@@ -54,6 +54,11 @@ typedef struct {
     char journal[GG_JOURNAL_LINE_MAX];
     char sets[GG_FLAG_MAX];              // a flag raised on entering, or ""
 
+    // What entering it teaches the party, in experience. Working a story out
+    // is worth as much as killing what is at the end of it - and a player who
+    // talks their way through should not arrive weaker than one who did not.
+    int  worth;
+
     // Entering this stage is the end of the story. The journal line is what
     // the ending says, so the closing words of the game are a line in a text
     // file like every other line the game says.

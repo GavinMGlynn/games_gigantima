@@ -79,6 +79,7 @@ typedef enum {
     GG_EV_DOOR,     // a door
     GG_EV_CAST,     // a spell went off
     GG_EV_LEARN,    // a word, or a rune
+    GG_EV_LEVEL,    // better than you were
     GG_EV_COUNT
 } gg_event;
 
@@ -99,6 +100,31 @@ typedef enum {
 // a couple so the tail of the line is following a real path rather than the
 // leader's current tile.
 #define GG_TRAIL_MAX (GG_PARTY_MAX + 3)
+
+// --- being better than you were ---------------------------------------------
+// Experience is the *party's*: the Avatar and everyone walking with them rise
+// together, because a companion who fell behind in levels is a companion you
+// stop bringing, and this game is about bringing people.
+//
+// What a level costs is `GG_LEVEL_STEP` times the level you are leaving, added
+// up - 100 to reach 2, another 200 to reach 3, another 300 to reach 4. Simple
+// arithmetic a player can feel the shape of after two of them, and integer, so
+// it is the same on every machine.
+#define GG_LEVEL_STEP  100
+#define GG_LEVEL_MAX   20
+
+// What each level adds to what a body can take. The Avatar starts at 30, so a
+// level is a fifth of a beginning: enough to notice, not enough to trivialise.
+#define GG_LEVEL_HEALTH 6
+
+// The experience needed to reach `level`, all told. Level 1 costs nothing.
+static inline int gg_level_cost(int level) {
+    if (level < 2) return 0;
+    // GG_LEVEL_STEP * (1 + 2 + ... + (level-1)), which is the triangular number
+    // - written out rather than looped so it is obviously integer arithmetic.
+    const int n = level - 1;
+    return GG_LEVEL_STEP * n * (n + 1) / 2;
+}
 
 // How many words the player may collect. Generous: the vocabulary is the whole
 // of the story state, so running out would silently stop the plot.
@@ -329,6 +355,14 @@ int  gg_game_minute(const gg_game *g);
 // 0 at midnight, 255 at noon - the outdoor light level. The renderer turns
 // this into a colour; the simulation only says how bright it is.
 uint8_t gg_game_daylight(const gg_game *g);
+
+// Adds to what the party has learned, and raises everybody a level for as long
+// as there is enough for another. Returns how many levels that bought, which is
+// zero almost every time.
+//
+// Called when something falls and when a quest stage is entered; anything else
+// that should teach the party something calls this rather than touching `exp`.
+int gg_gain(gg_game *g, int worth);
 
 // The actor adjacent to the player in the direction they face, or -1.
 int  gg_game_facing_actor(const gg_game *g);

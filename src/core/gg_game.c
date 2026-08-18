@@ -43,6 +43,18 @@ bool gg_party_join(gg_game *g, int who) {
         // A companion has given up their day. Keeping the schedule would have
         // them wander off to bed in the middle of a journey.
         g->actor[who].schedn = 0;
+
+        // And they arrive able to keep up. Somebody recruited late would
+        // otherwise be permanently behind the party they joined - which makes
+        // "recruit everybody in the first ten minutes or not at all" the only
+        // sensible play, and this game is about choosing who to bring.
+        const int behind = gg_player_const(g)->level - g->actor[who].level;
+        if (behind > 0) {
+            gg_actor *a = &g->actor[who];
+            a->level = gg_player_const(g)->level;
+            a->hp_max = (int16_t)(a->hp_max + GG_LEVEL_HEALTH * behind);
+            a->hp = (int16_t)(a->hp + GG_LEVEL_HEALTH * behind);
+        }
         return true;
     }
     return false;
@@ -295,6 +307,7 @@ void gg_quests_tick(gg_game *g) {
             if (q->stage[at].sets[0]) gg_raise_flag(g, q->stage[at].sets);
             gg_emit(g, GG_EV_LEARN);
             gg_log(g, "%s: %s", q->name, q->stage[at].journal);
+            gg_gain(g, q->stage[at].worth);
 
             // The end of the story. The world stops taking orders here, the
             // same way it does when the Avatar falls - and for the same
@@ -1502,6 +1515,41 @@ bool gg_step_toward(gg_game *g, int who, int tx, int ty, int *nx, int *ny) {
     gg_walk_ctx ctx = { .g = g, .self = who };
     return gg_path_next_step(&g->path, path_passable, &ctx, a->x, a->y, tx, ty,
                              GG_PATH_BUDGET, nx, ny);
+}
+
+int gg_gain(gg_game *g, int worth) {
+    if (worth <= 0) return 0;
+    g->exp += worth;
+
+    // The Avatar's level is the party's level: everybody rises together, and
+    // the Avatar is the one the thresholds are read against.
+    int rose = 0;
+    gg_actor *me = gg_player(g);
+    while (me->level < GG_LEVEL_MAX && g->exp >= gg_level_cost(me->level + 1)) {
+        me->level++;
+        rose++;
+    }
+    if (rose == 0) return 0;
+
+    // What a level buys, for everybody walking: a body that takes more, and
+    // the difference healed rather than left as a gap. The heal is the point
+    // at which a player notices - a level that only changed a number would be
+    // a number.
+    for (int i = 0; i < g->actors; i++) {
+        gg_actor *a = &g->actor[i];
+        if (!a->active) continue;
+        if (i != g->player && a->party == GG_NOT_IN_PARTY) continue;
+
+        a->level = me->level;
+        const int add = GG_LEVEL_HEALTH * rose;
+        a->hp_max = (int16_t)(a->hp_max + add);
+        a->hp = (int16_t)gg_clampi(a->hp + add, 0, a->hp_max);
+    }
+
+    gg_emit(g, GG_EV_LEVEL);
+    gg_log(g, rose > 1 ? "Thou art level %d, and stronger for it."
+                       : "Thou art level %d.", me->level);
+    return rose;
 }
 
 bool gg_ending(const gg_game *g, const char **quest, const char **words) {

@@ -162,6 +162,12 @@ bool gg_quests_load(const char *path) {
             SDL_strlcpy(st->journal, rest, sizeof st->journal);
         } else if (SDL_strcasecmp(key, "sets") == 0) {
             SDL_strlcpy(st->sets, rest, sizeof st->sets);
+        } else if (SDL_strcasecmp(key, "worth") == 0) {
+            if (!as_int(rest, &st->worth) || st->worth < 0) {
+                complain(path, lineno, "`worth` wants how much it teaches");
+                ok = false;
+                break;
+            }
         } else if (SDL_strcasecmp(key, "ends") == 0) {
             st->ends = true;
         } else if (SDL_strcasecmp(key, "when") == 0) {

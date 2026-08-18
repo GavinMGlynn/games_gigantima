@@ -47,6 +47,12 @@ typedef struct {
     // the first time it is walked into; naming a tile as well puts them there.
     // A story's villain stands where the story says, and nothing in C knows
     // where that is.
+    // What killing it teaches, in experience. Defaults to its health, which is
+    // the plainest rule there is - what a thing can take is what it is worth -
+    // and a line in the file overrides it for anything the rule flatters or
+    // cheats.
+    uint16_t worth;
+
     uint8_t haunts;
     char    haunt_map[GG_MAP_NAME_MAX];
     int16_t haunt_x, haunt_y;           // -1,-1 when no tile is named

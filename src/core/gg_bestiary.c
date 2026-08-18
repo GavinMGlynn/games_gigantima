@@ -164,6 +164,7 @@ bool gg_bestiary_load(const char *path) {
             b->notice = 8;
             b->haunts = 0;
             b->haunt_x = b->haunt_y = -1;
+            b->worth = 0;                 // 0 means "as much as it can take"
             continue;
         }
 
@@ -209,6 +210,9 @@ bool gg_bestiary_load(const char *path) {
         } else if (SDL_strcasecmp(key, "flees") == 0) {
             ok = number_into(path, lineno, rest, 0, 30000, &v);
             b->flees = (int16_t)v;
+        } else if (SDL_strcasecmp(key, "worth") == 0) {
+            ok = number_into(path, lineno, rest, 0, 60000, &v);
+            b->worth = (uint16_t)v;
         } else if (SDL_strcasecmp(key, "haunts") == 0) {
             char howmany[16];
             if (!next_token(&rest, howmany, sizeof howmany) ||
@@ -279,6 +283,11 @@ bool gg_bestiary_load(const char *path) {
     }
 
     SDL_free(text);
+
+    // What a creature is worth, where the file did not say: what it can take.
+    for (int i = 0; ok && i < g_beasts; i++)
+        if (g_beast[i].worth == 0 && g_beast[i].health > 0)
+            g_beast[i].worth = (uint16_t)g_beast[i].health;
 
     for (int i = 0; ok && i < g_beasts; i++) {
         if (!g_beast[i].name[0]) {

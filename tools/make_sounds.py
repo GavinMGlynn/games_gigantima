@@ -233,6 +233,28 @@ def fx_learn():
     return out
 
 
+def fx_level():
+    """Rising, and it arrives somewhere - a fanfare of three notes.
+
+    Distinct from `learn`, which is two notes and a step: understanding a word
+    is a small thing that happens often, and being better than you were is not.
+    """
+    n = int(RATE * 0.55)
+    out = []
+    notes = [523, 659, 784]                   # C, E, G - the chord, spelled out
+    seg = n // len(notes)
+    for i in range(n):
+        which = min(i // seg, len(notes) - 1)
+        within = i - which * seg
+        # The last note rings on rather than being cut to length, so it lands
+        # rather than stopping.
+        hold = seg if which < len(notes) - 1 else n - which * seg
+        out.append((sine(notes[which], i) * 0.28 +
+                    sine(notes[which] * 2, i) * 0.08) *
+                   env(within, hold, 0.02, 0.45))
+    return out
+
+
 EFFECTS = {
     "step": fx_step,
     "bump": fx_bump,
@@ -245,6 +267,7 @@ EFFECTS = {
     "door": fx_door,
     "cast": fx_cast,
     "learn": fx_learn,
+    "level": fx_level,
 }
 
 

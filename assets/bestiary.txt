@@ -15,6 +15,7 @@
 #     notice N           how near you must come before it cares
 #     flees N            health below which it would rather be elsewhere
 #     loot ID MIN MAX PC  a line of its loot table, PC per cent of the time
+#     worth N            what killing it teaches the party; defaults to its health
 #     haunts N           how many of it a world holds, put down where there is room
 #     haunts N MAP       how many that map holds, the first time it is walked into
 #     haunts N MAP X Y   and standing on that tile - which is how a story places
@@ -24,12 +25,13 @@
 # the vale's trouble is people. A caravan that never arrived is better served
 # by that than by a wolf.
 #
-# **The road arms you.** The Avatar leaves the vale with no weapon; what is
-# carried up the north road is taken off the brigands who are on it, which is
-# why they drop a hammer and a shield and why the man at the end of it is
-# beatable by somebody who fought their way there and not by somebody who ran
-# past. That balance is these numbers and nothing else - see
-# a_party_that_walked_the_road_can_beat_the_man_at_the_end_of_it.
+# **The road arms you, and it teaches you.** The Avatar leaves the vale with no
+# weapon and at level one; what is carried up the north road is taken off the
+# brigands on it, and what is learned is what they and the story are worth. The
+# man at the end is beatable by somebody who fought their way there and not by
+# somebody who ran past. That balance is these numbers and nothing else - see
+# a_party_that_walked_the_road_can_beat_the_man_at_the_end_of_it, which measures
+# it both ways round on every test run.
 
 creature BRIGAND
   name a brigand
@@ -84,14 +86,15 @@ creature SLINGER
 creature CHIEF
   name Rugar, who took the caravan
   art BRIGAND
-  health 28
-  level 2
+  health 34
+  level 3
   speed 100
   damage 4
-  guard 1
+  guard 2
   reach 1
   notice 12
   flees 0
+  worth 150
   loot SILVER 3 3 100
   loot GOLD 20 40 100
   haunts 1 stones.ggmap 24 22

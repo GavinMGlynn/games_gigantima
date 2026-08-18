@@ -905,6 +905,49 @@ breaking the rule they pin — making every speed equal, clearing line of sight,
 dropping no loot, and putting townsfolk on the other side. Plus a `--shot` frame
 of an exchange of blows, now taken in CI.*
 
+### Levelling
+
+Experience was counted, saved, and spent on nothing: the Avatar ended the story
+at level one, and the spell book's circle check — `level >= sp->circle` — was a
+gate nothing could ever pass.
+
+**What a thing teaches is written down beside it.** A creature carries `worth N`
+in `bestiary.txt`, defaulting to its health, which is the plainest rule there is:
+what a thing can take is what it is worth. A quest stage carries `worth N` too,
+so a player who talks their way through the story does not arrive weaker than
+one who fought — working it out is worth as much as killing what is at the end
+of it.
+
+**The experience is the party's**, and so is the level: everybody walking with
+the Avatar rises together. A companion who fell behind is a companion you stop
+bringing, and this game is about bringing people — so somebody recruited late is
+also brought up to the party's level as they join, or "recruit everybody in the
+first ten minutes or not at all" would be the only sensible play.
+
+A level costs `GG_LEVEL_STEP` times the level you are leaving, added up: 100 to
+reach 2, another 200 to reach 3, another 300 to reach 4. Integer arithmetic a
+player can feel the shape of after two of them. Each level adds
+`GG_LEVEL_HEALTH` (6) to what a body can take **and heals by the same amount** —
+the heal is the moment a player notices, and a level that only changed a number
+would be a number. It stops at 20.
+
+Levelling changed the climax without a line of the bestiary moving: Rugar went
+from losing 17 fights in 20 to losing 20 of 20, because the party now arrives
+two levels up. His numbers were re-measured against that, and the balance test
+now checks **both** ends — a fight nobody can lose is not a fight.
+
+*Verification: `what_the_party_learns_makes_it_stronger` (the thresholds, that
+99 is not enough and 100 is, that a windfall buys two levels at once, that a
+level heals, and that it stops at the top), `a_companion_rises_with_the_avatar`
+(and that somebody outside the party does not, and that a late joiner catches
+up), and `a_journey_that_fights_its_way_north_arrives_stronger` — which kills a
+brigand **with the quests cleared** and requires the experience to equal its
+worth exactly. That last part exists because the first version of the test
+passed with the kill reward removed: killing things also advances a quest that
+teaches, so "experience went up after a fight" proved nothing. Three rules were
+checked by breaking them. Plus a `--shot` of the band at the end of the shipped
+story: level 4, 130/400, 33/48 health, two companions risen with it.*
+
 ### The party
 
 Up to four walk with the Avatar. **Recruiting is content, not code**: a topic in
@@ -1406,7 +1449,6 @@ Named plainly, because a reader should not have to infer absence:
 | | |
 | --- | --- |
 | The story beyond the first | one storyline, playable start to finish, and three small quests beside it. What is missing is a second one |
-| Levelling | experience is counted and saved and spends on nothing; the Avatar ends the story at level one |
 | Combat depth | blows, initiative, reach, loot and fleeing exist; there are no skills, no criticals and three kinds of foe |
 | Magic beyond three effects | light, heal and harm. No summoning, no travel, no enchantment, no mana - reagents are the whole cost |
 | Arms | a hammer, a throwing stone and a shield. No swords: this art set has none that stand on their own |

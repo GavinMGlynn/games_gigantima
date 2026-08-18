@@ -4981,6 +4981,7 @@ static void every_event_has_a_sound_baked_for_it(void) {
             [GG_EV_HURT] = "hurt", [GG_EV_DIE] = "die", [GG_EV_TAKE] = "take",
             [GG_EV_DROP] = "drop", [GG_EV_COIN] = "coin", [GG_EV_DOOR] = "door",
             [GG_EV_CAST] = "cast", [GG_EV_LEARN] = "learn",
+            [GG_EV_LEVEL] = "level",
         };
         CHECK(NAME[i] != nullptr, "event %d has no sound named for it", i);
         if (!NAME[i]) continue;
@@ -6105,6 +6106,13 @@ static void a_party_that_walked_the_road_can_beat_the_man_at_the_end_of_it(void)
     SDL_Log("gigantima: Rugar loses %d of 20 to a party that came prepared, "
             "and %d of 20 to one that did not", prepared, alone);
 
+    // Not "always" either. A fight nobody can lose is not a fight, and the
+    // first thing levelling did was turn this one into 20 of 20 without a line
+    // of the bestiary changing - which is the sort of thing a one-sided check
+    // lets through.
+    CHECK(prepared <= 18, "a prepared party won %d of 20; the man at the end of "
+          "the road is not a fight", prepared);
+
     // Most of the time, not always: a fight nobody can lose is not a fight.
     CHECK(prepared >= 14, "a prepared party won only %d of 20; the man at the "
           "end of the road is too strong", prepared);
@@ -6115,6 +6123,219 @@ static void a_party_that_walked_the_road_can_beat_the_man_at_the_end_of_it(void)
 
     restore_bestiary();
     restore_dialogue();
+}
+
+// ---------------------------------------------------------------------------
+// Levelling
+// ---------------------------------------------------------------------------
+// Experience was counted, saved, and spent on nothing: the Avatar ended the
+// story at level one. This is what it buys now.
+static void what_the_party_learns_makes_it_stronger(void) {
+    gg_game g;
+    CHECK(gg_game_new(&g, 77, "Learner"), "new game failed");
+
+    const gg_actor *me = gg_player_const(&g);
+    CHECK(me->level == 1, "a journey begins at level %u", me->level);
+    CHECK(g.exp == 0, "a journey begins with %d experience", g.exp);
+
+    // The thresholds are arithmetic a player can feel the shape of: 100 to
+    // reach 2, another 200 to reach 3, another 300 to reach 4.
+    CHECK(gg_level_cost(1) == 0, "level one costs something");
+    CHECK(gg_level_cost(2) == 100, "level two costs %d", gg_level_cost(2));
+    CHECK(gg_level_cost(3) == 300, "level three costs %d", gg_level_cost(3));
+    CHECK(gg_level_cost(4) == 600, "level four costs %d", gg_level_cost(4));
+
+    // Not enough is not enough.
+    const int was_max = me->hp_max;
+    CHECK(gg_gain(&g, 99) == 0, "99 was enough for a level");
+    CHECK(gg_player_const(&g)->level == 1, "levelled on 99");
+    CHECK(gg_player_const(&g)->hp_max == was_max, "health rose without a level");
+
+    // And one more is.
+    gg_player(&g)->hp = 5;
+    CHECK(gg_gain(&g, 1) == 1, "100 was not enough for a level");
+    CHECK(gg_player_const(&g)->level == 2, "level is %u after 100",
+          gg_player_const(&g)->level);
+    CHECK(gg_player_const(&g)->hp_max == was_max + GG_LEVEL_HEALTH,
+          "health went from %d to %d", was_max, gg_player_const(&g)->hp_max);
+    CHECK(gg_player_const(&g)->hp == 5 + GG_LEVEL_HEALTH,
+          "a level healed by %d, not %d", gg_player_const(&g)->hp - 5,
+          GG_LEVEL_HEALTH);
+
+    // Enough at once for two levels is two levels, not one.
+    const int before = gg_player_const(&g)->level;
+    CHECK(gg_gain(&g, 1000) >= 2, "a windfall bought fewer than two levels");
+    CHECK(gg_player_const(&g)->level > before + 1, "level is %u, was %u",
+          gg_player_const(&g)->level, before);
+
+    // And it stops at the top rather than running away.
+    gg_gain(&g, 1000000);
+    CHECK(gg_player_const(&g)->level == GG_LEVEL_MAX, "level ran to %u",
+          gg_player_const(&g)->level);
+
+    gg_game_free(&g);
+}
+
+// Everybody walking with the Avatar rises together. A companion who fell behind
+// is a companion you stop bringing, and this game is about bringing people.
+static void a_companion_rises_with_the_avatar(void) {
+    CHECK(gg_dialogue_load(gg_asset_path("dialogue.txt")), "no book");
+
+    gg_game g;
+    CHECK(gg_game_new_from_map(&g, gg_asset_path("maps/vale.ggmap"), "Party"),
+          "the vale would not open");
+    ask_the_town(&g);
+    CHECK(gg_party_size(&g) == 2, "the vale sent %d along", gg_party_size(&g));
+
+    int who = gg_party_at(&g, 1);
+    CHECK(who > 0, "nobody is in the first slot");
+    const int was_level = g.actor[who].level;
+    const int was_max = g.actor[who].hp_max;
+
+    // Somebody who is *not* walking with the party, to show that this is the
+    // party's and not everybody's.
+    int stranger = -1;
+    for (int i = 0; i < g.actors; i++)
+        if (i != g.player && g.actor[i].active &&
+            g.actor[i].party == GG_NOT_IN_PARTY) stranger = i;
+    CHECK(stranger > 0, "nobody in the vale is outside the party");
+    const int stranger_max = stranger > 0 ? g.actor[stranger].hp_max : 0;
+
+    CHECK(gg_gain(&g, gg_level_cost(3)) == 2, "that should have been two levels");
+
+    CHECK(g.actor[who].level == gg_player_const(&g)->level,
+          "the companion is level %u and the Avatar %u", g.actor[who].level,
+          gg_player_const(&g)->level);
+    CHECK(g.actor[who].level > was_level, "the companion did not rise at all");
+    CHECK(g.actor[who].hp_max == was_max + 2 * GG_LEVEL_HEALTH,
+          "the companion's health went from %d to %d", was_max,
+          g.actor[who].hp_max);
+    if (stranger > 0)
+        CHECK(g.actor[stranger].hp_max == stranger_max,
+              "somebody who is not in the party levelled too");
+
+    // And somebody recruited *after* all that arrives able to keep up, rather
+    // than being permanently behind the party they just joined.
+    if (stranger > 0 && gg_party_size(&g) < GG_PARTY_MAX) {
+        const int was = g.actor[stranger].hp_max;
+        CHECK(gg_party_join(&g, stranger), "the stranger would not come along");
+        CHECK(g.actor[stranger].level == gg_player_const(&g)->level,
+              "a late companion is level %u against the party's %u",
+              g.actor[stranger].level, gg_player_const(&g)->level);
+        CHECK(g.actor[stranger].hp_max > was,
+              "a late companion caught up in level but not in health");
+    }
+
+    gg_game_free(&g);
+    restore_dialogue();
+}
+
+// The whole of it, on the shipped content: killing things and working the story
+// out both teach, and a journey that did them is stronger than one that did
+// not - which is the item's own verification.
+static void a_journey_that_fights_its_way_north_arrives_stronger(void) {
+    CHECK(gg_bestiary_load(gg_asset_path("bestiary.txt")), "no bestiary");
+    CHECK(gg_dialogue_load(gg_asset_path("dialogue.txt")), "no book");
+    CHECK(gg_quests_load(gg_asset_path("quests.txt")), "no quests");
+
+    // Every creature is worth something, and says so out of the file.
+    for (int i = 0; i < gg_bestiary_count(); i++) {
+        const gg_beast *b = gg_bestiary_at(i);
+        CHECK(b->worth > 0, "%s teaches nothing", b->id);
+    }
+
+    gg_game g;
+    CHECK(gg_game_new_from_map(&g, gg_asset_path("maps/vale.ggmap"), "Fighter"),
+          "the vale would not open");
+
+    const int start_level = gg_player_const(&g)->level;
+    const int start_max = gg_player_const(&g)->hp_max;
+
+    // Asking the vale what is wrong is worth something on its own.
+    ask_the_town(&g);
+    gg_quests_tick(&g);
+    CHECK(g.exp > 0, "working the story out taught the party nothing");
+    const int by_talking = g.exp;
+
+    // What a *kill* teaches, on its own and to the number. With the quests
+    // cleared, because killing things also advances the brigand quest, whose
+    // stages teach as well - so "experience went up after a fight" passes
+    // whether or not a kill is worth anything, which is how the first version
+    // of this test passed with the reward removed.
+    {
+        gg_quests_clear();
+        gg_game q;
+        CHECK(gg_game_new(&q, 5, "Killer"), "new game failed");
+        q.exp = 0;
+
+        const int kind = gg_bestiary_find("BRIGAND");
+        CHECK(kind >= 0, "there is no brigand");
+        const int worth = kind >= 0 ? gg_bestiary_at(kind)->worth : 0;
+
+        const gg_actor *p = gg_player_const(&q);
+        const int foe = gg_spawn_foe(&q, kind, p->x + 1, p->y);
+        CHECK(foe > 0, "no brigand could be placed");
+        if (foe > 0) {
+            gg_player(&q)->level = 20;
+            for (int i = 0; i < 400 && q.actor[foe].active; i++) {
+                gg_actor *me = gg_player(&q);
+                me->hp = me->hp_max;
+                me->x = (int16_t)(q.actor[foe].x - 1);
+                me->y = q.actor[foe].y;
+                me->facing = GG_FACE_RIGHT;
+                gg_game_act(&q, GG_ACT_FIGHT);
+            }
+            CHECK(!q.actor[foe].active, "the brigand would not fall");
+            CHECK(q.exp == worth, "killing a brigand taught %d, and it is "
+                  "worth %d", q.exp, worth);
+        }
+        gg_game_free(&q);
+        CHECK(gg_quests_load(gg_asset_path("quests.txt")), "no quests");
+    }
+
+    // And then the road. Everything hostile in the vale, killed properly.
+    gg_player(&g)->level = 20;              // so this ends inside the bound
+    for (int i = 0; i < g.actors; i++) {
+        if (!g.actor[i].active || !g.actor[i].hostile) continue;
+        for (int swing = 0; swing < 400 && g.actor[i].active; swing++) {
+            gg_actor *me = gg_player(&g);
+            me->hp = me->hp_max;
+            me->x = g.actor[i].x;
+            me->y = (int16_t)(g.actor[i].y + 1);
+            me->facing = GG_FACE_UP;
+            gg_game_act(&g, GG_ACT_FIGHT);
+        }
+    }
+    CHECK(g.exp > by_talking, "killing everything in the vale taught nothing");
+    CHECK(g.slain > 0, "nothing was killed");
+
+    // The level was forced up for the fighting, so what is checked here is the
+    // experience and the health it bought - which is what the player feels.
+    CHECK(gg_player_const(&g)->hp_max > start_max,
+          "a journey that fought its way north is no harder to kill (%d, was %d)",
+          gg_player_const(&g)->hp_max, start_max);
+    CHECK(gg_player_const(&g)->level > start_level, "still level %d",
+          gg_player_const(&g)->level);
+
+    // And it survives being put down.
+    const char *who = "Fighter";
+    wipe_saves(who);
+    CHECK(gg_save_write(&g, save_base(), who), "the save failed");
+    gg_game back;
+    SDL_zero(back);
+    CHECK(gg_save_read(&back, save_base(), who), "the load failed");
+    CHECK(back.exp == g.exp, "experience came back as %d, not %d", back.exp, g.exp);
+    CHECK(gg_player_const(&back)->level == gg_player_const(&g)->level,
+          "level came back as %u", gg_player_const(&back)->level);
+    CHECK(gg_player_const(&back)->hp_max == gg_player_const(&g)->hp_max,
+          "health came back as %d", gg_player_const(&back)->hp_max);
+    gg_game_free(&back);
+    wipe_saves(who);
+
+    gg_game_free(&g);
+    restore_bestiary();
+    restore_dialogue();
+    restore_quests();
 }
 
 // The plan's own verification for the storyline: playable start to finish.
@@ -6900,6 +7121,9 @@ int main(void) {
 
     RUN(walking_between_two_maps_takes_everything_with_you);
     RUN(a_party_that_walked_the_road_can_beat_the_man_at_the_end_of_it);
+    RUN(what_the_party_learns_makes_it_stronger);
+    RUN(a_companion_rises_with_the_avatar);
+    RUN(a_journey_that_fights_its_way_north_arrives_stronger);
     RUN(the_whole_story_can_be_played_from_start_to_finish);
     RUN(a_content_file_written_on_windows_still_loads);
     RUN(a_map_you_leave_is_as_you_left_it);

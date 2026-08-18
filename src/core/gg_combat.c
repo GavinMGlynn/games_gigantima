@@ -109,6 +109,14 @@ static void die(gg_game *g, int who) {
     if (a->hostile) g->slain++;
     gg_log(g, "%s falls.", a->name);
 
+    // What it taught the party. Out of the bestiary, so what a thing is worth
+    // is a line in a file beside what it can take - and nothing here decides
+    // that a brigand is worth more than an outlaw.
+    {
+        const gg_beast *worth_of = gg_bestiary_at(a->beast);
+        if (a->hostile && worth_of) gg_gain(g, worth_of->worth);
+    }
+
     // Its loot table, rolled through the game's RNG so what falls is part of
     // the seeded world. Every line is its own roll, so a creature can carry a
     // purse always and a phial sometimes.

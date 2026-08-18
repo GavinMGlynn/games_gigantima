@@ -126,7 +126,18 @@ void gg_ui_hud(const gg_game *g, SDL_Renderer *ren) {
     int x = 10, y = top + 8;
     gg_font_printf(ren, x, y, AMBER, "%s", p->name);
     y += line;
-    gg_font_printf(ren, x, y, DIM, "Level %d", p->level);
+    // The level, and how far along it is. A bare "Level 1" for the whole of a
+    // first journey is what an experience counter that spent on nothing looked
+    // like from the outside.
+    if (p->level < GG_LEVEL_MAX) {
+        const int have = g->exp - gg_level_cost(p->level);
+        const int want = gg_level_cost(p->level + 1) - gg_level_cost(p->level);
+        gg_font_printf(ren, x, y, DIM, "Level %d", p->level);
+        gg_font_printf(ren, x + gg_font_width("Level 00") + 8, y, DIM,
+                       "%d/%d", have, want);
+    } else {
+        gg_font_printf(ren, x, y, DIM, "Level %d", p->level);
+    }
     y += line + 2;
 
     gg_font_draw(ren, x, y, DIM, "Health");

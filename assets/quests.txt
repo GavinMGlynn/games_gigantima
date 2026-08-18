@@ -10,6 +10,7 @@
 #       when COND         what has to be true to enter it
 #       journal TEXT      what the journal says once it is
 #       sets FLAG         a flag raised on entering, for other quests to see
+#       worth N           what entering it teaches the party, in experience
 #       ends              entering it is the end of the story
 #
 # The conditions are things the world already knows how to answer:
@@ -36,6 +37,7 @@ quest CARAVAN
     when knows caravan
     journal The market stall is bare: a caravan out of the north is three weeks late.
     sets heard_of_caravan
+    worth 20
   stage
     when knows road
     journal The gate was watched for a fortnight and nothing came down the road.
@@ -46,14 +48,17 @@ quest CARAVAN
     when knows light
     journal A cold light has been seen among the stones, since the week it failed.
     sets knows_the_light
+    worth 30
   stage
     when knows north
     journal Nobody has come down that road since. Somebody must go and look.
     sets caravan_understood
+    worth 40
   stage
     when at stones.ggmap
     journal The stones stand in a ring, and the grass inside them is beaten flat.
     sets stood_among_the_stones
+    worth 40
   stage
     when at stones.ggmap 24 22 6
     journal A man waits in the middle of the ring, and he is not surprised to see thee.
@@ -61,6 +66,7 @@ quest CARAVAN
     when has SILVER 3
     journal Rugar is down, and the caravan's silver is in thy pack. Take it home.
     sets caravan_avenged
+    worth 120
   stage
     when at vale.ggmap
     journal Thou art home with it. Iolo is at his stall; ask him of the SILVER.
@@ -68,6 +74,7 @@ quest CARAVAN
     when flag silver_returned
     journal The caravan's silver is on Iolo's counter, the road north is open, and the vale owes thee a debt it will be telling for years.
     sets caravan_returned
+    worth 200
     ends
 
 quest COMPANY
@@ -76,10 +83,12 @@ quest COMPANY
     when party 1
     journal Somebody walks with thee. The north road is not one to walk alone.
     sets have_company
+    worth 25
   stage
     when party 2
     journal Two walk with thee. Whatever waits among the stones may reconsider.
     sets well_companied
+    worth 25
 
 quest BRIGANDS
   name The Hills Are Not Safe
@@ -90,10 +99,12 @@ quest BRIGANDS
     when slain 4
     journal Four of them now, and thickest of all along the north road.
     sets hills_thinned
+    worth 40
   stage
     when flag caravan_understood
     journal It fits: the road was stopped, and these are who stopped it.
     sets story_understood
+    worth 60
 
 quest MAGE
   name Words of Power
@@ -107,7 +118,9 @@ quest MAGE
     when knows lor
     journal IN LOR makes light - two words, and the dark is not what it was.
     sets can_make_light
+    worth 30
   stage
     when knows an
     journal AN undoes. It is the first word a careful mage learns.
     sets a_mage_now
+    worth 50

@@ -56,6 +56,7 @@ static const char *const FX_FILE[GG_EV_COUNT] = {
     [GG_EV_DOOR]  = "fx_door.wav",
     [GG_EV_CAST]  = "fx_cast.wav",
     [GG_EV_LEARN] = "fx_learn.wav",
+    [GG_EV_LEVEL] = "fx_level.wav",
 };
 
 // ---------------------------------------------------------------------------
